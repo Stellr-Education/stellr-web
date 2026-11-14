@@ -2,7 +2,7 @@
 
 **Owner action. Do not promote the PR that removes `/studio` until steps 1 to 4 are done and the hosted Studio opens.**
 
-Review ids: Vercel retention .6, legacy 6.5 (Studio out of the app bundle), deep review v2 .12 (signed event-sync webhook), deep review v2 .16 (`lib/sanity` server-only).
+Review ids: Vercel retention .6, legacy 6.5 (Studio out of the app bundle), deep review v2 .12 (signed event-sync webhook), deep review v2 .16 (`lib/sanity` kept out of client components; `server-only` deferred).
 
 ## What changed
 
@@ -74,15 +74,20 @@ The new address is `https://<hostname>.sanity.studio`. They sign in with the sam
 
 The event schema's slug field asks the app whether a rename would strand database rows (`sanity/schemas/event.ts` calls `/api/admin/events/slug-guard`). That call is relative and relies on the editor's Stellr session cookie. On the hosted Studio it goes to Sanity's host, fails, and the guard lets the rename through (it fails open by design). Until a follow-up gives the hosted Studio a way to reach that check, `npx tsx scripts/audit-event-slugs.ts` is the only backstop. Tell editors not to rename a published event's slug, and run the audit after any rename.
 
-## Scripts that read Sanity (deep review v2 .16)
+## `lib/sanity` and `server-only` (deep review v2 .16)
 
-`lib/sanity.ts` now starts with `import 'server-only'`, so a client component that imports it fails the build. Plain Node refuses that import too. A script that loads `lib/sanity` directly or through `lib/events/repo` must run with the React server condition:
+`lib/sanity.ts` holds the Sanity client and the API token, so no client component may import a value from it. For now a unit test enforces that: `lib/sanity.test.ts` fails on any `'use client'` file that value-imports `@/lib/sanity`. Type-only imports are fine.
 
-```sh
-npx tsx --conditions=react-server scripts/<script>.ts
-```
+`import 'server-only'` would also catch an indirect import at build time, but this slice leaves it out. Plain `tsx` refuses that import, and these load `lib/sanity` under plain `tsx`:
 
-That covers `notify:event-waitlist`, `hubspot:sync-event-options`, `sync:event-spaces`, `scripts/backfill-events-mirror.ts`, `scripts/backfill-lp-locations.ts`, `scripts/seed-two-tenants.ts` and CI's `scripts/lighthouse-urls.ts`. Until a follow-up adds the flag to those `package.json` scripts and the Lighthouse step, call `npx tsx --conditions=react-server` yourself instead of `npm run`.
+- the e2e fixture CLIs: `e2e/fixtures/survey-cli.ts`, `esign-cli.ts`, `age-bands-cli.ts` (the survey e2e runs in CI's required e2e job)
+- `npm run notify:event-waitlist`, `hubspot:sync-event-options`, `sync:event-spaces`
+- `scripts/backfill-events-mirror.ts`, `scripts/backfill-lp-locations.ts`, `scripts/seed-two-tenants.ts`
+- CI's Lighthouse step (`scripts/lighthouse-urls.ts`)
+
+`tsx --conditions=react-server` is not a fix. Under that condition React's server build has no `createContext`, so any module that reaches `next/navigation` (for example `lib/pending-consent`, `lib/membership-agreement`, `lib/survey/run`) fails to load, though it loads today.
+
+The follow-up that adds `server-only` should, in the same PR, make those entry points resolve `server-only` to an empty module (for example a `tsx` preload or a tsconfig `paths` entry used only by scripts and fixtures). Then run the survey, e-sign and age-band e2e specs and each script once before merging.
 
 ## Signed event-sync webhook (deep review v2 .12)
 

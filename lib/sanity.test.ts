@@ -3,15 +3,10 @@ import { readFileSync } from 'node:fs'
 import { describe, it, expect } from 'vitest'
 import { flyerDownloadUrl, type EventFlyer } from './sanity'
 
-// deep review v2 .16: lib/sanity holds the Sanity client and its token, so it is
-// server-only. vitest aliases 'server-only' to an empty module, so the build is
-// what enforces it; these hold the file to it.
-describe('lib/sanity is server-only', () => {
-  it('begins with the server-only import', () => {
-    const first = readFileSync('lib/sanity.ts', 'utf8').split('\n').find((line) => line.trim() !== '')
-    expect(first).toBe("import 'server-only'")
-  })
-
+// deep review v2 .16: lib/sanity holds the Sanity client and its token, so no
+// client component may value-import it. `import 'server-only'` would enforce this
+// in the build too, but it is deferred (see the comment at the top of lib/sanity.ts).
+describe('lib/sanity stays out of client components', () => {
   it('no client component imports a value from it', () => {
     const files = execFileSync('git', ['grep', '-l', '-E', "from '@/lib/sanity'", '--', '*.ts', '*.tsx'], { encoding: 'utf8' })
       .split('\n')
