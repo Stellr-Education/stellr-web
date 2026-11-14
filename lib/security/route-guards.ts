@@ -364,10 +364,6 @@ export const GUARD_EXCEPTIONS: Record<string, string> = {
   'app/(stellr)/(member)/community/training/[moduleId]/[itemId]/page.tsx#default':
     'legacy link stub: redirects to the course page, which reads the session itself; renders no data',
 
-  // ── stellr_only ─────────────────────────────────────────────────────────
-  'app/(stellr)/studio/[[...tool]]/page.tsx#default':
-    'embedded Sanity Studio; the editor authenticates against Sanity, not Clerk, and the page holds no Stellr data',
-
   // ── public, not rate-limited (each reviewed in S2) ──────────────────────
   'app/(stellr)/(public)/credentials/[number]/badge/route.tsx#GET':
     'renders a badge image for a credential number; proxy.ts rate-limits /credentials/*',

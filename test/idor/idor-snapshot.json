@@ -1605,8 +1605,7 @@
       "segments": [],
       "query": [],
       "body": [
-        "_id",
-        "slug"
+        "_id"
       ],
       "methods": {
         "POST": "refused"

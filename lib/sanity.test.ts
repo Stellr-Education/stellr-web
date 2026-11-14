@@ -1,5 +1,30 @@
+import { execFileSync } from 'node:child_process'
+import { readFileSync } from 'node:fs'
 import { describe, it, expect } from 'vitest'
 import { flyerDownloadUrl, type EventFlyer } from './sanity'
+
+// deep review v2 .16: lib/sanity holds the Sanity client and its token, so it is
+// server-only. vitest aliases 'server-only' to an empty module, so the build is
+// what enforces it; these hold the file to it.
+describe('lib/sanity is server-only', () => {
+  it('begins with the server-only import', () => {
+    const first = readFileSync('lib/sanity.ts', 'utf8').split('\n').find((line) => line.trim() !== '')
+    expect(first).toBe("import 'server-only'")
+  })
+
+  it('no client component imports a value from it', () => {
+    const files = execFileSync('git', ['grep', '-l', '-E', "from '@/lib/sanity'", '--', '*.ts', '*.tsx'], { encoding: 'utf8' })
+      .split('\n')
+      .filter((f) => f && !/\.test\.tsx?$/.test(f))
+    const offenders = files.filter((file) => {
+      const src = readFileSync(file, 'utf8')
+      if (!/^\s*['"]use client['"]/m.test(src)) return false
+      // A type-only import is erased; any other import from the module is a value import.
+      return [...src.matchAll(/^import\s+(type\s+)?[^;'"]*?from '@\/lib\/sanity'/gm)].some((m) => !m[1])
+    })
+    expect(offenders).toEqual([])
+  })
+})
 
 const CDN = 'https://cdn.sanity.io/files/proj/production/abc123.pdf'
 

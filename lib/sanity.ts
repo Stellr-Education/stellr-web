@@ -1,3 +1,10 @@
+import 'server-only'
+// deep review v2 .16: this module holds the Sanity client and the API token
+// (SANITY_API_TOKEN), so it must never reach a browser chunk. The import above
+// fails the build if a client component imports it. A client component takes
+// what it needs from the client-safe modules instead: lib/sanity-urls (EventFlyer,
+// flyerDownloadUrl) and lib/sanity-image-params; a type-only import
+// (`import type { StellarEvent } from '@/lib/sanity'`) is erased and is fine.
 import { createClient } from 'next-sanity'
 import { createImageUrlBuilder } from '@sanity/image-url'
 import type { SanityImageSource } from '@sanity/image-url'
