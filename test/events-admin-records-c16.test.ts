@@ -482,7 +482,7 @@ describe('the invoice route, on a group stamped with another tenant', () => {
   })
 
   it('Staff, who reaches every Stellr event, gets the same missing answer', async () => {
-    state.session = { userId: 'user_staff', sessionClaims: { metadata: { role: 'staff' } } }
+    state.session = { userId: 'user_staff', sessionClaims: { metadata: { role: 'staff' } }, factorVerificationAge: [0, 0] } // Staff needs a second factor on the session (staff-role.8)
     const invoice = await import('@/app/api/admin/registrations/[id]/invoice/route')
     state.rows.registrations = { ...GROUP, tenant_id: OTHER_TENANT }
     const foreign = await invoice.POST(req({ action: 'nope' }), idCtx)

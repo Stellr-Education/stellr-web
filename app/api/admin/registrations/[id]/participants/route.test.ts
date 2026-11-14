@@ -98,7 +98,7 @@ describe('POST /api/admin/registrations/[id]/participants', () => {
   })
 
   it('records Staff as staff, not as a member', async () => {
-    h.session = { userId: 'user_staff', sessionClaims: { metadata: { role: 'staff' } } }
+    h.session = { userId: 'user_staff', sessionClaims: { metadata: { role: 'staff' } }, factorVerificationAge: [0, 0] } // Staff needs a second factor on the session (staff-role.8)
     expect((await call()).status).toBe(201)
     expect(h.log).toHaveBeenCalledWith(expect.objectContaining({ actorType: 'staff', action: 'roster_added_by_crew' }))
     // The shared add still takes its crew path for Staff.
