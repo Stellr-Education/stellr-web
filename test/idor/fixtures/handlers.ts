@@ -108,7 +108,8 @@ async function dutyScope(): Promise<ScopeContext | null> {
   return makeScope({
     tenantId: access.tenantId,
     eventSlugs: access.assignedSlugs,
-    actor: { kind: access.isAdmin ? 'tenant_admin' : 'event_manager', memberId: null },
+    // Staff sees every event of its tenant without being an admin: a crew scope, not an event manager's.
+    actor: { kind: access.isAdmin ? 'tenant_admin' : access.assignedSlugs === null ? 'crew' : 'event_manager', memberId: null },
   })
 }
 
