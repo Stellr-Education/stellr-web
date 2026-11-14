@@ -98,7 +98,17 @@ export async function POST(req: Request) {
       automatic_tax: { enabled: true },
       customer_update: { address: 'auto' },
       line_items: [{ price: priceId, quantity: 1 }],
-      discounts: discount ? [{ coupon: discount.couponId }] : undefined,
+      // Account credit, or else a field for a promotion code (e.g. MNCOSE26, the
+      // Nov 2026 MnCOSE booth offer: free Catalyst). Stripe refuses a session
+      // that sets both, so a member with credit uses the credit.
+      ...(discount
+        ? { discounts: [{ coupon: discount.couponId }] }
+        : { allow_promotion_codes: true }),
+      // Ask for a card only when something is due today. A 100% code or full
+      // credit then needs no card, so a free first year never renews into a
+      // charge the member did not expect: with no card on file the renewal
+      // invoice fails and the membership lapses instead.
+      payment_method_collection: 'if_required',
       success_url: `${baseUrl}/account?membership=success`,
       cancel_url: `${baseUrl}/membership`,
       metadata: {
