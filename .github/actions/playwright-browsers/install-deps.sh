@@ -105,7 +105,7 @@ load_saved_lists() {
     return 1
   fi
 
-  local work staged=0 release name prefix signed date image_date until list path sum size packages
+  local work staged=0 release name prefix signed date image_date valid_until list path sum size packages
   work=$(mktemp -d)
   mkdir -p "$work/ok"
   for release in "$saved_lists"/*_InRelease; do
@@ -126,9 +126,9 @@ load_saved_lists() {
       echo "Saved $name is older than the image's and over $max_age_days days old; not using it."
       continue
     fi
-    until=$(sed -n 's/^Valid-Until: //p' "$signed" | head -n 1)
-    if [ -n "$until" ] && [ "$(date -u -d "$until" +%s 2> /dev/null || echo 0)" -lt "$(date -u +%s)" ]; then
-      echo "Saved $name expired ($until); not using it."
+    valid_until=$(sed -n 's/^Valid-Until: //p' "$signed" | head -n 1)
+    if [ -n "$valid_until" ] && [ "$(date -u -d "$valid_until" +%s 2> /dev/null || echo 0)" -lt "$(date -u +%s)" ]; then
+      echo "Saved $name expired ($valid_until); not using it."
       continue
     fi
 
