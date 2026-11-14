@@ -5,10 +5,31 @@ import { NextResponse } from 'next/server'
 import { supabaseServer } from '@/lib/supabase'
 import { getSignedInMember } from '@/lib/community'
 import { sendAccountInvite } from '@/lib/member-invite'
+import { withAudit } from '@/lib/audit/route'
+
+type Ctx = { params: Promise<{ id: string }> }
+
+/** The member in the URL, /api/admin/members/<id>/…: the event's target. */
+function memberIdOf(req: Request): string | null {
+  const parts = new URL(req.url).pathname.split('/')
+  const at = parts.indexOf('members')
+  return at < 0 ? null : (parts[at + 1] ?? null)
+}
+
+// Platform audit (docs/TENANCY-S5.md, C7). A refusal (not found, complete, cooldown) is
+// a 4xx and records nothing; a send that failed is a 502 and is recorded.
+const inviteAudit = ({ args: [req] }: { args: [Request, Ctx] }) => ({
+  action: 'member.invite.send' as const,
+  actor: { session: true } as const,
+  tenant: { stellr: true } as const,
+  target: { table: 'members', id: memberIdOf(req) },
+})
+
+export const POST = withAudit(inviteAudit, sendInvite)
 
 // POST /api/admin/members/[id]/invite — (re)send the "complete your account"
 // email to a member whose profile is still missing DOB or gender.
-export async function POST(_req: Request, { params }: { params: Promise<{ id: string }> }) {
+async function sendInvite(_req: Request, { params }: Ctx) {
   const { sessionClaims } = await auth()
   if (!(await hasCapability('members:write'))) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 

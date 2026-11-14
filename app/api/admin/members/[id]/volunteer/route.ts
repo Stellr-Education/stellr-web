@@ -4,6 +4,7 @@ import { NextResponse } from 'next/server'
 import { supabaseServer } from '@/lib/supabase'
 import { actorFromAuth } from '@/lib/activity-log'
 import { grantVolunteerRole, revokeVolunteerRole } from '@/lib/volunteer'
+import { withAudit } from '@/lib/audit/route'
 
 // Admin toggle for the additive volunteer role (PRD §15: "update whether an
 // account is a Volunteer or not"). Granting also puts the member on the
@@ -11,7 +12,31 @@ import { grantVolunteerRole, revokeVolunteerRole } from '@/lib/volunteer'
 
 type Ctx = { params: Promise<{ id: string }> }
 
-export async function POST(_req: Request, { params }: Ctx) {
+/** The member in the URL, /api/admin/members/<id>/…: the event's target. */
+function memberIdOf(req: Request): string | null {
+  const parts = new URL(req.url).pathname.split('/')
+  const at = parts.indexOf('members')
+  return at < 0 ? null : (parts[at + 1] ?? null)
+}
+
+// Platform audit (docs/TENANCY-S5.md, C7): the member is the target.
+const grantAudit = ({ args: [req] }: { args: [Request, Ctx] }) => ({
+  action: 'role.volunteer.grant' as const,
+  actor: { session: true } as const,
+  tenant: { stellr: true } as const,
+  target: { table: 'members', id: memberIdOf(req) },
+})
+const revokeAudit = ({ args: [req] }: { args: [Request, Ctx] }) => ({
+  action: 'role.volunteer.revoke' as const,
+  actor: { session: true } as const,
+  tenant: { stellr: true } as const,
+  target: { table: 'members', id: memberIdOf(req) },
+})
+
+export const POST = withAudit(grantAudit, grantVolunteer)
+export const DELETE = withAudit(revokeAudit, revokeVolunteer)
+
+async function grantVolunteer(_req: Request, { params }: Ctx) {
   const { sessionClaims } = await auth()
   if (!(await hasCapability('volunteers:write'))) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
@@ -22,7 +47,7 @@ export async function POST(_req: Request, { params }: Ctx) {
   return NextResponse.json({ ok: true })
 }
 
-export async function DELETE(_req: Request, { params }: Ctx) {
+async function revokeVolunteer(_req: Request, { params }: Ctx) {
   const { sessionClaims } = await auth()
   if (!(await hasCapability('volunteers:write'))) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
