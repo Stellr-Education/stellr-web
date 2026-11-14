@@ -7,18 +7,23 @@
 // capability check can refuse:
 //   - refused at the guard on admin-only routes, where an admin gets past it;
 //   - let through a members:write route, and refused there without a second factor;
+//   - refused at the guard in the admin-only areas classed stellr_only, which the crew
+//     suite never runs (the access console, clearance decisions, granting Staff, e-sign
+//     templates, the store catalogue, scholarship decisions);
 //   - the platform routes that let Staff in are the ones the owner gave Staff a capability for;
 //   - crewCaseProblem holds Staff to that, and test/idor/staff-accepted.ts cannot widen it.
 import './mocks'
 import { readFileSync } from 'node:fs'
 import { describe, expect, it, vi } from 'vitest'
-import { crewTargets, idorTargets, type IdorTarget } from '@/lib/security/idor-targets'
+import { crewTargets, idorTargets, segmentsOf, urlPatternOf, type IdorTarget } from '@/lib/security/idor-targets'
+import { HTTP_METHODS, analyzeRoute, requestIdInputs } from '@/lib/security/route-ast'
+import { ROUTE_MANIFEST } from '@/lib/security/route-manifest'
 import { GUARD_EXCEPTIONS } from '@/lib/security/route-guards'
 import { followBodyHelpers } from './body-helpers'
 import { CASE_FIXTURES, applyEnv } from './case-fixtures'
-import { CREW_PERSONAS_FOR, SAME_TENANT, crewCaseProblem, installNetworkGuard, runIdorCase, targetInput, type CaseResult, type CaseOptions, type Persona } from './harness'
+import { CREW_PERSONAS_FOR, SAME_TENANT, crewCaseProblem, installNetworkGuard, runIdorCase, targetInput, type CaseInput, type CaseResult, type CaseOptions, type Persona } from './harness'
 import { STAFF_ACCEPTED } from './staff-accepted'
-import { staffCapabilitiesIn } from './staff-capabilities'
+import { staffCapabilitiesIn, staffCapabilitiesInHandler } from './staff-capabilities'
 
 process.env.NEXT_PUBLIC_SUPABASE_URL = 'http://supabase.idor.invalid'
 process.env.SUPABASE_SECRET_KEY = 'sb_secret_idorharness'
@@ -40,11 +45,10 @@ const targetFor = (file: string): IdorTarget => {
   return t
 }
 
-async function run(file: string, method: string, persona: Persona, opts: CaseOptions = {}): Promise<CaseResult> {
-  const t = targetFor(file)
+async function run(file: string, method: string, persona: Persona, opts: CaseOptions = {}, input: CaseInput = targetInput(targetFor(file))): Promise<CaseResult> {
   const restore = applyEnv(CASE_FIXTURES[file]?.env)
   const mod = (await import(`../../${file}`).finally(restore)) as Record<string, unknown>
-  return runIdorCase(mod, targetInput(t), method, persona, file, opts)
+  return runIdorCase(mod, input, method, persona, file, opts)
 }
 
 const show = (r: CaseResult) => `${r.method} → ${r.status} ${r.outcome} touched=${r.touched}${r.error ? ` ${r.error}` : ''}`
@@ -115,6 +119,133 @@ describe('stellr_staff on Stellr’s own records', () => {
     expect(r.status, show(r)).toBe(403)
     expect(r.touched, show(r)).toBe(false)
   })
+})
+
+// The admin-only areas the crew suite cannot reach: every route in them is classed
+// stellr_only, and crewTargets() runs only tenant_crew, platform_admin and
+// platform_destined. test/staff-route-matrix.test.ts pins them by reading the source
+// (ADMIN_ONLY); this runs the request. Its ADMIN_ONLY areas, plus the ones it pins
+// elsewhere: clearance (members/[id]/license verifies with clearance:verify), the store
+// catalogue and scholarship decisions (their own wrappers, store:write and
+// scholarships:write, which Staff does not hold).
+const ADMIN_ONLY_AREAS: RegExp[] = [
+  /^access(\/|$)/,
+  /^members\/\[id\]\/background-check\/adjudicate$/,
+  /^members\/\[id\]\/license$/,
+  /^members\/\[id\]\/staff$/,
+  /^staff-settings$/,
+  /^esign\/templates(\/|$)/,
+  /^store(\/|$)/,
+  /^scholarships(\/|$)/,
+]
+const adminRoute = (file: string) => file.replace(/^app\/api\/admin\//, '').replace(/\/route\.tsx?$/, '')
+const ADMIN_ONLY_FILES = Object.keys(ROUTE_MANIFEST)
+  .filter((f) => /^app\/api\/admin\/.*\/route\.tsx?$/.test(f) && ADMIN_ONLY_AREAS.some((re) => re.test(adminRoute(f))))
+  .sort()
+
+/** The target of an admin-only route, id-bearing or not (a list names no id, and still has a guard). */
+function adminOnlyTarget(file: string): IdorTarget {
+  const src = readFileSync(file, 'utf8')
+  const methods = analyzeRoute(file, src)
+    .handlers.map((h) => h.name)
+    .filter((m) => (HTTP_METHODS as readonly string[]).includes(m) && m !== 'HEAD' && m !== 'OPTIONS')
+  const { query, body, fill } = requestIdInputs(file, src)
+  return followBodyHelpers({ file, cls: ROUTE_MANIFEST[file], urlPattern: urlPatternOf(file), segments: segmentsOf(file), query, body, fill, methods: [...new Set(methods)].sort() })
+}
+const ADMIN_ONLY_TARGETS = ADMIN_ONLY_FILES.map(adminOnlyTarget)
+const handlerCaps = (t: IdorTarget, method: string) => staffCapabilitiesInHandler(t.file, readFileSync(t.file, 'utf8'), method)
+const idBearing = (t: IdorTarget) => t.segments.length + t.query.length + t.body.length > 0
+
+/** Verifying or unverifying a licence decides clearance; saving its details is members:write, which Staff holds. */
+const LICENSE = 'app/api/admin/members/[id]/license/route.ts'
+const licenseVerify = (): CaseInput => ({
+  ...targetInput(targetFor(LICENSE)),
+  fixture: { reason: 'verify decides clearance: the save branch is members:write', body: { action: 'verify', licenseUpdatedAt: '2026-01-01T00:00:00.000Z' } },
+})
+
+describe('stellr_staff in the admin-only areas the crew suite never runs', () => {
+  it('finds the areas, every route in them classed stellr_only, none a crew target', () => {
+    for (const re of ADMIN_ONLY_AREAS) expect(ADMIN_ONLY_FILES.some((f) => re.test(adminRoute(f))), String(re)).toBe(true)
+    expect(ADMIN_ONLY_FILES.filter((f) => ROUTE_MANIFEST[f] !== 'stellr_only')).toEqual([])
+    const crew = new Set(CREW.map((t) => t.file))
+    expect(ADMIN_ONLY_FILES.filter((f) => crew.has(f))).toEqual([])
+  })
+
+  // Written out: a handler here that starts checking a capability Staff holds shows, and
+  // has to be argued for. Each is a read (portal:read), or the licence save, whose verify
+  // branch is still refused below.
+  it('Staff holds a capability on only these handlers, none a decision', () => {
+    const staffIn = ADMIN_ONLY_TARGETS.flatMap((t) => t.methods.filter((m) => handlerCaps(t, m).length).map((m) => `${adminRoute(t.file)} ${m}: ${handlerCaps(t, m).join(', ')}`))
+    expect(staffIn).toEqual([
+      'esign/templates/[id]/preview GET: portal:read',
+      'members/[id]/license POST: members:write',
+      'scholarships/[id]/refund-quote GET: portal:read',
+      'store/discounts GET: portal:read',
+      'store/printful GET: portal:read',
+      'store/products/[id] GET: portal:read',
+      'store/products GET: portal:read',
+    ])
+  })
+
+  it('reads a handler\'s capabilities through the same-file functions it calls, and no further', () => {
+    const src = [
+      "async function guard() { return hasCapability('members:write') }",
+      "async function adminOnly() { return isStellrAdmin() }",
+      'export async function GET() { await guard() }',
+      'export const POST = withAudit(audit, async () => { await adminOnly() })',
+      "export async function DELETE() { await canManageStoreCatalog() }",
+      "export async function PATCH() { await canManageStoreCatalog('portal:read') }",
+    ].join('\n')
+    expect(staffCapabilitiesInHandler('x/route.ts', src, 'GET')).toEqual(['members:write'])
+    expect(staffCapabilitiesInHandler('x/route.ts', src, 'POST')).toEqual([])
+    expect(staffCapabilitiesInHandler('x/route.ts', src, 'DELETE')).toEqual([])
+    expect(staffCapabilitiesInHandler('x/route.ts', src, 'PATCH')).toEqual(['portal:read'])
+    expect(() => staffCapabilitiesInHandler('x/route.ts', src, 'PUT')).toThrow(/no PUT/)
+  })
+
+  for (const t of ADMIN_ONLY_TARGETS) {
+    const methods = t.methods.filter((m) => handlerCaps(t, m).length === 0)
+    if (methods.length === 0) continue
+    it(`Staff is refused at the guard on ${t.urlPattern} (${methods.join(', ')})`, async () => {
+      for (const method of methods) {
+        const r = await run(t.file, method, 'stellr_staff', { context: SAME_TENANT, strict: true }, targetInput(t))
+        if (!(`${t.file}#${method}` in GUARD_EXCEPTIONS)) expect([401, 403], `${t.file} ${show(r)}`).toContain(r.status)
+        expect(r.touched, `${t.file} ${show(r)}`).toBe(false)
+        expect(r.writes, `${t.file} ${show(r)}`).toEqual([])
+        expect(r.leaks, `${t.file} ${show(r)}`).toEqual([])
+      }
+    })
+  }
+
+  it('the id-bearing ones are most of them: a refusal there is a refusal before the id', () => {
+    expect(ADMIN_ONLY_TARGETS.filter(idBearing).length).toBeGreaterThanOrEqual(25)
+  })
+
+  it('Staff is refused verifying a teaching licence, before the licence is read', async () => {
+    const r = await run(LICENSE, 'POST', 'stellr_staff', { context: SAME_TENANT, strict: true }, licenseVerify())
+    expect(r.status, show(r)).toBe(403)
+    expect(r.touched, show(r)).toBe(false)
+    expect(r.writes, show(r)).toEqual([])
+  })
+
+  // The controls: the same requests from an admin get past the guard to the record, so
+  // the refusals above are the guard's, not a request that could never get anywhere.
+  it('an admin gets past the licence guard to the licence: the control', async () => {
+    const r = await run(LICENSE, 'POST', 'stellr_crew', { context: SAME_TENANT, strict: true }, licenseVerify())
+    expect(r.touched, show(r)).toBe(true)
+  })
+
+  for (const [file, method] of [
+    ['app/api/admin/members/[id]/staff/route.ts', 'GET'],
+    ['app/api/admin/access/people/[id]/route.ts', 'GET'],
+    ['app/api/admin/scholarships/[id]/route.ts', 'PATCH'],
+    ['app/api/admin/store/products/[id]/route.ts', 'DELETE'],
+  ] as const) {
+    it(`an admin gets past the guard on ${adminRoute(file)} ${method}: the control`, async () => {
+      const r = await run(file, method, 'stellr_crew', { context: SAME_TENANT, strict: true }, targetInput(adminOnlyTarget(file)))
+      expect(r.touched, show(r)).toBe(true)
+    })
+  }
 })
 
 describe('crewCaseProblem holds Staff to its capabilities', () => {
