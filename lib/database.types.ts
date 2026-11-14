@@ -42,9 +42,29 @@ export interface RegistrationRow {
   // is minted so a registration never holds two payable sessions. NULL until first
   // checkout.
   checkout_session_id: string | null
+  // Who pays for people who join later, on an "Invoice for some" group only
+  // (migration 20261109180000_group_payers). NULL everywhere else.
+  late_joiner_payer: 'group' | 'self' | null
+  // Students share the teacher's cost (migration 20261109190000_teacher_share,
+  // lib/teacher-share.ts). All NULL on a group that doesn't share it.
+  share_estimate: number | null
+  share_unit_cents: number | null
+  share_cents: number | null
+  share_first_paid_at: string | null
+  share_settled_at: string | null
 }
 
-export type RegistrationInsert = Omit<RegistrationRow, 'id' | 'created_at' | 'updated_at'>
+/** Nullable columns with no default: optional on insert. */
+type RegistrationOptionalOnInsert =
+  | 'late_joiner_payer'
+  | 'share_estimate'
+  | 'share_unit_cents'
+  | 'share_cents'
+  | 'share_first_paid_at'
+  | 'share_settled_at'
+
+export type RegistrationInsert = Omit<RegistrationRow, 'id' | 'created_at' | 'updated_at' | RegistrationOptionalOnInsert> &
+  Partial<Pick<RegistrationRow, RegistrationOptionalOnInsert>>
 
 export interface ParticipantRow {
   id: string
@@ -72,7 +92,9 @@ export interface ParticipantRow {
   membership_id: string
   company_name: string | null
   award: string | null
-  individual_payment_status: 'pending' | 'paid' | 'waived' | null
+  // 'covered': a teacher whose place the students' shares pay for
+  // (migration 20261109190000_teacher_share).
+  individual_payment_status: 'pending' | 'paid' | 'waived' | 'covered' | null
   join_completed_at: string | null
   // deep review PAY-8: durable per-seat pay token (mirrors registrations.pay_token).
   // NULL until a per-seat payment link is first needed.
@@ -80,6 +102,14 @@ export interface ParticipantRow {
   // Stripe payment reference for a per-seat payment (migration 027), used by cash
   // refunds. NULL until the seat is paid.
   stripe_payment_intent_id: string | null
+  // Who pays for this place (migration 20261109180000_group_payers). NULL keeps
+  // the old meaning: the group's flags decide (lib/group-payer.ts).
+  payer: 'group' | 'self' | 'shared' | null
+  // A shared-cost student's payment, split (migration 20261109190000_teacher_share):
+  // their own place after any code, and their share of the teacher's cost.
+  base_paid_cents: number | null
+  share_paid_cents: number | null
+  discount_code: string | null
   created_at: string
 }
 
@@ -95,7 +125,11 @@ export interface GroupJoinTokenRow {
 
 export type GroupJoinTokenInsert = Omit<GroupJoinTokenRow, 'id' | 'created_at'>
 
-export type ParticipantInsert = Omit<ParticipantRow, 'id' | 'created_at' | 'membership_id' | 'company_name' | 'award'>
+/** Nullable columns with no default: optional on insert. */
+type ParticipantOptionalOnInsert = 'payer' | 'base_paid_cents' | 'share_paid_cents' | 'discount_code'
+
+export type ParticipantInsert = Omit<ParticipantRow, 'id' | 'created_at' | 'membership_id' | 'company_name' | 'award' | ParticipantOptionalOnInsert> &
+  Partial<Pick<ParticipantRow, ParticipantOptionalOnInsert>>
 
 export interface Database {
   public: {
