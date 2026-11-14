@@ -27,7 +27,7 @@
 //   HUBSPOT_FORM_*                per-route form GUIDs (see hubspot-fields.ts)
 //
 // Optional env:
-//   HUBSPOT_DRY_RUN=1             skip and log every write; reads still run
+//   HUBSPOT_DRY_RUN=1             skip and log every write; reads still run (ignored on production)
 //                                 (dev only — docs/ENV-MATRIX.md §4)
 //
 // HubSpot now steers single-account server integrations to Service Keys rather
@@ -126,9 +126,14 @@ let warnedDryRunInProduction = false
  */
 function hubspotWriteSkipped(method: string, path: string): boolean {
   if (!hubspotDryRun()) return false
-  if (isProd() && !warnedDryRunInProduction) {
-    warnedDryRunInProduction = true
-    console.warn('[hubspot] HUBSPOT_DRY_RUN is set on a production deployment — every HubSpot write is being skipped')
+  // Never on production: a stray HUBSPOT_DRY_RUN there would silently lose every
+  // lead (the dead-letter path is bypassed too), so production ignores it and warns.
+  if (isProd()) {
+    if (!warnedDryRunInProduction) {
+      warnedDryRunInProduction = true
+      console.warn('[hubspot] HUBSPOT_DRY_RUN is set on a production deployment and is ignored; HubSpot writes go ahead')
+    }
+    return false
   }
   console.log(`[hubspot] dry-run ${method} ${dryRunLogPath(path)}`)
   return true

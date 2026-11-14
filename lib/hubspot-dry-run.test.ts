@@ -110,4 +110,20 @@ describe('captureLead under HUBSPOT_DRY_RUN=1', () => {
       ),
     ).toBe(true)
   })
+
+  it('is ignored on production: the form submission is posted, with one warning', async () => {
+    const calls = stubFetch()
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const { captureLead } = await load({ ...CONFIGURED, HUBSPOT_DRY_RUN: '1', NEXT_PUBLIC_APP_ENV: 'prod' })
+
+    const result = await captureLead({ email: EMAIL, source: 'event_notify', activity: 'test' })
+
+    expect(result.ok).toBe(true)
+    expect(
+      calls.some(
+        (c) => c.method === 'POST' && c.url === 'https://api.hsforms.com/submissions/v3/integration/secure/submit/24379847/form-guid',
+      ),
+    ).toBe(true)
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('HUBSPOT_DRY_RUN is set on a production deployment and is ignored'))
+  })
 })
