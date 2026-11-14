@@ -6,23 +6,26 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { Choice, Field, Input, Select } from '@stellr/web-ui'
 import { usePrefillForm } from '@/components/forms/useMemberPrefill'
+import { useSpamGuard } from '@/components/forms/useSpamGuard'
+import { SpamGuardFields } from '@/components/forms/SpamGuardFields'
 import { trackLeadSubmitted } from '@/lib/analytics'
+import { JOIN_NETWORK_LIMITS, PARTNER_TYPES, joinNetworkFields as f } from '@/app/api/join-network/schema'
 
-const PARTNER_TYPES = [
-  'Fellow Education Provider [Industry]',
-  'Interested College [University]',
-  'Want To Support [Corporate]',
-] as const
-
+// The route's fields (same caps, same partner types), with the stricter phone
+// minimum a person is asked for here.
 const schema = z.object({
-  firstName: z.string().min(1, 'First name is required'),
-  lastName: z.string().min(1, 'Last name is required'),
-  email: z.string().email('Please enter a valid email address'),
-  phone: z.string().min(7, 'Please enter a valid phone number'),
-  companyName: z.string().min(1, 'Company name is required'),
-  address: z.string().optional(),
-  whatYouDo: z.string().min(1, 'Please tell us a little about what you do'),
-  reason: z.enum(PARTNER_TYPES, { error: 'Please choose an option' }),
+  firstName: f.firstName,
+  lastName: f.lastName,
+  email: f.email,
+  phone: z
+    .string()
+    .trim()
+    .min(7, 'Please enter a valid phone number')
+    .max(JOIN_NETWORK_LIMITS.phone, `Please keep this to ${JOIN_NETWORK_LIMITS.phone} characters or fewer`),
+  companyName: f.companyName,
+  address: f.address,
+  whatYouDo: f.whatYouDo,
+  reason: f.reasonChoice,
   consent: z.literal(true, {
     error: 'You must agree to be contacted',
   }),
@@ -35,6 +38,7 @@ const legendClass =
 
 export function JoinNetworkForm() {
   const [status, setStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle')
+  const spam = useSpamGuard()
 
   const {
     register,
@@ -57,7 +61,7 @@ export function JoinNetworkForm() {
       const res = await fetch('/api/join-network', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data),
+        body: JSON.stringify({ ...data, ...(await spam.values()) }),
       })
 
       if (res.ok) trackLeadSubmitted('join_network')
@@ -160,6 +164,8 @@ export function JoinNetworkForm() {
           ))}
         </Select>
       </Field>
+
+      <SpamGuardFields {...spam.fields} />
 
       {/* Consent */}
       <div className="space-y-1.5">

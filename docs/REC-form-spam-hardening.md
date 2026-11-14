@@ -1,7 +1,12 @@
 # REC: Public Form Spam Hardening — Honeypot + Turnstile (F-17 Phase 2)
 
-**Status:** Recommendation — no code changed. | **Date:** 2026-08-17
+**Status:** Recommendation; L1b and L3 built 14 Nov 2026 (below). | **Date:** 2026-08-17
 **Supersedes the open half of:** `docs/REC-public-form-hardening.md` (2026-07-03), whose Phase 1 has since shipped.
+
+**Built (14 Nov 2026, branch `fix/b2-spam-guard`, ids spam.L1b and spam.L3):**
+- **L1b, honeypot and timing trap (§3):** `lib/spam-guard.ts` (`checkSpamSignals`), `components/forms/useSpamGuard.ts` and `SpamGuardFields.tsx`, on contact, host-event, join-network, white-paper, asset-request, subscribe (footer and event notify), scholarship, lp-lead and cq-lead. Check-in is not done yet; teacher-grant keeps its own honeypot. Two changes from §3: the browser also sends `submittedAt`, so the dwell is measured on one clock and a browser clock that is minutes off cannot drop a real submission; and the timing trap is enforced in production only (on dev and in CI it logs `[spam] timing (not enforced outside production)`), because the e2e suite fills forms faster than 3 s. The honeypot is enforced everywhere. A body with no timing is accepted with `[spam] no-timing`.
+- **L3, server-side zod (§5):** every route above parses with zod, with `.max()` on every string and `.email()` on emails; a failure answers 400 with the route's existing error. Where the form has a client schema, the fields live in `app/api/<route>/schema.ts` and both sides build on them (the route keeps its own `z.object({ … })`, which the IDOR suite reads). The forms use strict enums for the contact inquiry type and the join-network partner type. The routes do not 400 an unlisted value, because the IDOR suite's filler text (`test/idor`, code-owned) must stay a valid body: contact files any other type as `Other`, so only the six types reach the inbox; partner type and the notify intent are capped text, as before. Making those strict 400s needs a `type`/`reason` value in `test/idor/case-fixtures.ts` first.
+- Not built: L2 Turnstile, L5 Resend quota guard, L6 content heuristics.
 
 ## TL;DR
 

@@ -4,6 +4,8 @@ import { useEffect, useId, useRef, useState } from 'react'
 import { Bell, Check } from 'lucide-react'
 import { Dialog, fieldControlClass } from '@stellr/web-ui'
 import { usePrefillNameEmail } from '@/components/forms/useMemberPrefill'
+import { useSpamGuard } from '@/components/forms/useSpamGuard'
+import { SpamGuardFields } from '@/components/forms/SpamGuardFields'
 import { trackLeadSubmitted } from '@/lib/analytics'
 import { isEmailLike } from '@/lib/utils'
 
@@ -39,6 +41,9 @@ function EventNotifyModal({
 
   // Pre-fill from the signed-in member's record; only fills empty fields.
   usePrefillNameEmail(name, setName, email, setEmail)
+  // Mounted with the page, not the modal, so the timing trap measures the
+  // visit rather than how fast the dialog was filled in.
+  const spam = useSpamGuard()
 
   const [submitted, setSubmitted] = useState(false)
   const [loading, setLoading] = useState(false)
@@ -77,6 +82,7 @@ function EventNotifyModal({
           source: 'event-notify',
           eventSlug,
           interest,
+          ...(await spam.values()),
         }),
       })
       if (!res.ok) throw new Error('Request failed')
@@ -166,6 +172,8 @@ function EventNotifyModal({
               className={fieldControlClass}
             />
           </div>
+
+          <SpamGuardFields {...spam.fields} />
 
           <p className="text-center text-ds-meta text-content-faint">
             We respect your inbox. Just the heads-up and the occasional update.
