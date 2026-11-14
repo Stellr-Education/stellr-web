@@ -128,6 +128,10 @@ function respond(row: Partial<typeof MIRROR> | null = {}) {
     if (c.table === 'tenants' && c.op === 'select') return { data: TENANT, error: null }
     if (c.table === 'tenant_guardian_consents' && c.op === 'upsert') return { data: { id: 'tgc-1' }, error: null }
     if (c.table === 'agreements' && c.op === 'insert') return { data: { id: 'agr-1' }, error: null }
+    // The staff alert's read of the consent row (s5-programme.52).
+    if (c.table === 'tenant_guardian_consents' && c.op === 'select' && c.single === 'maybe') {
+      return { data: { registration_id: 'reg-1', agreement_id: 'agr-1' }, error: null }
+    }
     return undefined
   })
 }
@@ -260,20 +264,20 @@ describe('S5 wave 6: a 14-17-year-old on a tenant event', () => {
     expect(request?.[0]).toMatchObject({ metadata: { invitation: recorded } })
     // And staff are told (s5-programme.52): one critical email to Stellr's staff
     // inbox, with the consent and tenant ids and the outcome, and nothing about the
-    // registrant or the guardian. The hooks pass the audit no client, so the alert
-    // reads nothing and names the registration "unknown" (staff find it from the
-    // consent); lib/registration/tenant-guardian-consent.test.ts covers a passed client.
+    // registrant or the guardian. The hooks pass the audit their client, so the
+    // alert reads the consent row and names the registration too.
     const alerts = staffAlerts()
     expect(alerts).toHaveLength(1)
     expect(alerts[0].critical).toBe(true)
-    for (const id of ['tgc-1', CANARY, recorded]) expect(alerts[0].text).toContain(id)
+    for (const id of ['tgc-1', 'reg-1', CANARY, recorded]) expect(alerts[0].text).toContain(id)
+    expect(alerts[0].text).not.toMatch(/unknown/i)
     for (const part of [alerts[0].subject, alerts[0].html, alerts[0].text ?? '']) {
       expect(part).not.toMatch(/parent@example\.com|kid@example\.com|Kit|Pat|Canary Cup|Sydney High/)
       expect(part).not.toContain(dateBefore(15))
     }
     // The dedupe key holds ids alone, and is Stellr's (not the event tenant's).
     const dedupe = h.limit.mock.calls.find(([key]) => key.startsWith('tenant-guardian-consent:staff-alert:'))
-    expect(dedupe).toEqual(['tenant-guardian-consent:staff-alert:invitation:tgc-1:none', expect.objectContaining({ limit: 1, tenantId: null })])
+    expect(dedupe).toEqual(['tenant-guardian-consent:staff-alert:invitation:tgc-1:agr-1', expect.objectContaining({ limit: 1, tenantId: null })])
   })
 
   it('flag on: an invitation waiting in the signing outbox counts as out, and the wording does not say it has gone', async () => {

@@ -672,7 +672,7 @@ describe('a guardian invitation that did not go reaches staff (s5-programme.52)'
     errors.mockRestore()
   })
 
-  it('with no client passed (as the register hooks call it), it reads nothing and still alerts with the consent and tenant', async () => {
+  it('with no client passed, it reads nothing and still alerts with the consent and tenant', async () => {
     const errors = quiet()
     await recordConsentAudit('registration.guardian_consent.request', { id: 'no-db', tenant_id: CANARY }, { invitation: 'failed' }, { afterResponse: true })
     expect(rec.calls).toEqual([])
