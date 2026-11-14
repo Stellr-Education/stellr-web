@@ -10,6 +10,8 @@ import { STELLR_TENANT_ID } from '@/lib/tenancy/constants'
 const h = vi.hoisted(() => ({
   confirmation: vi.fn(async (_db: unknown, _input: Record<string, unknown>) => ({ ok: true, id: 'em_1' })),
   audit: vi.fn(async (_m: Record<string, unknown>, _o?: unknown) => ({ ok: false, skipped: 'disabled' })),
+  // The default staff alert's send (Stellr's staff inbox, critical).
+  sendEmail: vi.fn(async (_o: { to: string; subject: string; html: string; text?: string; critical?: boolean }) => ({ id: 'em_staff' })),
 }))
 
 vi.mock('@/lib/event-emails/tenant-mail', async (orig) => ({
@@ -17,6 +19,10 @@ vi.mock('@/lib/event-emails/tenant-mail', async (orig) => ({
   sendTenantConfirmation: h.confirmation,
 }))
 vi.mock('@/lib/audit/route', () => ({ auditMutation: h.audit }))
+vi.mock('@/lib/email', async (orig) => ({
+  ...(await orig<typeof import('@/lib/email')>()),
+  sendEmail: h.sendEmail,
+}))
 
 const {
   settleTenantGuardianConsentSigned,
@@ -398,7 +404,7 @@ describe('the retry cap (s5-programme.26)', () => {
     expect(notifyStaff).not.toHaveBeenCalled()
   })
 
-  it('at the cap, rescheduling stops: the row is marked for staff, and the event’s tenant’s staff are alerted once, with ids only', async () => {
+  it('at the cap, rescheduling stops: the row is marked for staff, and Stellr’s platform staff are alerted once, with ids only', async () => {
     arrangeRetries([{ ...ROW, status: 'declined', removal_attempts: 4 }])
     const notifyStaff = vi.fn(async (_input: { body: string; email?: { html: string; text?: string } }, _opts?: { tenantId?: string }) => {})
     const r = await sweepTenantGuardianConsents(db, { now: NOW, deleteRegistration: failing(), voidEnvelope: vi.fn(), notifyStaff })
@@ -410,18 +416,22 @@ describe('the retry cap (s5-programme.26)', () => {
 
     expect(notifyStaff).toHaveBeenCalledTimes(1)
     const [input, opts] = notifyStaff.mock.calls[0]
-    expect(opts).toEqual({ tenantId: CANARY })
+    // BF-45: Stellr's platform staff, never the event's tenant (no tenant option, so notifyCommunityAdmins means Stellr).
+    expect(opts).toBeUndefined()
     expect(input).toMatchObject({ type: 'action', referenceType: 'tenant_guardian_consent', referenceId: 'tgc-1' })
     for (const text of [input.body, input.email?.html, input.email?.text]) {
       expect(text).toContain('reg-1')
       expect(text).toContain('tgc-1')
-      expect(text).toContain('p-1')
+      expect(text).toContain(CANARY)
+      expect(text).toContain('5 attempts')
       expect(text).not.toContain(PARTICIPANT.email)
       expect(text).not.toContain(PARTICIPANT.first_name)
       expect(text).not.toContain(PARTICIPANT.registrations.event_title)
     }
     // The registrant is told nothing: the registration is still there.
     expect(h.confirmation).not.toHaveBeenCalled()
+    // A passed alert replaces the default: the staff inbox gets nothing besides.
+    expect(h.sendEmail).not.toHaveBeenCalled()
   })
 
   it('a row another run already marked alerts nobody again', async () => {
@@ -448,30 +458,59 @@ describe('the retry cap (s5-programme.26)', () => {
     expect(notifyStaff).toHaveBeenCalledTimes(1)
   })
 
-  it('with no staff alert passed, the cap does not escalate: the row is rescheduled as before, and the log carries ids only', async () => {
+  it('with no staff alert passed, the cap still escalates: one critical email to Stellr’s staff inbox, ids and counts only (s5-programme.52)', async () => {
     arrangeRetries([{ ...ROW, status: 'declined', removal_attempts: 4 }])
     const errors = vi.spyOn(console, 'error').mockImplementation(() => {})
     const r = await sweepTenantGuardianConsents(db, { now: NOW, deleteRegistration: failing(), voidEnvelope: vi.fn() })
-    expect(r).toMatchObject({ removed: [], escalated: [], errors: [] })
+    expect(r).toMatchObject({ removed: [], escalated: ['tgc-1'], errors: [] })
     const updates = rec.calls.filter((c) => c.table === 'tenant_guardian_consents' && c.op === 'update')
-    expect(updates.some((c) => 'escalated_at' in (c.payload as object))).toBe(false)
-    expect(updates.at(-1)!.payload).toEqual({ removal_attempts: 5, next_attempt_at: new Date(NOW.getTime() + 20 * 3600_000).toISOString() })
-    expect(updates.at(-1)!.filters).toEqual(expect.arrayContaining([['eq', 'id', 'tgc-1']]))
+    // Marked, not rescheduled.
+    expect(updates.at(-1)!.payload).toEqual({ removal_attempts: 5, next_attempt_at: null, escalated_at: NOW.toISOString() })
+    expect(updates.some((c) => 'next_attempt_at' in (c.payload as object) && (c.payload as { next_attempt_at: unknown }).next_attempt_at !== null)).toBe(false)
+
+    expect(h.sendEmail).toHaveBeenCalledTimes(1)
+    const mail = h.sendEmail.mock.calls[0][0]
+    expect(mail.to).toBe(teamInboxEmail())
+    expect(mail.critical).toBe(true)
+    for (const text of [mail.subject, mail.html, mail.text ?? '']) {
+      expect(text).not.toContain(PARTICIPANT.email)
+      expect(text).not.toContain(PARTICIPANT.first_name)
+      expect(text).not.toContain(PARTICIPANT.registrations.event_title)
+    }
+    for (const id of ['tgc-1', 'reg-1', CANARY, '5 attempts']) expect(mail.text).toContain(id)
+    // Ids only: not even the participant row, which the spec's list leaves out.
+    expect(mail.text).not.toContain('p-1')
     const logged = errors.mock.calls.map((c) => c.map(String).join(' ')).join('\n')
-    expect(logged).toContain('tgc-1')
-    expect(logged).toContain('no staff alert is wired')
+    expect(logged).not.toContain('no staff alert is wired')
     expect(logged).not.toContain(PARTICIPANT.email)
-    expect(logged).not.toContain(PARTICIPANT.first_name)
     errors.mockRestore()
   })
 
-  it('with no staff alert passed, a row well past the cap is still retried each run', async () => {
+  it('with no staff alert passed, a row well past the cap is escalated, not retried again', async () => {
     arrangeRetries([{ ...ROW, status: 'expired', removal_attempts: 9 }])
     const errors = vi.spyOn(console, 'error').mockImplementation(() => {})
     const r = await sweepTenantGuardianConsents(db, { now: NOW, deleteRegistration: failing(), voidEnvelope: vi.fn() })
-    expect(r.escalated).toEqual([])
+    expect(r.escalated).toEqual(['tgc-1'])
     const last = rec.calls.filter((c) => c.table === 'tenant_guardian_consents' && c.op === 'update').at(-1)!
-    expect(last.payload).toEqual({ removal_attempts: 10, next_attempt_at: new Date(NOW.getTime() + 20 * 3600_000).toISOString() })
+    expect(last.payload).toEqual({ removal_attempts: 10, next_attempt_at: null, escalated_at: NOW.toISOString() })
+    expect(h.sendEmail).toHaveBeenCalledTimes(1)
+    errors.mockRestore()
+  })
+
+  it('a row another run already escalated sends the default alert no second time', async () => {
+    arrangeRetries([{ ...ROW, status: 'declined', removal_attempts: 4 }], [])
+    const r = await sweepTenantGuardianConsents(db, { now: NOW, deleteRegistration: failing(), voidEnvelope: vi.fn() })
+    expect(r.escalated).toEqual(['tgc-1'])
+    expect(h.sendEmail).not.toHaveBeenCalled()
+  })
+
+  it('a failed default alert does not throw, and the row stays marked', async () => {
+    arrangeRetries([{ ...ROW, status: 'declined', removal_attempts: 4 }])
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {})
+    h.sendEmail.mockRejectedValueOnce(new Error('mail down'))
+    const r = await sweepTenantGuardianConsents(db, { now: NOW, deleteRegistration: failing(), voidEnvelope: vi.fn() })
+    expect(r).toMatchObject({ escalated: ['tgc-1'], errors: [] })
+    expect(h.sendEmail).toHaveBeenCalledTimes(1)
     errors.mockRestore()
   })
 
@@ -576,5 +615,146 @@ describe('helpers', () => {
     }
     expect(allowed).toBe(GUARDIAN_INVITES_PER_TENANT_PER_HOUR)
     expect(await consentInvitationRefusal(OTHER, 'cap-other@example.com')).toBeNull()
+  })
+})
+
+const { teamInboxEmail } = await import('@/lib/email')
+const { recordConsentAudit, sendConsentStaffAlert, pendingConsentParticipantIds } = await import('./tenant-guardian-consent')
+
+describe('a guardian invitation that did not go reaches staff (s5-programme.52)', () => {
+
+  /** The consent row the alert reads its registration and envelope from. */
+  function arrangeConsent(id: string, row: unknown = { registration_id: `reg-${id}`, agreement_id: `agr-${id}` }) {
+    rec.respond((c: DbCall): DbResult | undefined =>
+      c.table === 'tenant_guardian_consents' && c.op === 'select' && c.single === 'maybe' ? { data: row, error: null } : undefined)
+  }
+  const quiet = () => vi.spyOn(console, 'error').mockImplementation(() => {})
+
+  it.each(['failed', 'not_sent', 'no_sender'])('an invitation %s: one critical email to Stellr’s staff inbox, with ids only', async (invitation) => {
+    const errors = quiet()
+    const id = `inv-${invitation}`
+    arrangeConsent(id)
+    await recordConsentAudit('registration.guardian_consent.request', { id, tenant_id: CANARY }, { invitation }, { db })
+    expect(h.sendEmail).toHaveBeenCalledTimes(1)
+    const mail = h.sendEmail.mock.calls[0][0]
+    expect(mail.to).toBe(teamInboxEmail())
+    expect(mail.critical).toBe(true)
+    expect(mail.subject).toBe("Action needed: a guardian's consent form was not sent")
+    for (const part of [id, `reg-${id}`, CANARY, invitation]) expect(mail.text).toContain(part)
+    // The read is by the consent id, and asks for ids alone.
+    const read = rec.calls.find((c) => c.table === 'tenant_guardian_consents' && c.single === 'maybe')!
+    expect(read.filters).toEqual([['eq', 'id', id]])
+    // Nothing personal: the alert never reads the participant, the envelope or the guardian.
+    expect(rec.calls.some((c) => ['participants', 'agreements', 'agreement_recipients'].includes(c.table))).toBe(false)
+    const logged = errors.mock.calls.map((c) => c.map(String).join(' ')).join('\n')
+    expect(logged).toContain(id)
+    errors.mockRestore()
+  })
+
+  it('an invitation that went, or waits in the signing outbox, alerts nobody', async () => {
+    for (const invitation of ['sent', 'deferred']) {
+      arrangeConsent(`ok-${invitation}`)
+      await recordConsentAudit('registration.guardian_consent.request', { id: `ok-${invitation}`, tenant_id: CANARY }, { invitation }, { db })
+    }
+    expect(h.sendEmail).not.toHaveBeenCalled()
+    expect(rec.calls).toEqual([])
+  })
+
+  it('the same consent and envelope alerts once; a new envelope is a new state and alerts again', async () => {
+    const errors = quiet()
+    arrangeConsent('dedupe', { registration_id: 'reg-d', agreement_id: 'agr-d1' })
+    await recordConsentAudit('registration.guardian_consent.request', { id: 'dedupe', tenant_id: CANARY }, { invitation: 'failed' }, { db })
+    await recordConsentAudit('registration.guardian_consent.request', { id: 'dedupe', tenant_id: CANARY }, { invitation: 'failed' }, { db })
+    expect(h.sendEmail).toHaveBeenCalledTimes(1)
+    arrangeConsent('dedupe', { registration_id: 'reg-d', agreement_id: 'agr-d2' })
+    await recordConsentAudit('registration.guardian_consent.request', { id: 'dedupe', tenant_id: CANARY }, { invitation: 'failed' }, { db })
+    expect(h.sendEmail).toHaveBeenCalledTimes(2)
+    errors.mockRestore()
+  })
+
+  it('with no client passed (as the register hooks call it), it reads nothing and still alerts with the consent and tenant', async () => {
+    const errors = quiet()
+    await recordConsentAudit('registration.guardian_consent.request', { id: 'no-db', tenant_id: CANARY }, { invitation: 'failed' }, { afterResponse: true })
+    expect(rec.calls).toEqual([])
+    expect(h.sendEmail).toHaveBeenCalledTimes(1)
+    const text = h.sendEmail.mock.calls[0][0].text ?? ''
+    for (const part of ['no-db', CANARY, 'registration unknown', 'failed']) expect(text).toContain(part)
+    errors.mockRestore()
+  })
+
+  it('a failed consent read still alerts, with the ids it has', async () => {
+    const errors = quiet()
+    rec.respond((c) => (c.table === 'tenant_guardian_consents' ? { data: null, error: { message: 'down' } } : undefined))
+    await recordConsentAudit('registration.guardian_consent.request', { id: 'unread', tenant_id: CANARY }, { invitation: 'failed' }, { db })
+    expect(h.sendEmail).toHaveBeenCalledTimes(1)
+    expect(h.sendEmail.mock.calls[0][0].text).toContain('registration unknown')
+    errors.mockRestore()
+  })
+
+  it('a passed staff alert is used instead, for Stellr’s platform staff', async () => {
+    const errors = quiet()
+    arrangeConsent('passed')
+    const notifyStaff = vi.fn(async (_input: { body: string }, _opts?: { tenantId?: string }) => {})
+    await recordConsentAudit('registration.guardian_consent.request', { id: 'passed', tenant_id: CANARY }, { invitation: 'failed' }, { db, notifyStaff })
+    expect(notifyStaff).toHaveBeenCalledTimes(1)
+    expect(notifyStaff.mock.calls[0][1]).toBeUndefined()
+    expect(h.sendEmail).not.toHaveBeenCalled()
+    errors.mockRestore()
+  })
+
+  it('a send that fails does not throw from the audit step', async () => {
+    const errors = quiet()
+    arrangeConsent('send-fails')
+    h.sendEmail.mockRejectedValueOnce(new Error('mail down'))
+    await expect(
+      recordConsentAudit('registration.guardian_consent.request', { id: 'send-fails', tenant_id: CANARY }, { invitation: 'failed' }, { db }),
+    ).resolves.toBeUndefined()
+    errors.mockRestore()
+  })
+
+  it('the Stellr path sends nothing and reads nothing', async () => {
+    await recordConsentAudit('registration.guardian_consent.request', { id: 'stellr', tenant_id: STELLR_TENANT_ID }, { invitation: 'failed' }, { db })
+    expect(await sendConsentStaffAlert({ kind: 'removal_escalated', consentId: 'stellr', registrationId: 'reg-s', tenantId: STELLR_TENANT_ID, attempts: 5 })).toBe(false)
+    expect(h.sendEmail).not.toHaveBeenCalled()
+    expect(rec.calls).toEqual([])
+  })
+
+  it('other consent steps alert nobody', async () => {
+    await recordConsentAudit('registration.guardian_consent.expire', { id: 'other', tenant_id: CANARY }, {}, { db })
+    expect(h.sendEmail).not.toHaveBeenCalled()
+  })
+})
+
+describe('the admin roster’s pending-consent marker (T-23)', () => {
+
+  it('reads the roster’s pending consents and keeps another tenant’s rows only', async () => {
+    rec.respond((c) => (c.table === 'tenant_guardian_consents'
+      ? { data: [{ participant_id: 'p-1', tenant_id: CANARY }, { participant_id: 'p-2', tenant_id: STELLR_TENANT_ID }], error: null }
+      : undefined))
+    expect([...(await pendingConsentParticipantIds(db, ['p-1', 'p-2', 'p-1']))]).toEqual(['p-1'])
+    const read = rec.calls[0]
+    expect(read.filters).toEqual([['in', 'participant_id', ['p-1', 'p-2']], ['eq', 'status', 'pending']])
+  })
+
+  it('a Stellr event has none: its roster is unchanged', async () => {
+    // What the database holds for a Stellr event: no consent rows at all.
+    expect((await pendingConsentParticipantIds(db, ['p-1'])).size).toBe(0)
+  })
+
+  it('a failed read throws, so the page falls back rather than showing nobody as waiting', async () => {
+    rec.respond(() => ({ data: null, error: { message: 'down' } }))
+    await expect(pendingConsentParticipantIds(db, ['p-1'])).rejects.toThrow('down')
+  })
+})
+
+describe('the staff alert text', () => {
+  it('carries a coded outcome only: anything else is reported as other', async () => {
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {})
+    await recordConsentAudit('registration.guardian_consent.request', { id: 'free-text', tenant_id: CANARY }, { invitation: 'Bounced for parent@example.com' })
+    expect(h.sendEmail).toHaveBeenCalledTimes(1)
+    const text = h.sendEmail.mock.calls[0][0].text ?? ''
+    expect(text).toContain('(outcome: other)')
+    expect(text).not.toContain('parent@example.com')
+    errors.mockRestore()
   })
 })

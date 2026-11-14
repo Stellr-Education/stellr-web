@@ -28,6 +28,7 @@ const h = vi.hoisted(() => ({
   provision: vi.fn(async () => ({ signInToken: null, clerkUserId: 'user_1' })),
   audit: vi.fn(async (_m: Record<string, unknown>, _o?: unknown) => ({ ok: false, skipped: 'disabled' })),
   limit: vi.fn(async (_key: string, _o: { limit: number; windowMs: number; tenantId: string | null }) => ({ ok: true, retryAfterSeconds: 0 })),
+  sendEmail: vi.fn(async (_o: { to: string; subject: string; html: string; text?: string; critical?: boolean }) => ({ id: 'em_x' })),
 }))
 
 vi.mock('@/lib/tenancy/request-tenant', () => ({ requestTenant: h.requestTenant }))
@@ -69,6 +70,7 @@ vi.mock('@/lib/event-emails/tenant-mail', async (orig) => ({
   loadTenantSender: h.sender,
 }))
 vi.mock('@/lib/event-emails/tenant-signing', () => ({ sendTenantSigningInvitation: h.invite }))
+vi.mock('@/lib/email', async (orig) => ({ ...(await orig<typeof import('@/lib/email')>()), sendEmail: h.sendEmail }))
 vi.mock('@/lib/esign/native/templates-store', async (orig) => ({
   ...(await orig<typeof import('@/lib/esign/native/templates-store')>()),
   loadActiveTemplate: h.template,
@@ -87,6 +89,7 @@ vi.mock('@/lib/registration-checkout', () => ({
 }))
 
 const { POST } = await import('@/app/api/register/individual/route')
+const { teamInboxEmail } = await import('@/lib/email')
 
 type Person = Record<string, unknown>
 
@@ -130,6 +133,9 @@ function respond(row: Partial<typeof MIRROR> | null = {}) {
 }
 
 const writes = () => rec.calls.filter((c) => c.op !== 'select').map((c) => `${c.op} ${c.table}`)
+/** Guardian-consent alerts sent to Stellr's staff inbox. */
+const staffAlerts = () =>
+  h.sendEmail.mock.calls.map(([o]) => o).filter((o) => o.to === teamInboxEmail() && /guardian/i.test(o.subject))
 const APPROVED_REFUSAL = {
   status: 400,
   body: { code: 'under_minimum_age', error: 'You must be 18 or older to register for this event online. Please contact the event organiser.' },
@@ -230,6 +236,8 @@ describe('S5 wave 6: a 14-17-year-old on a tenant event', () => {
     const request = h.audit.mock.calls.find(([m]) => m.action === 'registration.guardian_consent.request')
     expect(request?.[0]).toMatchObject({ target: { table: 'tenant_guardian_consents', id: 'tgc-1' }, metadata: { event_tenant_id: CANARY, invitation: 'sent' } })
     expect(JSON.stringify(request?.[0])).not.toMatch(/parent@example\.com|kid@example\.com/)
+    // The invitation went: staff are not alerted.
+    expect(staffAlerts()).toEqual([])
   })
 
   it.each([
@@ -250,6 +258,22 @@ describe('S5 wave 6: a 14-17-year-old on a tenant event', () => {
     // Recorded where staff can see it: the request audit carries the outcome.
     const request = h.audit.mock.calls.find(([m]) => m.action === 'registration.guardian_consent.request')
     expect(request?.[0]).toMatchObject({ metadata: { invitation: recorded } })
+    // And staff are told (s5-programme.52): one critical email to Stellr's staff
+    // inbox, with the consent and tenant ids and the outcome, and nothing about the
+    // registrant or the guardian. The hooks pass the audit no client, so the alert
+    // reads nothing and names the registration "unknown" (staff find it from the
+    // consent); lib/registration/tenant-guardian-consent.test.ts covers a passed client.
+    const alerts = staffAlerts()
+    expect(alerts).toHaveLength(1)
+    expect(alerts[0].critical).toBe(true)
+    for (const id of ['tgc-1', CANARY, recorded]) expect(alerts[0].text).toContain(id)
+    for (const part of [alerts[0].subject, alerts[0].html, alerts[0].text ?? '']) {
+      expect(part).not.toMatch(/parent@example\.com|kid@example\.com|Kit|Pat|Canary Cup|Sydney High/)
+      expect(part).not.toContain(dateBefore(15))
+    }
+    // The dedupe key holds ids alone, and is Stellr's (not the event tenant's).
+    const dedupe = h.limit.mock.calls.find(([key]) => key.startsWith('tenant-guardian-consent:staff-alert:'))
+    expect(dedupe).toEqual(['tenant-guardian-consent:staff-alert:invitation:tgc-1:none', expect.objectContaining({ limit: 1, tenantId: null })])
   })
 
   it('flag on: an invitation waiting in the signing outbox counts as out, and the wording does not say it has gone', async () => {
@@ -260,6 +284,7 @@ describe('S5 wave 6: a 14-17-year-old on a tenant event', () => {
     expect(text).not.toMatch(/we've emailed/i)
     const request = h.audit.mock.calls.find(([m]) => m.action === 'registration.guardian_consent.request')
     expect(request?.[0]).toMatchObject({ metadata: { invitation: 'deferred' } })
+    expect(staffAlerts()).toEqual([])
   })
 
   it.each([
