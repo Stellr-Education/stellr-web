@@ -3,7 +3,9 @@ import { PDFDocument } from 'pdf-lib'
 import { pdflibAddPlaceholder } from '@signpdf/placeholder-pdf-lib'
 import signpdf, { Signer } from '@signpdf/signpdf'
 import { SUBFILTER_ETSI_CADES_DETACHED } from '@signpdf/utils'
+import { X509Certificate } from 'node:crypto'
 import { isRealProductionApp } from '@/lib/env-guards'
+import { TimestampVerificationError, verifyTimestampToken } from './tsa-verify'
 
 // The certificate seal (PAdES): Stellr's own digital signature on the finished
 // agreement, so any PDF reader can show that the file has not changed since it
@@ -18,6 +20,7 @@ import { isRealProductionApp } from '@/lib/env-guards'
 //   ESIGN_SEAL_P12            base64 PKCS#12 holding the seal key and its chain
 //   ESIGN_SEAL_P12_PASSWORD   its password
 //   ESIGN_TSA_URL             RFC 3161 timestamp service (default DigiCert's; "off" for none)
+//   ESIGN_TSA_TRUST_PEM       extra PEM trust anchor(s) for a service other than DigiCert's
 
 const OID = {
   data: '1.2.840.113549.1.7.1',
@@ -136,37 +139,51 @@ export interface TimestampToken {
   genTime: Date
 }
 
+export interface TimestampCheck {
+  /** The hash we asked the service to vouch for (binary string). */
+  imprint: string
+  /** The nonce we sent (DER INTEGER value bytes, binary string). */
+  nonce: string
+  /** Who may vouch for a time. Defaults to the bundled DigiCert root plus ESIGN_TSA_TRUST_PEM. */
+  trustAnchors?: X509Certificate[]
+  /** The local clock genTime is held to. */
+  now?: Date
+}
+
 /**
- * Reads a TimeStampResp: granted, its token, and the token's time. Checks the
- * token is for the hash we sent; anything else is refused.
+ * Reads a TimeStampResp and verifies its token before anything trusts it
+ * (deep review v2.11, closing the ES-8 limitation): the status is granted, the
+ * token is for the hash and nonce we sent, its CMS signature verifies with the
+ * signer certificate, that certificate is a timestamping certificate chaining
+ * to a trust anchor, and genTime is close to our clock. See ./tsa-verify.
  *
- * deep review ES-8 — evidential limitation (documented, not fully closed here):
- * this confirms the status and the message imprint only. It does NOT verify the
- * token's CMS signature, the TSA certificate chain / timeStamping EKU, or the
- * nonce echo, so the recorded `genTime` is trusted from the (now TLS) TSA rather
- * than cryptographically proven. Full token verification needs a dedicated ASN.1
- * verifier (e.g. pkijs / @peculiar/x509 — node-forge's PKCS#1 v1.5 verify is
- * GHSA-86w9 and must not be used) and is deferred as a larger, owner-scoped
- * change. The whole timestamp path already fails safe: any parse/verify failure
- * returns a null token, so the seal is recorded as `pades` (no trusted time),
- * never as `pades-t` with a fabricated time.
+ * Throws on any failure. The caller (tsaClient) turns that into "no timestamp":
+ * the seal is then recorded as `pades` (no trusted time), never as `pades-t`
+ * with an unproven time, and signing is never blocked.
  */
-export function parseTimestampResponse(der: string, imprint: string): TimestampToken {
-  const resp = asn1.fromDer(der)
-  const parts = resp.value as forge.asn1.Asn1[]
-  const statusInfo = parts[0].value as forge.asn1.Asn1[]
-  const status = (statusInfo[0].value as string).charCodeAt((statusInfo[0].value as string).length - 1)
-  if (status !== 0 && status !== 1) throw new Error(`Timestamp refused (status ${status})`)
+export function parseTimestampResponse(der: string, check: TimestampCheck): TimestampToken {
+  let resp: forge.asn1.Asn1
+  let parts: forge.asn1.Asn1[]
+  let status: number
+  try {
+    resp = asn1.fromDer(der)
+    parts = resp.value as forge.asn1.Asn1[]
+    const statusInfo = parts[0].value as forge.asn1.Asn1[]
+    status = (statusInfo[0].value as string).charCodeAt((statusInfo[0].value as string).length - 1)
+  } catch {
+    throw new TimestampVerificationError('malformed', 'Timestamp response cannot be read')
+  }
+  if (status !== 0 && status !== 1) throw new TimestampVerificationError('refused', `Timestamp refused (status ${status})`)
   const token = parts[1]
-  if (!token) throw new Error('Timestamp response has no token')
-  // ContentInfo → [0] SignedData → encapContentInfo → [0] eContent (OCTET STRING of TSTInfo)
-  const signedData = ((token.value as forge.asn1.Asn1[])[1].value as forge.asn1.Asn1[])[0]
-  const encap = (signedData.value as forge.asn1.Asn1[])[2]
-  const eContent = ((encap.value as forge.asn1.Asn1[])[1].value as forge.asn1.Asn1[])[0]
-  const tstInfo = asn1.fromDer(eContent.value as string).value as forge.asn1.Asn1[]
-  const messageImprint = tstInfo[2].value as forge.asn1.Asn1[]
-  if ((messageImprint[1].value as string) !== imprint) throw new Error('Timestamp is for a different hash')
-  const genTime = asn1.generalizedTimeToDate(tstInfo[4].value as string)
+  if (!token) throw new TimestampVerificationError('malformed', 'Timestamp response has no token')
+  // Verify the exact bytes the seal will embed.
+  const tokenDer = Buffer.from(asn1.toDer(token).getBytes(), 'binary')
+  const { genTime } = verifyTimestampToken(tokenDer, {
+    imprint: Buffer.from(check.imprint, 'binary'),
+    nonce: Buffer.from(check.nonce, 'binary'),
+    trustAnchors: check.trustAnchors,
+    now: check.now,
+  })
   return { token, genTime }
 }
 
@@ -176,27 +193,52 @@ function positiveNonce(): string {
   return String.fromCharCode((n.charCodeAt(0) & 0x7f) | 0x40) + n.slice(1)
 }
 
-/** Asks the timestamp service to vouch for a hash. Null when it cannot be had: the seal still stands without it. */
-export function tsaClient(url = process.env.ESIGN_TSA_URL || DEFAULT_TSA, fetcher: typeof fetch = fetch) {
+export interface TsaClientOptions {
+  trustAnchors?: X509Certificate[]
+  now?: () => Date
+}
+
+/**
+ * Asks the timestamp service to vouch for a hash. Null when it cannot be had or
+ * does not verify: the seal still stands without it, and `lastError()` says why
+ * (the name of the failed check only; nothing about the document or signers).
+ */
+export function tsaClient(
+  url = process.env.ESIGN_TSA_URL || DEFAULT_TSA,
+  fetcher: typeof fetch = fetch,
+  opts: TsaClientOptions = {},
+) {
   let last: TimestampToken | null = null
+  let lastError: string | null = null
   const request = async (imprint: string): Promise<forge.asn1.Asn1 | null> => {
     try {
+      const nonce = positiveNonce()
       const res = await fetcher(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/timestamp-query' },
-        body: Buffer.from(timestampRequest(imprint, positiveNonce()), 'binary'),
+        body: Buffer.from(timestampRequest(imprint, nonce), 'binary'),
         signal: AbortSignal.timeout(15_000),
       })
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
-      last = parseTimestampResponse(Buffer.from(await res.arrayBuffer()).toString('binary'), imprint)
+      last = parseTimestampResponse(Buffer.from(await res.arrayBuffer()).toString('binary'), {
+        imprint,
+        nonce,
+        trustAnchors: opts.trustAnchors,
+        now: opts.now?.(),
+      })
+      lastError = null
       return last.token
     } catch (err) {
-      console.error('[esign-seal] timestamp unavailable, sealing without one:', err instanceof Error ? err.message : err)
+      const reason = err instanceof TimestampVerificationError
+        ? `verification failed (${err.reason}): ${err.message}`
+        : `unavailable: ${err instanceof Error ? err.message : String(err)}`
+      console.error(`[esign-seal] timestamp ${reason}; sealing without one`)
       last = null
+      lastError = reason
       return null
     }
   }
-  return { request, last: () => last }
+  return { request, last: () => last, lastError: () => lastError }
 }
 
 // ── Sealing a PDF ────────────────────────────────────────────────────────────
@@ -213,6 +255,8 @@ export interface SealResult {
   /** 'pades-t' with a trusted timestamp, 'pades' without one. */
   kind: 'pades' | 'pades-t'
   timestampedAt: string | null
+  /** Why there is no timestamp, when one was asked for and refused or unverifiable. */
+  timestampError: string | null
   certificate: { subject: string; issuer: string; serial: string; sha256: string }
 }
 
@@ -244,6 +288,7 @@ export async function sealPdf(
     bytes: new Uint8Array(sealed),
     kind: stamp ? 'pades-t' : 'pades',
     timestampedAt: stamp?.genTime.toISOString() ?? null,
+    timestampError: stamp ? null : (tsa?.lastError() ?? null),
     certificate: {
       subject: cn(leaf.subject),
       issuer: cn(leaf.issuer),
