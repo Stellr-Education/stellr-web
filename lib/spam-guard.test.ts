@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { MAX_DWELL_MS, MIN_DWELL_MS, checkSpamSignals } from './spam-guard'
+import { CLOCK_SKEW_MS, MAX_DWELL_MS, MIN_DWELL_MS, checkSpamSignals } from './spam-guard'
 
 const NOW = Date.UTC(2026, 10, 14, 12, 0, 0)
 const req = new Request('https://www.stellreducation.org/api/contact', { method: 'POST' })
@@ -84,6 +84,49 @@ describe('checkSpamSignals: timing', () => {
 
   it('still trips a fast submission on the browser clock', async () => {
     const body = { ...real, renderedAt: NOW - 60_000, submittedAt: NOW - 60_000 + 500 }
+    await expectSilentAccept(checkSpamSignals(body, req, 'contact'))
+  })
+
+  it('passes a browser clock that is 10 minutes slow', () => {
+    const slowClock = NOW - 10 * 60_000
+    const body = { ...real, renderedAt: slowClock - 30_000, submittedAt: slowClock }
+    expect(checkSpamSignals(body, req, 'contact')).toBeNull()
+  })
+
+  it('passes a browser clock right at the skew allowance', () => {
+    const body = { ...real, renderedAt: NOW + CLOCK_SKEW_MS - 30_000, submittedAt: NOW + CLOCK_SKEW_MS }
+    expect(checkSpamSignals(body, req, 'contact')).toBeNull()
+  })
+})
+
+// The staleness half of the trap runs on the server's clock even when the
+// browser sends submittedAt: a replayed real body keeps its plausible dwell.
+describe('checkSpamSignals: stale or replayed bodies with submittedAt', () => {
+  it('silently accepts a 7-hour-old body with a plausible dwell', async () => {
+    const renderedAt = NOW - 7 * 60 * 60_000
+    const body = { ...real, renderedAt, submittedAt: renderedAt + 10_000 }
+    await expectSilentAccept(checkSpamSignals(body, req, 'contact'))
+    expect(warn).toHaveBeenCalledWith('[spam] timing', 'contact')
+  })
+
+  it('silently accepts a body replayed just past the skew allowance', async () => {
+    const submittedAt = NOW - CLOCK_SKEW_MS - 1
+    const body = { ...real, renderedAt: submittedAt - 30_000, submittedAt }
+    await expectSilentAccept(checkSpamSignals(body, req, 'contact'))
+  })
+
+  it('silently accepts forged epoch-start timestamps', async () => {
+    await expectSilentAccept(checkSpamSignals({ ...real, renderedAt: 1, submittedAt: 5_001 }, req, 'contact'))
+  })
+
+  it('silently accepts timestamps further ahead than the skew allowance', async () => {
+    const submittedAt = NOW + CLOCK_SKEW_MS + 1
+    const body = { ...real, renderedAt: submittedAt - 30_000, submittedAt }
+    await expectSilentAccept(checkSpamSignals(body, req, 'contact'))
+  })
+
+  it('still trips a dwell past the ceiling on the browser clock', async () => {
+    const body = { ...real, renderedAt: NOW - MAX_DWELL_MS - 1, submittedAt: NOW }
     await expectSilentAccept(checkSpamSignals(body, req, 'contact'))
   })
 })

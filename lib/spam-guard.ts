@@ -24,8 +24,9 @@ export const RENDERED_AT_FIELD = 'renderedAt'
 /**
  * Epoch ms at which the visitor pressed submit, on the same browser clock.
  * Measuring the dwell as submittedAt − renderedAt keeps a browser whose clock
- * is minutes off from reading as "instant" or "stale" and losing a real
- * submission. A body without it falls back to the server's clock.
+ * is minutes off from reading as "instant" and losing a real submission. The
+ * staleness check still runs on the server's clock (see CLOCK_SKEW_MS). A body
+ * without it falls back to the server's clock for both.
  */
 export const SUBMITTED_AT_FIELD = 'submittedAt'
 
@@ -33,6 +34,15 @@ export const SUBMITTED_AT_FIELD = 'submittedAt'
 export const MIN_DWELL_MS = 3_000
 /** Slower than this is a stale page or a replayed request. */
 export const MAX_DWELL_MS = 6 * 60 * 60 * 1000
+/**
+ * How far the browser's clock may sit from the server's. submittedAt must fall
+ * within this of the server's now, which also bounds renderedAt to no older
+ * than MAX_DWELL_MS + CLOCK_SKEW_MS and no further ahead than CLOCK_SKEW_MS.
+ * Without it a captured real body (its dwell a plausible 5–60 s) would replay
+ * forever. A browser clock more than this far off has its submissions dropped
+ * in production; an hour covers ordinary drift, not a wrong time zone.
+ */
+export const CLOCK_SKEW_MS = 60 * 60 * 1000
 
 const SPAM_FIELDS = [HONEYPOT_FIELD, RENDERED_AT_FIELD, SUBMITTED_AT_FIELD] as const
 
@@ -67,6 +77,19 @@ function silentAccept(signal: 'honeypot' | 'timing', route: string): Response {
 }
 
 /**
+ * The timing trap. The floor and ceiling are on the dwell, measured on the
+ * browser's own clock when it sent submittedAt. Staleness is on the server's
+ * clock: a submittedAt further than CLOCK_SKEW_MS from now is a replay or a
+ * forgery, however plausible its dwell.
+ */
+function timingTripped(renderedAt: number, submittedAt: number | null, now: number): boolean {
+  const dwell = (submittedAt ?? now) - renderedAt
+  if (dwell < MIN_DWELL_MS || dwell > MAX_DWELL_MS) return true
+  if (submittedAt !== null && Math.abs(now - submittedAt) > CLOCK_SKEW_MS) return true
+  return false
+}
+
+/**
  * Check one submission's spam signals. Returns a ready-to-return silent 200
  * when a trap tripped, or null to carry on. Either way the honeypot and timing
  * fields are removed from `body`, so nothing after this call can store or send
@@ -95,8 +118,7 @@ export function checkSpamSignals(body: unknown, req: Request, routeName: string)
     return null
   }
 
-  const dwell = (submittedAt ?? Date.now()) - renderedAt
-  if (dwell >= MIN_DWELL_MS && dwell <= MAX_DWELL_MS) return null
+  if (!timingTripped(renderedAt, submittedAt, Date.now())) return null
 
   // Enforced in production only. Everywhere else the e2e suite drives these
   // forms, and a test browser is a fast form-filler by design: it would trip
