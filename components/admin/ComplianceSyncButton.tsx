@@ -3,12 +3,22 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Button } from '@stellr/web-ui'
+import { AdminOnlyNote, useCan } from '@/components/admin/CapabilitiesContext'
 
 // "Sync now" for the compliance audit page: re-polls every open background
 // check against the provider (POST /api/admin/compliance/sync). This is the
 // recovery path when a webhook was missed, and the only refresh path on the
 // dev deployment where the daily cron declines to run.
+//
+// A sync can clear people (a clear result marks them cleared), so it sits with
+// the other clearance decisions: clearance:verify, an admin's alone.
 export function ComplianceSyncButton() {
+  const canSync = useCan('clearance:verify')
+  if (!canSync) return <AdminOnlyNote>An admin syncs checks with Checkr.</AdminOnlyNote>
+  return <SyncButton />
+}
+
+function SyncButton() {
   const router = useRouter()
   const [busy, setBusy] = useState(false)
   const [note, setNote] = useState<string | null>(null)

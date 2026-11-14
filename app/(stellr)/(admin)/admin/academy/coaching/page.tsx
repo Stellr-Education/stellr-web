@@ -3,6 +3,7 @@ import { Plus } from 'lucide-react'
 import { listAllWorkshops, getAdminWorkshopStats } from '@/lib/coaching'
 import { AdminCoachingNav } from '@/components/admin/coaching/AdminCoachingNav'
 import { authz } from '@/lib/authz'
+import { Can } from '@/components/admin/CapabilitiesContext'
 
 export const metadata = { title: 'Admin · Coaching workshops' }
 
@@ -16,9 +17,12 @@ export default async function AdminWorkshopsPage() {
       <div className="min-w-0 flex-1 space-y-6">
         <div className="flex items-center justify-between">
           <h1 className="font-display text-[28px] font-bold text-ink">Coaching workshops</h1>
+          {/* Creating one is academy:manage, an admin's alone. */}
+          <Can cap="academy:manage">
           <Link href="/admin/academy/coaching/new" className="inline-flex items-center gap-2 rounded-[9px] bg-primary px-4 py-2.5 text-sm font-semibold text-white hover:bg-primary-deep">
             <Plus className="h-4 w-4" /> New workshop
           </Link>
+          </Can>
         </div>
 
         <div className="grid gap-4 sm:grid-cols-4">

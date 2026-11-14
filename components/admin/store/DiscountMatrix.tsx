@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Plus, Trash2 } from 'lucide-react'
 import type { EventDiscount, TierDiscount } from '@/lib/store/types'
+import { AdminOnlyNote, useCan } from '@/components/admin/CapabilitiesContext'
 
 type Lookup = { id: string; name: string }
 
@@ -26,6 +27,8 @@ export function DiscountMatrix({
   events: EventOption[]
 }) {
   const router = useRouter()
+  // Discounts are part of the catalogue (store:write): Staff see them only.
+  const canWrite = useCan('store:write')
   const tierName = (id: string) => tiers.find((t) => t.id === id)?.name ?? id
   const productName = (id: string | null) => (id ? products.find((p) => p.id === id)?.name ?? id : '—')
 
@@ -73,9 +76,11 @@ export function DiscountMatrix({
                   </td>
                   <td className="px-4 py-2">{d.percent_off}% off</td>
                   <td className="px-4 py-2 text-right">
+                    {canWrite && (
                     <button onClick={() => remove('tier', d.id)} className="text-brand-muted-soft hover:text-red-600" aria-label="Delete">
                       <Trash2 className="h-4 w-4" />
                     </button>
+                    )}
                   </td>
                 </tr>
               ))}
@@ -87,7 +92,7 @@ export function DiscountMatrix({
             </tbody>
           </table>
         </div>
-        <AddTierDiscount tiers={tiers} products={products} onSave={save} />
+        {canWrite ? <AddTierDiscount tiers={tiers} products={products} onSave={save} /> : <AdminOnlyNote className="mt-3">An admin sets store discounts.</AdminOnlyNote>}
       </section>
 
       {/* Event discounts */}
@@ -115,9 +120,11 @@ export function DiscountMatrix({
                   </td>
                   <td className="px-4 py-2">{d.percent_off}% off</td>
                   <td className="px-4 py-2 text-right">
+                    {canWrite && (
                     <button onClick={() => remove('event', d.id)} className="text-brand-muted-soft hover:text-red-600" aria-label="Delete">
                       <Trash2 className="h-4 w-4" />
                     </button>
+                    )}
                   </td>
                 </tr>
               ))}
@@ -129,7 +136,7 @@ export function DiscountMatrix({
             </tbody>
           </table>
         </div>
-        <AddEventDiscount products={products} events={events} onSave={save} />
+        {canWrite ? <AddEventDiscount products={products} events={events} onSave={save} /> : <AdminOnlyNote className="mt-3">An admin sets store discounts.</AdminOnlyNote>}
       </section>
     </div>
   )

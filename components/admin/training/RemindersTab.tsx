@@ -3,6 +3,7 @@
 import { useId, useState } from 'react'
 import { Bell, Mail, MessageSquare } from 'lucide-react'
 import { Select } from '@stellr/web-ui'
+import { AdminOnlyNote, ReadOnlyFieldset, useCan } from '@/components/admin/CapabilitiesContext'
 
 // Per-course reminder & escalation settings with a live preview. Settings are
 // stored on the Course (training_modules); the selector scopes them to one course.
@@ -92,6 +93,8 @@ export function RemindersTab({ courses }: { courses: ReminderCourse[] }) {
   )
   const [saving, setSaving] = useState(false)
   const courseSelectId = useId()
+  // Reminder rules are academy:manage, an admin's alone.
+  const canWrite = useCan('academy:manage')
 
   const selectCourse = (id: string) => {
     setCourseId(id)
@@ -154,10 +157,11 @@ export function RemindersTab({ courses }: { courses: ReminderCourse[] }) {
           {saving && <span className="text-xs text-brand-muted-soft">Saving…</span>}
         </div>
         <p className="mt-2 text-sm text-brand-muted-soft">Each course carries its own reminder &amp; escalation rules.</p>
+        {!canWrite && <AdminOnlyNote className="mt-1">An admin changes these rules.</AdminOnlyNote>}
       </div>
 
       <div className="grid gap-6 lg:grid-cols-[1.2fr_1fr]">
-        <div className="space-y-5">
+        <ReadOnlyFieldset readOnly={!canWrite} className="space-y-5">
           {/* Delivery channels */}
           <div className="rounded-2xl border border-brand-border bg-white p-5">
             <h3 className="text-base font-bold text-brand-blue-dark">Delivery channels</h3>
@@ -191,7 +195,7 @@ export function RemindersTab({ courses }: { courses: ReminderCourse[] }) {
               onChange={(v) => update('escalate_supervisor', v)}
             />
           </div>
-        </div>
+        </ReadOnlyFieldset>
 
         {/* Live preview */}
         <div className="lg:sticky lg:top-20 lg:self-start">

@@ -4,11 +4,20 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Pencil, Trash2 } from 'lucide-react'
 import { Dialog } from '@stellr/web-ui'
+import { useCan } from '@/components/admin/CapabilitiesContext'
 
 // Binary-level edit + delete for the central resource index (handover §4.6).
 // Delete cascades to every attachment behind a confirm that names each object the
 // binary disappears from.
-export function AdminBinaryActions({
+// community:manage, an admin's alone: Staff see no actions (the banner above
+// the table says an admin manages resources).
+export function AdminBinaryActions(props: { binaryId: string; title: string; attachedObjects: string[] }) {
+  const canWrite = useCan('community:manage')
+  if (!canWrite) return <p className="text-right text-xs text-content-muted">—</p>
+  return <BinaryActions {...props} />
+}
+
+function BinaryActions({
   binaryId,
   title,
   attachedObjects,

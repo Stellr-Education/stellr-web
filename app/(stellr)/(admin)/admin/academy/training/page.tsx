@@ -11,6 +11,7 @@ import { CourseBuilder } from '@/components/admin/training/CourseBuilder'
 import type { AdminModule } from '@/components/admin/community/TrainingManager'
 import type { AdminTier } from '@/components/admin/training/ObjectAssignments'
 import { authz } from '@/lib/authz'
+import { Can } from '@/components/admin/CapabilitiesContext'
 import { recordingView, type OffloadRow, type RecordingPhase } from '@/lib/recording-view'
 
 export const metadata = { title: 'Admin — Training' }
@@ -167,12 +168,15 @@ export default async function AdminTrainingPage({
           </div>
           <h1 className="mt-1 font-heading text-[30px] font-bold leading-tight text-brand-blue-dark">{TITLES[tab]}</h1>
         </div>
-        <Link
-          href="?tab=builder&new=1"
-          className="inline-flex items-center gap-1.5 rounded-lg bg-brand-blue px-4 py-2 text-sm font-semibold text-white transition hover:bg-brand-blue-bright"
-        >
-          <Plus className="h-4 w-4" /> New course
-        </Link>
+        {/* Building courses is academy:manage, an admin's alone. */}
+        <Can cap="academy:manage">
+          <Link
+            href="?tab=builder&new=1"
+            className="inline-flex items-center gap-1.5 rounded-lg bg-brand-blue px-4 py-2 text-sm font-semibold text-white transition hover:bg-brand-blue-bright"
+          >
+            <Plus className="h-4 w-4" /> New course
+          </Link>
+        </Can>
       </div>
 
       <AdminTrainingTabs active={tab} />

@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { Button } from '@stellr/web-ui'
 import { openPendingTab } from '@/lib/open-in-new-tab'
 import { FIELD_SOURCES, FIELD_TYPES, ROLES, type Role, type TemplateField } from '@/lib/esign/native/template'
+import { AdminOnlyBanner, useCan } from '@/components/admin/CapabilitiesContext'
 
 // Admin → Consent forms → Agreement documents → Edit fields.
 //
@@ -55,7 +56,15 @@ function newField(index: number, page: number, x: number, y: number, role: Role)
   } as Field
 }
 
+// Adding and editing agreement documents is esign:manage, an admin's alone (the
+// stored PDF is an admin's to read, too).
 export function TemplateEditor(props: TemplateEditorProps) {
+  const canWrite = useCan('esign:manage')
+  if (!canWrite) return <AdminOnlyBanner>An admin adds and edits agreement documents.</AdminOnlyBanner>
+  return <Editor {...props} />
+}
+
+function Editor(props: TemplateEditorProps) {
   const [documentKey, setDocumentKey] = useState(props.documentKey)
   const [title, setTitle] = useState(props.title)
   const [pdfPath, setPdfPath] = useState(props.pdfPath)

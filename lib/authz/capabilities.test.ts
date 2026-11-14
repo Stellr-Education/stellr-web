@@ -24,9 +24,12 @@ describe('the Staff capability set (owner decisions, 13 Nov 2026)', () => {
       ['competitions:write', 'event_managers:assign', 'export', 'members:write', 'portal:read', 'refunds:write', 'schools:write', 'volunteers:write'].sort(),
     )
   })
-  it('leaves clearance, deletion, roles, Duties, scholarships, the access console, view-as and privacy requests to admins', () => {
+  it('leaves clearance, deletion, roles, Duties, scholarships, the store, the access console, view-as, privacy requests, Community, Academy, admin email and e-sign documents to admins', () => {
     expect([...ADMIN_ONLY].sort()).toEqual(
-      ['access:manage', 'clearance:verify', 'duties:manage', 'impersonate', 'members:delete', 'privacy:read', 'roles:manage', 'scholarships:write', 'store:write'].sort(),
+      [
+        'access:manage', 'clearance:verify', 'duties:manage', 'impersonate', 'members:delete', 'privacy:read', 'roles:manage', 'scholarships:write', 'store:write',
+        'community:manage', 'academy:manage', 'email:manage', 'esign:manage',
+      ].sort(),
     )
   })
 })
