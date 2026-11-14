@@ -722,7 +722,7 @@ On top of [Owner gates](#owner-gates) and the earlier lists. Each is built fail-
 | A16 | Confirm that moving a participant to another registration needs a fresh guardian signature. As built the consent resets to pending, because a signature covers one registration |
 | A16 | The desk: a group check-in with one consent-pending member gets a 409 and nobody in the group is checked in. Checking in the rest is not built (tracker `s5-programme.24`) |
 | A16 | Before the flag is on anywhere: credentials and surveys do not yet leave out consent-pending participants (A10, tracker `s5-programme.22`), staff see no pending marker on the roster or desk (`.23`), and the sweep's removal retries have no cap (`.26`). **Credentials, team profiles and surveys now leave them out:** wave 7's A10a (#655) and A10b (#660), on `dev` |
-| A16 | Before the flag is on in an environment: Lane C's tenant-event refusals (`refuseUnlessStellrEvent`, #624) live in that same environment, as `docs/ENV-MATRIX.md` states (**settled 11 Nov 2026**: `dev` may go first, since Lane C is on `dev`; production waits for Lane C's promotion. **Met on production since 12 Nov 2026,** when #643 promoted Lane C; the flag's other preconditions still stand). **Settled 13 Nov 2026 (`W7-14`): `LOADSCOPED_MODE=enforce` is also required.** On `dev` it holds by procedure (P12 after P4's 72-hour soak); the readiness guard in code is wave 8 work, before any production consent flip (tracker `s5-programme.20`) |
+| A16 | Before the flag is on in an environment: Lane C's tenant-event refusals (`refuseUnlessStellrEvent`, #624) live in that same environment, as `docs/ENV-MATRIX.md` states (**settled 11 Nov 2026**: `dev` may go first, since Lane C is on `dev`; production waits for Lane C's promotion. **Met on production since 12 Nov 2026,** when #643 promoted Lane C; the flag's other preconditions still stand). **Settled 13 Nov 2026 (`W7-14`): `LOADSCOPED_MODE=enforce` is also required.** On `dev` it holds by procedure (P12 after P4's 72-hour soak); the readiness guard in code, `tenantGuardianConsentReady()`, is built in #708 (merged into `dev` 14 Nov 2026, not promoted) and must be on production before any production consent flip (tracker `s5-programme.20`) |
 | TB3 E | **Settled 11 Nov 2026: moved from M to L** (`docs/THREAT-MODEL.md` TB3 E). Its stated condition, A3 and A7 on production, was met (A3 since 5 Nov 2026, A7 since #600) (tracker `s5-programme.19`) |
 | A16 | CODEOWNERS now also owns `lib/esign/completion.ts` and `lib/esign/native/flow.ts`, where the consent hooks are called, which puts owner review on future e-sign changes there. Keep these two lines, or rely on the owned consent tests (#625). **Kept** (owner, 13 Nov 2026, `PR625-1`) |
 | A8 | Before S9 opens tenant billing, the roster writers also check the event's current price, not only the registration's money columns (`TENANT_MONEY_COLUMNS`), or a free-registered group on an event that later gains a price admits places that never show as owed |
@@ -849,7 +849,7 @@ All in `docs/S5-DECISION-REGISTER.md`. Answered on 12 Nov 2026: `W7-9` to `W7-13
 | Survey hold (#661) | Hide `feedback_link` and the check-in survey link for another tenant's events; the held label's wording | Both approved (`PR661-1`, in #666; `PR661-2`) |
 | A16 (#625) | Keep the CODEOWNERS lines for `lib/esign/completion.ts` and `lib/esign/native/flow.ts`? | Kept (`PR625-1`) |
 
-**The 13 Nov cookie review's questions, answered the same day** ("Accept all seven"): `W7-25`, the canary hosts may be public for the K9 window; `W7-26`, the no-ads gap is accepted for now and no setter is built; `W7-27`, the production zone guard is built now as a small slice, and stays a hard gate before production's routing flip; `W7-28`, keeping the zone after K9 is decided after K9; `W7-29`, the Clerk dev instance settings are found out at K9's sign-in; `W7-30`, the owner adds the two CNAME records; `W7-31`, both `canary.localhost` and the devzone rows are kept. No entry in the register was open on 13 Nov 2026; on 14 Nov 2026 the reviews of batch 1's S5 PRs added five open ones (`PR624-1`, `PR701-1`, `PR705-1`, `PR708-1`, `PR708-2`).
+**The 13 Nov cookie review's questions, answered the same day** ("Accept all seven"): `W7-25`, the canary hosts may be public for the K9 window; `W7-26`, the no-ads gap is accepted for now and no setter is built; `W7-27`, the production zone guard is built now as a small slice, and stays a hard gate before production's routing flip; `W7-28`, keeping the zone after K9 is decided after K9; `W7-29`, the Clerk dev instance settings are found out at K9's sign-in; `W7-30`, the owner adds the two CNAME records; `W7-31`, both `canary.localhost` and the devzone rows are kept. No entry in the register was open on 13 Nov 2026; on 14 Nov 2026 the reviews of batch 1's S5 PRs added five open ones (`PR624-1`, `PR701-1`, `PR705-1`, `PR708-1`, `PR708-2`), and batch 2's five more (`PR720-1`, `PR720-2`, `PR721-1`, `PR725-1`, `PR728-1`).
 
 ### Docs owed after wave 7
 
@@ -858,9 +858,9 @@ All in `docs/S5-DECISION-REGISTER.md`. Answered on 12 Nov 2026: `W7-9` to `W7-13
 - **K2's dataset** in `docs/ENV-MATRIX.md`, once done.
 - **The e-sign runbook's placeholder script usage** (K5); for now it lives in `scripts/esign-template.ts`'s header. PR #707 (merged into `dev` 14 Nov 2026, `a4bd3f0b`) adds it as `docs/esign/RUNBOOK-esign-templates.md`.
 
-### Backlog batch 1 (14 Nov 2026): S5 PRs open
+### Backlog batch 1 (14 Nov 2026): S5 PRs merged into `dev`
 
-Batch 1 of the 14 Nov review's backlog opened these S5 PRs into `dev`. None is merged and none has been applied to a database; each keeps Stellr's behaviour with the switches at their defaults, as its PR body shows. The full batch is `docs/handovers/tracker/2026-11-14-backlog-batch1.md`.
+Batch 1 of the 14 Nov review's backlog opened these S5 PRs into `dev`; all merged into `dev` on 14 Nov 2026, and none is promoted. Each keeps Stellr's behaviour with the switches at their defaults, as its PR body shows; #708's migration is on the dev database, not on production. The full batch is `docs/handovers/tracker/2026-11-14-backlog-batch1.md`.
 
 | Slice | PR | What it does, and what is left |
 |---|---|---|
@@ -871,6 +871,19 @@ Batch 1 of the 14 Nov review's backlog opened these S5 PRs into `dev`. None is m
 | Plans | #706 | Docs only: `docs/PLAN-multi-tenant.md`, the DRAFT wave 8 and S6 plans, the decision backfill draft and the S1 to S4 owner checklist (`s5-programme.37`, `.39`, `.41`, `.43`, `.44`) |
 
 The S0 database PRs (#687, #689, #690, #691) and the mutation runner (#692, `s5-programme.40`) are outside S5 but gate it: see the batch tracker.
+
+### Backlog batch 2 (14 Nov 2026): S5 PRs open
+
+Batch 2 opened these S5 PRs into `dev`. None is merged, none adds a migration, and each keeps Stellr's behaviour with the switches at their defaults, as its PR body shows. The full batch, with the 11 non-S5 slices, is `docs/handovers/tracker/2026-11-14-backlog-batch2.md`.
+
+| Slice | PR | What it does, and what is left |
+|---|---|---|
+| Audit on Staff-writable routes (`GATE-AUDIT`, partial) | #721 | 29 handlers in `withAudit`: 27 Staff-writable admin routes and the desk and self check-in POSTs (`s5-programme.27`). The unaudited baseline falls from 105 to 76. Platform audit stays off. Before `PLATFORM_AUDIT_ENABLED`: the "Not you?" DELETE (`PR721-1`), a metadata key the sanitiser drops, mixed key styles, and the event routes' raw URL slug. The admin-only remainder is batch 3 |
+| IDOR Staff persona | #720 | A `stellr_staff` persona over tenant-crew, platform-admin and platform-destined targets; the two community `TODO(S5)` reasons rewritten; organiser-route body keys. One Staff acceptance on the school directory (`PR720-1`, `PR720-2`). Personas across switch combinations stay in `s5-programme.32` |
+| C20a | #725 | Explicit `tenant_id` on the 6 remaining optional-event writers (17 of 17), the prerequisite of the derivation enforce flip; a training module tied to another tenant's event is refused (`s5-programme.53`, `PR725-1`). C20b follows REQ-EVT |
+| Roster consent marker and staff alerts | #728 | "Waiting for guardian consent" on the event roster; staff alerted when a guardian invitation is not sent and when a removal escalates (`s5-programme.23`, roster part; `.52`; `PR728-1`). The resend action and the desk marker are batch 3 |
+
+Batch 3 in S5, in order (`s5-programme.53`): A13a, then A8b; REQ-EVT, the event-owner check inside `requireEventAccess` (`s5-programme.28`); C20b, C19a and C8-PG's callers (`.50`); A11, A12 and the bounce-notices tenant link; the rest of B26, then K11; the consent resend and desk marker (`.23`). Excluded, as owner decisions or gates that have not run: M7 with B24 and B25 (`WD-1`, `WD-2`), the derivation enforce flip, A10c and F10, `.26`'s sweep change, and C21 to C25 with C18's leftovers (`s5-programme.55`). The dev proofs Claude can run are in `docs/TENANCY-S5-flow-checklist.md`, "Steps owed from waves 4 to 6" (`s5-programme.35`).
 
 ## PR amendments
 
