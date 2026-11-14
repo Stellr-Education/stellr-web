@@ -1,30 +1,63 @@
 /**
- * READ-ONLY production verification for Stripe + DocuSign.
+ * READ-ONLY production verification for Stripe + DocuSign, and the GTM loader.
  *
- * Makes live, read-only API calls using whatever credentials are in .env.local:
+ * Makes live, read-only API calls using the PRODUCTION credentials in the file
+ * named by --env-file (never .env.local, which holds dev credentials):
  *   • Stripe  — confirms key mode, then retrieves every price ID stored in
  *               membership_tiers / session_entitlements and reports livemode +
  *               active. This catches the "live key + test-mode price ID" trap
  *               that 400s real checkouts.
  *   • DocuSign — reports sandbox vs production endpoints, performs JWT auth, and
  *               retrieves each configured template by ID to confirm it exists.
+ *   • GTM     — confirms the client-side loader GoogleTagManager renders ships
+ *               on both subdomains, for the expected container.
  *
- * No writes, no envelopes sent, no charges. Safe to run.
+ * No writes, no envelopes sent, no charges. Running it is the owner's step.
  *
- *   npx tsx scripts/verify-prod-services.ts
+ *   vercel env pull /path/outside/repo/.env.production --environment=production
+ *   # fill in the Sensitive values the pull leaves empty, then:
+ *   npm run verify:prod -- --env-file /path/outside/repo/.env.production
+ *
+ * It refuses (exit 1) unless the file is production by every signal:
+ * NEXT_PUBLIC_APP_ENV=prod, an sk_live_ Stripe key, and the production Supabase
+ * project. See scripts/lib/verify-prod-env.ts.
  */
 
 import * as dotenv from 'dotenv'
 import * as path from 'path'
 import * as fs from 'fs'
 import { createSign } from 'crypto'
-import { requireStripe } from '../lib/stripe'
-import { supabaseServer } from '../lib/supabase'
-import { supabaseSecretKey } from '../lib/supabase-keys'
+import { gtmInitScript } from '../lib/gtm'
+import {
+  envFileArg,
+  productionDecision,
+  refusalMessage,
+  sameOriginScriptUrls,
+  scriptHasGtmLoader,
+} from './lib/verify-prod-env'
 
-const envPath = path.resolve(process.cwd(), '.env.local')
-if (fs.existsSync(envPath)) dotenv.config({ path: envPath })
-else dotenv.config()
+// Load the named file and refuse before anything else runs. The lib modules
+// below are imported dynamically, after this, so none of them reads env at
+// import time from whatever happened to be in the shell.
+function loadProductionEnv(): void {
+  const envFile = envFileArg(process.argv.slice(2))
+  if (!envFile) {
+    console.error(refusalMessage({ envFile: null }))
+    process.exit(1)
+  }
+  const resolved = path.resolve(process.cwd(), envFile)
+  if (!fs.existsSync(resolved)) {
+    console.error(`verify:prod: refusing to run — ${envFile} does not exist.`)
+    process.exit(1)
+  }
+  // override: the named file is the source of truth, not the shell.
+  dotenv.config({ path: resolved, override: true, quiet: true })
+  const decision = productionDecision(process.env)
+  if (!decision.ok) {
+    console.error(refusalMessage({ envFile, reasons: decision.reasons }))
+    process.exit(1)
+  }
+}
 
 const ok = (s: string) => `✅ ${s}`
 const bad = (s: string) => `❌ ${s}`
@@ -38,6 +71,9 @@ async function checkStripe() {
 
   const mode = key.startsWith('sk_live') ? 'LIVE' : key.startsWith('sk_test') ? 'TEST' : 'UNKNOWN'
   console.log(`key mode: ${mode}`)
+  const { requireStripe } = await import('../lib/stripe')
+  const { supabaseServer } = await import('../lib/supabase')
+  const { supabaseSecretKey } = await import('../lib/supabase-keys')
   const stripe = requireStripe()
 
   // Validate the key works at all.
@@ -191,19 +227,22 @@ async function checkDocuSign() {
 // ── Analytics (GTM) ───────────────────────────────────────────────────────────
 // Confirms the Google Tag Manager container is deployed on BOTH subdomains.
 //
-// What this checks and why: the GTM loader is a next/script `afterInteractive`
-// tag that Next injects CLIENT-SIDE after hydration, so it is NOT in server HTML
-// and cannot be seen by fetch/curl — a "no gtm.js in the HTML" result is a false
-// negative. The reliable server-visible proof that NEXT_PUBLIC_GTM_ID was baked
-// into the build is the <noscript> fallback iframe, which the root layout (a
-// server component) renders only when the env var is set. That's what we assert.
-// Full runtime confirmation (dataLayer + google_tag_manager[ID]) needs a browser
-// — the console snippet below does it in one paste.
+// What this checks and why: components/analytics/GoogleTagManager.tsx is a
+// client component that renders a next/script `lazyOnload` tag holding the
+// lib/gtm.ts loader, and deliberately no <noscript> iframe. next/script injects
+// it in the browser, so the server HTML carries neither the loader nor the
+// container id — the old <noscript> check could only ever fail. The loader is
+// in the page's client chunks instead, with NEXT_PUBLIC_GTM_ID inlined at
+// build, so we fetch the page's same-origin scripts and look for it there
+// (scripts/lib/verify-prod-env.ts scriptHasGtmLoader). Full runtime
+// confirmation (dataLayer + google_tag_manager[ID]) needs a browser — the
+// console snippet below does it in one paste.
 async function checkAnalytics() {
   console.log('\n══════════ ANALYTICS (GTM) ══════════')
   const gtmId = process.env.NEXT_PUBLIC_GTM_ID || 'GTM-WXBRWSH'
+  const loader = gtmInitScript(gtmId)
   console.log(`expected container: ${gtmId}`)
-  console.log(warn('loader is afterInteractive (client-injected) — HTML checks the <noscript> proxy only'))
+  console.log(warn('loader is lazyOnload (client-injected) — checked in the page\'s client chunks, not the HTML'))
 
   // Same container serves www + app (subdomain-shared layout). Deep-link to a
   // stable, always-rendered page on each so we get real HTML, not a redirect.
@@ -217,12 +256,17 @@ async function checkAnalytics() {
     try {
       const res = await fetch(t.url, { redirect: 'follow' })
       const html = await res.text()
-      const hasNoscript = new RegExp(`ns\\.html\\?id=${gtmId}`, 'i').test(html)
-      if (hasNoscript) {
-        console.log(`  ${ok('')}${t.label} (${t.url}): <noscript id=${gtmId}> present → env var baked into build`)
+      const scripts = sameOriginScriptUrls(html, res.url || t.url)
+      let found: string | null = null
+      for (const src of scripts) {
+        const js = await fetch(src).then((r) => (r.ok ? r.text() : ''))
+        if (scriptHasGtmLoader(js, gtmId, loader)) { found = src; break }
+      }
+      if (found) {
+        console.log(`  ${ok('')}${t.label} (${t.url}): GTM loader for ${gtmId} in ${new URL(found).pathname} → env var baked into build`)
       } else {
         allGood = false
-        console.log(`  ${bad('')}${t.label} (${t.url}): no <noscript id=${gtmId}> → NEXT_PUBLIC_GTM_ID unset at build, or not redeployed since it was set`)
+        console.log(`  ${bad('')}${t.label} (${t.url}): no GTM loader for ${gtmId} in ${scripts.length} script(s) → NEXT_PUBLIC_GTM_ID unset at build, a different container, or not redeployed since it was set`)
       }
     } catch (e: any) {
       allGood = false
@@ -238,6 +282,7 @@ async function checkAnalytics() {
 }
 
 async function main() {
+  loadProductionEnv()
   console.log('READ-ONLY production verification (no writes / no charges / no envelopes)')
   await checkStripe()
   await checkDocuSign()

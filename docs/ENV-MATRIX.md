@@ -98,6 +98,19 @@ and production at 23:31 UTC on 3 Nov 2026, both confirmed refused at the
 gateway (runbook steps 9–10). Where either variable is still set (Vercel, GitHub
 secrets, an old `.env.local`), it is ignored and can be deleted.
 
+**A local `.env.local` holds `sk_test_` keys** (legacy-8.8), like every other
+dev value in this table, unless a production check is being run — and even then
+not in `.env.local`. `scripts/dev.mjs` refuses to start on an `sk_live_` key
+(`scripts/production-guard.mjs`). `npm run verify:prod`
+(`scripts/verify-prod-services.ts`) never reads `.env.local`: it takes an
+explicit production env file, `npm run verify:prod -- --env-file <path>`, for
+example one written outside the repo by
+`vercel env pull <path> --environment=production` with the Sensitive values the
+pull leaves empty filled in by hand, and refuses (exit 1) unless that file says
+production by every signal: `NEXT_PUBLIC_APP_ENV=prod`, an `sk_live_` Stripe
+key, and the production Supabase project. Running it is the owner's step; delete
+the file afterwards.
+
 ## 3. Sandbox already, or safe to share
 
 | Variable | Note |
@@ -118,7 +131,8 @@ dev safety comes from the code declining to call them, not from a sandbox.
 
 | Variable | Dev handling |
 |---|---|
-| `HUBSPOT_ACCESS_TOKEN`, `HUBSPOT_FORM_*`, `HUBSPOT_PORTAL_ID` | **Omit entirely.** No sandbox portal exists on this plan (`POST-DEPLOY-landing-pages-2026-09-02.md`). Absent token → the route dead-letters to `lead_capture_failures` instead of writing. A `HUBSPOT_DRY_RUN=1` switch that logs the intended write would be better than relying on absence — not built yet |
+| `HUBSPOT_ACCESS_TOKEN`, `HUBSPOT_FORM_*`, `HUBSPOT_PORTAL_ID` | **Omit, or set them only together with `HUBSPOT_DRY_RUN=1`.** No sandbox portal exists on this plan (`POST-DEPLOY-landing-pages-2026-09-02.md`), so a token on dev reaches the one live portal. Absent token → the route dead-letters to `lead_capture_failures` instead of writing |
+| `HUBSPOT_DRY_RUN` | **Dev: may be set to `1`. Production: never.** Built 14 Nov 2026 (deploy-env.hubspot-dry-run). With it set, every HubSpot write (contacts, companies, deals, notes, associations, lifecycle, the event-option and form-definition edits, and form submissions) is skipped at the transport in `lib/hubspot.ts` and logged as `[hubspot] dry-run <method> <path>`, with email segments and query strings removed. Callers see a success, so nothing is dead-lettered. Reads still run when a token is present. Unset (or anything but `1`/`true`) changes nothing. On a production deployment it would silently drop every lead, so the module warns once if it sees it there. The manual scripts that call HubSpot directly (`scripts/hubspot-setup.ts`, `scripts/verify-apollo-hubspot.ts`) do not read it |
 | `RESEND_API_KEY` | **Safe to set as of 9 Sept.** `lib/email.ts` now redirects every recipient to `DEV_EMAIL_SAFELIST` (default `hello@stellreducation.org`) outside production, dropping cc and recording the intended addresses in the subject. Set `DEV_EMAIL_SAFELIST` alongside it; blank it to suppress non-production mail entirely |
 | `GOOGLE_SERVICE_ACCOUNT_*`, `MOTION_CALENDAR_ID` | Omit. Reads a real calendar |
 | `APOLLO_WEBHOOK_SECRET`, `MOTION_WEBHOOK_SECRET` | Omit. Inbound webhooks should only ever reach production |
