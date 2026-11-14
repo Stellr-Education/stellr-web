@@ -7,6 +7,7 @@
 import type Stripe from 'stripe'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { supabaseServer } from '@/lib/supabase'
+import { STELLR_TENANT_ID } from '@/lib/tenancy/constants'
 import { logActivity } from '@/lib/activity-log'
 import { sendEmail } from '@/lib/email'
 import { createOrder, printfulEnabled, type PrintfulItem, type PrintfulRecipient } from './printful'
@@ -39,9 +40,13 @@ export async function createPendingOrder(input: {
   const subtotal = input.lines.reduce((s, l) => s + l.unitCents * l.qty, 0)
   const discount = input.lines.reduce((s, l) => s + (l.baseCents - l.unitCents) * l.qty, 0)
 
+  // S5 C20a: the store is Stellr-only in release 1 (plan decision 12), and a storefront
+  // or reship order names no event, so it carries Stellr's tenant_id itself rather than
+  // leaving the S3 trigger to log `no_key`, which derivation enforce would refuse.
   const { data, error } = await db
     .from('store_orders')
     .insert({
+      tenant_id: STELLR_TENANT_ID,
       member_id: input.memberId,
       email: input.email ?? '',
       status: 'pending',

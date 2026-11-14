@@ -6,6 +6,7 @@ import { isStellrAdmin, hasCapability } from '@/lib/authz'
 import { slugify } from '@/lib/utils'
 import { assertSpaceDeletable, CommunityDeleteBlockedError } from '@/lib/community-delete-guard'
 import { withAudit } from '@/lib/audit/route'
+import { STELLR_TENANT_ID } from '@/lib/tenancy/constants'
 
 // What this request acted on, which withAudit's spec cannot read for itself: the body has gone.
 const auditedId = new WeakMap<Request, string>()
@@ -48,9 +49,13 @@ async function createSpace(req: Request) {
 
   const access_type = ACCESS.has(b.access_type) ? b.access_type : 'open'
   const db = supabaseServer()
+  // S5 C20a: community is Stellr-only in release 1 (plan decision 12), and this Space
+  // names no event, so it carries Stellr's tenant_id itself rather than leaving the S3
+  // trigger to log `no_key`, which derivation enforce would refuse.
   const { data, error } = await db
     .from('community_spaces')
     .insert({
+      tenant_id: STELLR_TENANT_ID,
       slug,
       name: b.name.trim(),
       description: b.description?.trim() || null,
