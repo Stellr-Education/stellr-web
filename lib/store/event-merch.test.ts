@@ -50,6 +50,8 @@ function from(table: string) {
 const db = { from } as unknown as SupabaseClient
 
 vi.mock('./pricing', () => ({ computeUnitPrice: async () => ({ unit_cents: 1500 }) }))
+const { reportError } = vi.hoisted(() => ({ reportError: vi.fn(async () => {}) }))
+vi.mock('@/lib/app-errors', () => ({ reportError }))
 
 import { addRegistrationAddons, finalizeRegistrationMerch } from './event-merch'
 
@@ -116,6 +118,8 @@ describe('ensureEventMerchOrder: explicit tenant_id (S5 C20a)', () => {
     await addRegistrationAddons(db, 'reg-1', [addon], 'student-1')
     err.mockRestore()
     expect(inserts).toEqual([])
+    // The dropped add-ons are reported, so staff see a transient fault in the digest.
+    expect(reportError).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ route: 'LIB store/event-merch owner lookup' }))
   })
 
   it("finalize still never throws, and writes nothing for another tenant's event", async () => {

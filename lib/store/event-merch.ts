@@ -14,6 +14,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { STELLR_TENANT_ID } from '@/lib/tenancy/constants'
 import { loadEventTenantId } from '@/lib/authz/principal'
+import { reportError } from '@/lib/app-errors'
 import { computeUnitPrice } from './pricing'
 
 const arr = <T>(x: T | T[] | null | undefined): T | undefined =>
@@ -112,7 +113,10 @@ async function ensureEventMerchOrder(db: SupabaseClient, registrationId: string)
   try {
     owner = await loadEventTenantId(db, r.event_slug)
   } catch (err) {
+    // Every event is Stellr's today, so a failed read here drops a registrant's chosen
+    // add-ons for a transient fault. Report it so staff see it in the error digest.
     console.error('[store/event-merch] event owner lookup failed:', err instanceof Error ? err.message : err)
+    await reportError(err, { route: 'LIB store/event-merch owner lookup', db })
     return null
   }
   if (owner !== STELLR_TENANT_ID) return null
