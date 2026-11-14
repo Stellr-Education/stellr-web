@@ -745,7 +745,7 @@ On top of [Owner gates](#owner-gates) and the earlier lists. Each is built fail-
 - **D7:** a tenant consent signed end to end on `dev`, once a document is published, both flags are on there and the consent flag's precondition above is met; the B14b outbox read in `cron_runs` on production; one A8 roster round on a Stellr group on `dev`. **Added** to the checklist on 14 Nov 2026, with no evidence yet.
 - **The wave 7 plan,** with an owner slice for each unassigned need (tracker `s5-programme.43`).
 - **`docs/PLATFORM-AUDIT.md`:** the member-uuid sentence, once the owner answers C13.
-- **The template PDF-hash test** (tracker `s5-programme.18`), defined 14 Nov 2026: the golden PDF-hash test from the 4 Nov scope, fixed-input renders of the badge and certificate PDFs whose normalised bytes are hashed and pinned. Built as `test/pdf-golden-hash.test.ts` in PR #710 (open, not merged). It lands before C19 and before P8 or P9.
+- **The template PDF-hash test** (tracker `s5-programme.18`), defined 14 Nov 2026: the golden PDF-hash test from the 4 Nov scope, fixed-input renders of the badge and certificate PDFs whose normalised bytes are hashed and pinned. Built as `test/pdf-golden-hash.test.ts` in PR #710 (merged into `dev` 14 Nov 2026, `e6125b68`). It lands before C19 and before P8 or P9.
 
 ## Wave 7 status
 
@@ -856,7 +856,7 @@ All in `docs/S5-DECISION-REGISTER.md`. Answered on 12 Nov 2026: `W7-9` to `W7-13
 - **D3, in part (13 Nov 2026):** the owner's 13 Nov answers, K6's zone steps and the cookie review in `docs/TENANCY-S5-routing.md`, and the K8 scenario table in `docs/TENANCY-S5-flow-checklist.md` are written. **Still owed after K9:** the dev canary record (what was proven, scenario results by mode, gaps by slice, re-run and rollback order), the K6 results (including the `Domain` attribute of both `__client_uat` cookies), and the canary's keep-or-tear-down record (the zone itself: `W7-28`, decided after K9).
 - **The P6 result:** the PEM choice in tracker `s5-programme.30` and `docs/TENANCY-S5-data.md`.
 - **K2's dataset** in `docs/ENV-MATRIX.md`, once done.
-- **The e-sign runbook's placeholder script usage** (K5); for now it lives in `scripts/esign-template.ts`'s header. PR #707 (open, not merged) adds it as `docs/esign/RUNBOOK-esign-templates.md`.
+- **The e-sign runbook's placeholder script usage** (K5); for now it lives in `scripts/esign-template.ts`'s header. PR #707 (merged into `dev` 14 Nov 2026, `a4bd3f0b`) adds it as `docs/esign/RUNBOOK-esign-templates.md`.
 
 ### Backlog batch 1 (14 Nov 2026): S5 PRs open
 
@@ -867,7 +867,7 @@ Batch 1 of the 14 Nov review's backlog opened these S5 PRs into `dev`. None is m
 | B22 | #701 | `group-invoice-sync` splits rows by tenant and runs through `runPerTenant`; only Stellr runs until S9; Stellr's reads are filtered to Stellr's or unstamped rows; unstarted registrations are deferred after 270 s. The route holds its own copies of the two sweeps (tracker `s5-programme.49`; `PR701-1`) |
 | C8-PG | #702 | A tenant-explicit Postgres reader for the events facade, not wired to any caller. Caller conversion and the cron tenant loops are wave 8 (`s5-programme.50`) |
 | Lane C follow-ups | #705 | The agreements list and page read only Stellr's or unstamped rows in every mode, with a shrink-only ratchet over `stellr_only` lists; the C17 route comments; stronger C17 Stellr-event tests (`s5-programme.29`, `.51`; `PR705-1`) |
-| Consent guard and edges | #708 | `tenantGuardianConsentReady()` (the flag, `LOADSCOPED_MODE=enforce` and `TENANT_EVENT_MAIL_ENABLED`) gates every admission path, and the switch registry's `guardian_consent_without_tenant_mail` becomes `guardian_consent_not_ready`; the retry cap; move-to-Stellr and date-of-birth-lift edges, the pending row kept as `settled`; a guard over later participant writers; more A16 pgTAP cases. One migration (`20261114072142`), applied nowhere (`s5-programme.12`, `.20`, `.25`, `.26`; `PR708-1`, `PR708-2`) |
+| Consent guard and edges | #708 | `tenantGuardianConsentReady()` (the flag, `LOADSCOPED_MODE=enforce` and `TENANT_EVENT_MAIL_ENABLED`) gates every admission path, and the switch registry's `guardian_consent_without_tenant_mail` becomes `guardian_consent_not_ready`; the retry cap; move-to-Stellr and date-of-birth-lift edges, the pending row kept as `settled`; a guard over later participant writers; more A16 pgTAP cases. One migration (`20261114072142`), on the dev database since 14 Nov 2026 (ledger rows by filename), not on production (`s5-programme.12`, `.20`, `.25`, `.26`; `PR708-1`, `PR708-2`) |
 | Plans | #706 | Docs only: `docs/PLAN-multi-tenant.md`, the DRAFT wave 8 and S6 plans, the decision backfill draft and the S1 to S4 owner checklist (`s5-programme.37`, `.39`, `.41`, `.43`, `.44`) |
 
 The S0 database PRs (#687, #689, #690, #691) and the mutation runner (#692, `s5-programme.40`) are outside S5 but gate it: see the batch tracker.
