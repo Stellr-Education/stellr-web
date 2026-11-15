@@ -5,6 +5,7 @@ import { CONTAINER_TYPE_TO_OBJECT, type AccessObjectType } from '@/lib/access-ob
 import { fireObjectCreatedRules } from '@/lib/object-created-rules'
 import { getAllEvents, getAllCampaigns } from '@/lib/events/repo'
 import { isAdminClaims } from '@/lib/admin-auth'
+import { STELLR_TENANT_ID } from '@/lib/tenancy/constants'
 
 // GET /api/admin/access/objects — every object in the converged model, across
 // all seven types, for the Objects-tab list. Content metadata for events stays
@@ -135,11 +136,15 @@ export async function POST(req: Request) {
   let ref: string | null = null
   let containerId: string | undefined
 
+  // S5 C20a: Spaces and cohorts are Stellr-only in release 1 (plan decision 12), and
+  // neither row names an event, so each carries Stellr's tenant_id itself. The S3
+  // trigger would log `no_key` for them, and derivation enforce would refuse them.
+
   if (objectType === 'space') {
     const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')
     const { data, error } = await db
       .from('community_spaces')
-      .insert({ slug, name, access_type: 'private', min_tier_rank: 0, display_order: 100 })
+      .insert({ tenant_id: STELLR_TENANT_ID, slug, name, access_type: 'private', min_tier_rank: 0, display_order: 100 })
       .select('id')
       .single()
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
@@ -149,6 +154,7 @@ export async function POST(req: Request) {
     const { data, error } = await db
       .from('mentoring_cohorts')
       .insert({
+        tenant_id: STELLR_TENANT_ID,
         name,
         container_type: objectType === 'workshop' ? 'coaching' : 'mentoring',
         lifecycle: 'active',
