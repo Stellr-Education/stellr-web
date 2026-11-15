@@ -3,12 +3,14 @@ import { NextResponse } from 'next/server'
 import { normalizeEmail } from '@/lib/member-enums'
 import { GUARDIAN_RELATIONSHIPS, isPlausibleEmail } from '@/lib/pending-consent'
 import { auditMutation } from '@/lib/audit/route'
+import { sendEmail, teamInboxEmail } from '@/lib/email'
+import { escapeHtml } from '@/lib/email-layout'
 import { HOUR_MS } from '@/lib/rate-limit'
 import { limit as limitRequests } from '@/lib/rate-limit-async'
 import type { AuditAction } from '@/lib/audit/actions'
 import { isTenantRow, loadTenantSender } from '@/lib/event-emails/tenant-mail'
 // Type only: a tenant host may not reach lib/notify at run time (RemovalOptions.notifyStaff).
-import type { notifyCommunityAdmins } from '@/lib/notify'
+import type { NotifyInput, notifyCommunityAdmins } from '@/lib/notify'
 import {
   issueTenantGuardianConsent,
   tenantGuardianConsentDocumentReady,
@@ -64,6 +66,11 @@ import { sendTenantRegistrationConfirmation, type TenantConfirmationKind } from 
 // emergency-contact columns (field-encrypted in shadow mode, S4), and on the
 // signing envelope. The consent row holds none, and audit events and logs carry
 // ids and outcomes only.
+//
+// Staff are alerted (tracker s5-programme.52) when a guardian's invitation does not
+// go, and when a removal reaches MAX_REMOVAL_ATTEMPTS: one critical email to Stellr's
+// platform staff (WD-5, BF-45: tenants have no alert contact of their own yet),
+// carrying ids and counts only (sendConsentStaffAlert).
 
 /** Days a guardian has to sign, unless the event starts sooner. A proposal for the owner. */
 export const TENANT_GUARDIAN_CONSENT_WINDOW_DAYS = 14
@@ -72,11 +79,10 @@ export const TENANT_GUARDIAN_CONSENT_WINDOW_DAYS = 14
 export const REMOVAL_RETRY_MS = 20 * 60 * 60 * 1000
 
 /**
- * Failed removals before the sweep stops retrying a row (tracker s5-programme.26).
- * The row is then marked escalated_at, staff are alerted once, and the participant
- * stays held from check-in and event mail until someone removes it. The cap takes
- * effect only when a staff alert is wired (RemovalOptions.notifyStaff): without one,
- * the row keeps being retried, as before the cap, so it is never left with nobody told.
+ * Failed removals before the sweep stops retrying a row (tracker s5-programme.26,
+ * WD-5). The row is then marked escalated_at, Stellr's platform staff are alerted
+ * once (sendConsentStaffAlert), and the participant stays held from check-in and
+ * event mail until someone removes it.
  */
 export const MAX_REMOVAL_ATTEMPTS = 5
 
@@ -340,7 +346,7 @@ export async function recordConsentAudit(
   action: Extract<AuditAction, `registration.guardian_consent.${string}`>,
   row: { id: string; tenant_id: string; table?: 'tenant_guardian_consents' | 'agreements' },
   metadata: Record<string, unknown> = {},
-  opts: { afterResponse?: boolean; db?: SupabaseClient } = {},
+  opts: { afterResponse?: boolean; db?: SupabaseClient; notifyStaff?: StaffNotifier } = {},
 ): Promise<void> {
   await auditMutation(
     {
@@ -352,6 +358,141 @@ export async function recordConsentAudit(
     },
     { afterResponse: opts.afterResponse ?? false, ...(opts.db ? { db: opts.db as never } : {}) },
   )
+  // The request audit is the one step that knows whether the guardian's invitation
+  // went (lib/registration/individual/stellr-hooks.ts records it there). One that did
+  // not also reaches staff, whatever PLATFORM_AUDIT_ENABLED says.
+  if (action === 'registration.guardian_consent.request' && !invitationWent(metadata.invitation)) {
+    await alertInvitationNotSent({ id: row.id, tenant_id: row.tenant_id }, outcomeCode(metadata.invitation), opts)
+  }
+}
+
+// ── Staff alerts (s5-programme.52) ──────────────────────────────────────────
+
+/** The staff alert a caller may pass in place of the default (lib/notify.ts notifyCommunityAdmins). */
+export type StaffNotifier = typeof notifyCommunityAdmins
+
+/** How long one consent's failed invitation is remembered, so it alerts once. Longer than any consent window. */
+export const STAFF_ALERT_DEDUPE_MS = 30 * 24 * HOUR_MS
+
+export type ConsentStaffAlert =
+  | { kind: 'invitation_not_sent'; consentId: string; registrationId: string | null; tenantId: string; invitation: string }
+  | { kind: 'removal_escalated'; consentId: string; registrationId: string; tenantId: string; attempts: number }
+
+/** Sent, or waiting in the signing outbox (guardianInvitationOutcome's "out"). */
+const invitationWent = (invitation: unknown) => invitation === 'sent' || invitation === 'deferred'
+
+/** The invitation's outcome as a code ('failed', 'no_sender', ...), never free text. */
+const outcomeCode = (invitation: unknown) =>
+  typeof invitation === 'string' && /^[a-z][a-z_]{0,39}$/.test(invitation) ? invitation : 'other'
+
+/** The alert's text. Ids, counts and the coded outcome only: never a name, an email or a date of birth. */
+export function consentStaffAlertNotice(alert: ConsentStaffAlert): NotifyInput {
+  const ids = `Consent ${alert.consentId}, registration ${alert.registrationId ?? 'unknown'}, organiser (tenant) ${alert.tenantId}.`
+  const [subject, body] =
+    alert.kind === 'invitation_not_sent'
+      ? [
+          "Action needed: a guardian's consent form was not sent",
+          `Guardian consent: the consent form for a registrant aged 14 to 17 on another organiser's event was not sent (outcome: ${alert.invitation}). ` +
+            `${ids} Their place stays pending until a guardian signs, and the registration is removed when the window closes.`,
+        ]
+      : [
+          'Action needed: a guardian consent registration could not be removed',
+          `Guardian consent: a registration could not be removed after ${alert.attempts} attempts, so it is no longer retried. ` +
+            `${ids} The participant stays held from check-in and event email until the registration is removed.`,
+        ]
+  return {
+    type: 'action',
+    body,
+    referenceType: 'tenant_guardian_consent',
+    referenceId: alert.consentId,
+    email: { subject, html: `<p>${escapeHtml(body)}</p>`, text: body },
+  }
+}
+
+/**
+ * The default staff alert: Stellr's staff inbox, as critical mail, so the suppression
+ * list never holds it back (#688). Not lib/notify: this module is reachable from a
+ * tenant host's register route, and a tenant host may not reach lib/notify
+ * (test/tenant-surface.test.ts). lib/email is already within its reach.
+ */
+async function alertPlatformStaffInbox(notice: NotifyInput): Promise<void> {
+  await sendEmail({
+    to: teamInboxEmail(),
+    subject: notice.email?.subject ?? notice.body,
+    html: notice.email?.html ?? `<p>${escapeHtml(notice.body)}</p>`,
+    text: notice.email?.text ?? notice.body,
+    critical: true,
+  })
+}
+
+/**
+ * One alert to Stellr's platform staff about a tenant's guardian consent (WD-5,
+ * BF-45): through `notifyStaff` when a caller passes one (notifyCommunityAdmins,
+ * called for Stellr), otherwise to the staff inbox. Nothing for a Stellr row: Stellr's
+ * events have no tenant consent. Never throws; a failed alert is logged with ids only.
+ * Callers dedupe. Resolves true when an alert was sent.
+ */
+export async function sendConsentStaffAlert(alert: ConsentStaffAlert, opts: { notifyStaff?: StaffNotifier } = {}): Promise<boolean> {
+  if (!isTenantRow(alert.tenantId)) return false
+  const notice = consentStaffAlertNotice(alert)
+  try {
+    // No tenant option: the alert is Stellr's platform staff's (BF-45), never the tenant's.
+    if (opts.notifyStaff) await opts.notifyStaff(notice)
+    else await alertPlatformStaffInbox(notice)
+    return true
+  } catch (err) {
+    console.error(`[tenant-guardian-consent] staff alert (${alert.kind}) for consent ${alert.consentId} failed:`, err instanceof Error ? err.message : err)
+    return false
+  }
+}
+
+/**
+ * The guardian's invitation did not go: alert staff once for this consent and
+ * envelope. With a client passed, the registration and envelope are read from the
+ * consent row (a failed read still alerts, with the ids it has); without one the
+ * alert carries the consent and tenant ids, and staff find the registration from the
+ * consent. This module opens no service-role client of its own
+ * (test/service-role-ratchet.test.ts). A repeat for the same consent and envelope
+ * inside STAFF_ALERT_DEDUPE_MS alerts nobody. Never throws.
+ */
+async function alertInvitationNotSent(
+  row: { id: string; tenant_id: string },
+  invitation: string,
+  opts: { db?: SupabaseClient; notifyStaff?: StaffNotifier },
+): Promise<void> {
+  if (!isTenantRow(row.tenant_id)) return
+  try {
+    let registrationId: string | null = null
+    let agreementId: string | null = null
+    if (opts.db) {
+      try {
+        const { data, error } = await opts.db
+          .from('tenant_guardian_consents')
+          .select('registration_id, agreement_id')
+          .eq('id', row.id)
+          .maybeSingle()
+        if (error) throw new Error(error.message)
+        registrationId = (data as { registration_id?: string | null } | null)?.registration_id ?? null
+        agreementId = (data as { agreement_id?: string | null } | null)?.agreement_id ?? null
+      } catch (err) {
+        console.error(`[tenant-guardian-consent] consent ${row.id} not read for its staff alert:`, err instanceof Error ? err.message : err)
+      }
+    }
+    const once = await limitRequests(`tenant-guardian-consent:staff-alert:invitation:${row.id}:${agreementId ?? 'none'}`, {
+      limit: 1,
+      windowMs: STAFF_ALERT_DEDUPE_MS,
+      // Stellr's platform staff's alert, so not scoped to the event's tenant.
+      tenantId: null,
+    })
+    if (!once.ok) return
+    console.error(`[tenant-guardian-consent] guardian invitation for consent ${row.id} not sent (${invitation}); staff alerted`)
+    await sendConsentStaffAlert(
+      { kind: 'invitation_not_sent', consentId: row.id, registrationId, tenantId: row.tenant_id, invitation },
+      { notifyStaff: opts.notifyStaff },
+    )
+  } catch (err) {
+    console.error(`[tenant-guardian-consent] staff alert for consent ${row.id} not sent:`, err instanceof Error ? err.message : err)
+  }
 }
 
 // ── Notices to the registrant ───────────────────────────────────────────────
@@ -531,32 +672,31 @@ export interface RemovalOptions {
   /** The deletion registry call, replaceable in tests. */
   deleteRegistration?: (registrationId: string) => Promise<void>
   /**
-   * The staff alert for a removal escalated at MAX_REMOVAL_ATTEMPTS: pass
-   * notifyCommunityAdmins (lib/notify.ts). It is passed in, not imported, because
-   * this module is reachable from a tenant host's register route, and a tenant host
-   * may not reach lib/notify (test/tenant-surface.test.ts, whose baseline only
-   * falls). The sweep's caller, the membership-expiry cron, runs on Stellr's side.
-   * Without it nothing is escalated: a removal past MAX_REMOVAL_ATTEMPTS keeps being
-   * rescheduled, and each failure logs (ids only) that the cap waits on an alert.
+   * The staff alert for a removal escalated at MAX_REMOVAL_ATTEMPTS, in place of the
+   * default (Stellr's staff inbox, critical; sendConsentStaffAlert). A caller on
+   * Stellr's side may pass notifyCommunityAdmins (lib/notify.ts), which this module
+   * may not import: it is reachable from a tenant host's register route, and a tenant
+   * host may not reach lib/notify (test/tenant-surface.test.ts). Either way the alert
+   * goes to Stellr's platform staff (BF-45).
    */
-  notifyStaff?: typeof notifyCommunityAdmins
+  notifyStaff?: StaffNotifier
   now?: Date
 }
 
 /**
  * The removal failed MAX_REMOVAL_ATTEMPTS times: stop rescheduling it, mark the row
  * for staff attention (escalated_at; the sweep's retry read leaves it out), and
- * alert the event's tenant's staff once (RemovalOptions.notifyStaff). The mark is
- * written only where none is, so a second caller alerts nobody. The alert and the log
- * carry ids only: never a name, an email or a date of birth. The tenant comes from the
- * consent row, as notifyCommunityAdmins asks. Never throws: a failed alert is logged,
- * and the row stays marked.
+ * alert Stellr's platform staff once (sendConsentStaffAlert, WD-5, BF-45). The mark
+ * is written only where none is, so a second caller alerts nobody: one alert per
+ * consent for this state. The alert and the log carry ids and counts only: never a
+ * name, an email or a date of birth. Never throws: a failed alert is logged, and the
+ * row stays marked.
  */
 async function escalateRemoval(
   db: SupabaseClient,
   row: ConsentRow,
   attempts: number,
-  notifyStaff: NonNullable<RemovalOptions['notifyStaff']>,
+  notifyStaff: StaffNotifier | undefined,
   now: Date,
 ): Promise<'escalated' | 'retry'> {
   const { data, error } = await db
@@ -571,23 +711,10 @@ async function escalateRemoval(
   }
   if (!data?.length) return 'escalated' // already marked, and staff already alerted
   console.error(`[tenant-guardian-consent] removal of registration ${row.registration_id} failed ${attempts} times; consent ${row.id} escalated to staff`)
-  const body =
-    `Guardian consent: registration ${row.registration_id} could not be removed after ${attempts} attempts, so it is no longer retried. ` +
-    `Consent ${row.id}, participant ${row.participant_id}. The participant stays held from check-in and event email until the registration is removed.`
-  try {
-    await notifyStaff(
-      {
-        type: 'action',
-        body,
-        referenceType: 'tenant_guardian_consent',
-        referenceId: row.id,
-        email: { subject: 'Action needed: a guardian consent registration could not be removed', html: `<p>${body}</p>`, text: body },
-      },
-      { tenantId: row.tenant_id },
-    )
-  } catch (err) {
-    console.error(`[tenant-guardian-consent] staff alert for consent ${row.id} failed:`, err instanceof Error ? err.message : err)
-  }
+  await sendConsentStaffAlert(
+    { kind: 'removal_escalated', consentId: row.id, registrationId: row.registration_id, tenantId: row.tenant_id, attempts },
+    { notifyStaff },
+  )
   return 'escalated'
 }
 
@@ -614,12 +741,8 @@ async function removeUnconsentedRegistration(
   } catch (err) {
     console.error(`[tenant-guardian-consent] removal of registration ${row.registration_id} failed:`, err instanceof Error ? err.message : err)
     const attempts = (row.removal_attempts ?? 0) + 1
-    if (attempts >= MAX_REMOVAL_ATTEMPTS) {
-      // Escalate only when someone will be told. With no alert wired, keep retrying:
-      // an escalated row leaves the retry read, and nothing else would clear it.
-      if (opts.notifyStaff) return escalateRemoval(db, row, attempts, opts.notifyStaff, now)
-      console.error(`[tenant-guardian-consent] consent ${row.id} (tenant ${row.tenant_id}) reached the removal cap, but no staff alert is wired for the sweep; rescheduled instead of escalated`)
-    }
+    // At the cap, staff are told (the default alert needs no wiring) and retrying stops.
+    if (attempts >= MAX_REMOVAL_ATTEMPTS) return escalateRemoval(db, row, attempts, opts.notifyStaff, now)
     await db
       .from('tenant_guardian_consents')
       .update({ removal_attempts: attempts, next_attempt_at: new Date(now.getTime() + REMOVAL_RETRY_MS).toISOString() })
@@ -641,7 +764,7 @@ export interface ConsentSweepResult {
   held: string[]
   /** Consent envelopes voided because their participant no longer needs consent (agreements ids). */
   voided: string[]
-  /** Removals that failed MAX_REMOVAL_ATTEMPTS times: no longer retried, and staff alerted. Empty while no alert is wired. */
+  /** Removals that failed MAX_REMOVAL_ATTEMPTS times: no longer retried, and staff alerted. */
   escalated: string[]
   errors: Array<{ consentId: string; error: string }>
 }
@@ -651,7 +774,7 @@ export interface ConsentSweepResult {
  * its registration removed, unless the guardian signed (a missed completion, which
  * settles it signed) or is part-way through finalising (held). A declined or
  * expired consent whose removal failed is tried again, up to MAX_REMOVAL_ATTEMPTS,
- * then escalated to staff, if a staff alert is passed (otherwise it keeps being retried). A consent envelope left open after a correction to 18 or
+ * then escalated to Stellr's platform staff. A consent envelope left open after a correction to 18 or
  * over settled its pending row, or left from an earlier registration, is voided. Run daily, behind the flag,
  * from the membership-expiry cron.
  */
@@ -913,4 +1036,34 @@ export async function unconsentedParticipantIds(db: SupabaseClient, tenantId: st
     for (const r of rows) ids.add(r.participant_id)
     after = last
   }
+}
+
+// ── The admin roster's marker ───────────────────────────────────────────────
+
+/** Participant ids per read of the roster's pending consents. */
+const ROSTER_CONSENT_CHUNK = 200
+
+/**
+ * Of these participants, the ones whose guardian consent on another organiser's
+ * event is pending (tracker T-23, s5-programme.23): the admin roster marks them
+ * "Waiting for guardian consent" (WD-6). Pending only: a declined or expired consent
+ * is being removed. A Stellr row never counts, and Stellr's events have none (the
+ * database writes consent rows only for another tenant's event), so Stellr's roster
+ * is unchanged. Throws on a failed read.
+ */
+export async function pendingConsentParticipantIds(db: SupabaseClient, participantIds: readonly string[]): Promise<Set<string>> {
+  const ids = [...new Set(participantIds)]
+  const pending = new Set<string>()
+  for (let i = 0; i < ids.length; i += ROSTER_CONSENT_CHUNK) {
+    const { data, error } = await db
+      .from('tenant_guardian_consents')
+      .select('participant_id, tenant_id')
+      .in('participant_id', ids.slice(i, i + ROSTER_CONSENT_CHUNK))
+      .eq('status', 'pending')
+    if (error) throw new Error(`Reading guardian consents failed: ${error.message}`)
+    for (const r of (data ?? []) as Array<{ participant_id: string; tenant_id: string | null }>) {
+      if (isTenantRow(r.tenant_id)) pending.add(r.participant_id)
+    }
+  }
+  return pending
 }
