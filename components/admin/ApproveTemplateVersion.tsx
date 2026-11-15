@@ -3,12 +3,20 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Button } from '@stellr/web-ui'
+import { AdminOnlyNote, useCan } from '@/components/admin/CapabilitiesContext'
 
 // Approving a document version puts it in use for every new agreement of its
 // kind. The approver types the version's name, so it is never a stray click,
 // and the server runs every check again before accepting it.
 
+// esign:manage, an admin's alone.
 export function ApproveTemplateVersion({ id, label }: { id: string; label: string }) {
+  const canWrite = useCan('esign:manage')
+  if (!canWrite) return <AdminOnlyNote>An admin approves a new version before it is used.</AdminOnlyNote>
+  return <ApproveForm id={id} label={label} />
+}
+
+function ApproveForm({ id, label }: { id: string; label: string }) {
   const router = useRouter()
   const [confirm, setConfirm] = useState('')
   const [busy, setBusy] = useState(false)

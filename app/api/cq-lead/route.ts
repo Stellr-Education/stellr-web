@@ -1,11 +1,11 @@
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
-import {
-  CQ_LP_AUDIENCE, CQ_PROGRAM_INTEREST, CQ_STUDENTS_BANDS, CQ_THEMES, HS, LEAD_SOURCE_LIFECYCLE,
-} from '@/lib/hubspot-fields'
+import { CQ_LP_AUDIENCE, CQ_PROGRAM_INTEREST, HS, LEAD_SOURCE_LIFECYCLE } from '@/lib/hubspot-fields'
 import { captureLead, logLine, readHubspotCookie } from '@/lib/hubspot'
 import { HOUR_MS, rateLimitGuard } from '@/lib/rate-limit'
 import { getCurriculumLandingPage } from '@/content/lp'
+import { checkSpamSignals } from '@/lib/spam-guard'
+import { cqLeadFields as f } from './schema'
 
 /**
  * Classroom Qualifier curriculum request.
@@ -25,15 +25,15 @@ const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://www.stellreducatio
 const utm = z.string().max(200).optional()
 
 const cqLeadSchema = z.object({
-  firstName: z.string().trim().min(1).max(100),
-  lastName: z.string().trim().min(1).max(100),
-  email: z.string().trim().email().max(254),
-  school: z.string().trim().min(1).max(200),
-  subject: z.string().trim().min(1).max(200),
-  studentsBand: z.enum(CQ_STUDENTS_BANDS),
-  theme: z.enum(CQ_THEMES),
-  grantInterest: z.boolean(),
-  consent: z.literal(true),
+  firstName: f.firstName,
+  lastName: f.lastName,
+  email: f.email,
+  school: f.school,
+  subject: f.subject,
+  studentsBand: f.studentsBand,
+  theme: f.theme,
+  grantInterest: f.grantInterest,
+  consent: f.consent,
   pageSlug: z.string().min(1).max(120),
   utm_source: utm,
   utm_medium: utm,
@@ -48,10 +48,13 @@ export async function POST(req: Request) {
   if (limited) return limited
 
   try {
-    const parsed = cqLeadSchema.safeParse(await req.json())
+    const body: unknown = await req.json()
+    const parsed = cqLeadSchema.safeParse(body)
     if (!parsed.success) {
       return NextResponse.json({ error: 'Invalid submission' }, { status: 400 })
     }
+    const spam = checkSpamSignals(body, req, 'cq-lead')
+    if (spam) return spam
     const data = parsed.data
 
     // Only slugs we publish, so lp_source_page stays a clean reporting key.

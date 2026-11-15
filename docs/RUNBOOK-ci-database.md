@@ -157,8 +157,42 @@ nothing about this job: read its steps and its summary.
 | Wait | Reads `public.members` and `entitlements.tiers` through the gateway until PostgREST has the schema. |
 | Seed | `npm run seed:e2e-stack`: blank agreement documents with the real field maps, survey definitions, and Clerk links looked up by address. Refuses anything but loopback and `sk_test_`. |
 | Suite | `npm run build`, then `npx playwright test`. Storybook and Lighthouse stay in `e2e`: neither reads the database. |
+| Summary | `scripts/e2e-report-summary.mjs` writes the counts and every skipped test's title to the step summary. `e2e-tests` runs the same script, headed with its own name, so the two skip lists can be compared side by side. |
 
 Clerk is still the shared dev instance. Only the database moved.
+
+### Start-up times
+
+Measured on `71bca6e8` and `73830a33` (e2e-local-stack.5), before the suite starts:
+
+| Step | Time |
+|---|---|
+| Start the local stack (`supabase start`) | about 75 s on both runs |
+| Build the database (`scripts/e2e-stack-db.sh`) | 6–7 s |
+| Wait for PostgREST to see the schema | 2 s |
+| Seed documents, surveys and Clerk links | 4–5 s |
+| **In all** | **about 1.5 min** |
+
+The stack's image pulls are most of it. That is the extra time `e2e-local` spends
+over `e2e-tests` before `npm run build`, and why its timeout is 5 minutes longer.
+
+### What global setup repairs on either database
+
+`e2e/global-setup.ts` runs before any spec, on the shared dev project and on this
+stack alike, and only once `assertE2eSupabase` has accepted the database:
+
+- **Leftover survey events** (deps-tailwind4.6). A newer push cancels a PR's
+  running suite, so a survey spec's `afterEach` can miss its event. Any
+  `e2e-survey-<8 hex>` event with no row newer than an hour is removed through
+  `e2e/fixtures/survey-cli.ts remove`, the fixture's own command, which refuses
+  any other slug. The log says how many went.
+- **The event-manager fixture** (event-manager-e2e.4). It looks up the fixture's
+  Clerk user by its address (`e2e/fixtures/users.ts`), with a `sk_test_` key only,
+  then sets `members.clerk_user_id` on the seed row and upserts its
+  `event_manager_assignments` row for `seed-regional-challenge`. A second run
+  changes nothing. With `E2E_EVENT_MANAGER_PASSWORD` set and no such Clerk user,
+  setup fails, because the boundary spec would otherwise fail with a misleading
+  error.
 
 ### What it does not test
 
@@ -177,11 +211,57 @@ The lock can go only when all of these hold. Record the evidence here.
    skipped lists as well as the failures: the job's summary lists its skips.
 2. Two `e2e-local` runs overlapping with no failures, which proves concurrent
    sign-ins as the same Clerk users. Clerk's rate limits are the unknown.
-3. Real start-up times recorded in this section.
+3. Real start-up times recorded in this section. Done: see "Start-up times".
 
 Then move this job's contents under the required `e2e` name, delete the
 `concurrency` block and the dev Supabase secrets from it, and keep a manual or
 nightly run against dev so drift there is still seen.
+
+## Before you push: `check:pr` and `baselines`
+
+Two scripts run locally what CI would otherwise tell you about twenty minutes later
+(s5-programme.45). Fetch first (`git fetch origin`): the caps compare with the merge
+base with `origin/dev`, and a stale `origin/dev` gives the wrong one.
+
+### `npm run check:pr`
+
+Runs `scripts/pr-check.mjs`: every step of `verify-build`, in its order, then the
+`unit` job's tests. That is the PII lint, the shell lint, the typecheck, the authz,
+tenant-host and audit caps against `origin/dev`, the design-system, staff-word,
+migration and ESLint lints, the build and the browser-bundle key check, then
+`npm run test`.
+
+- The environment is CI's: the script reads the `env: &verify-env` block from
+  `ci.yml` when it runs. Next.js lets those placeholders win over `.env.local`, so
+  `.next` then holds a build with placeholder keys. Rebuild before `npm start`.
+- It stops at the first failure. `-- --keep-going` runs the rest; `-- --skip-build`
+  leaves out the build and the bundle check; `-- --since <ref>` changes the base.
+- `npm ci` is not run: your `node_modules` are used as they are.
+- Without `shellcheck` installed (`brew install shellcheck`), the shell lint shows as
+  skipped, not passed. CI always runs it.
+- `test/ci-pr-check.test.ts` fails when `verify-build` or `unit` gains a step this
+  script doesn't run, so add the step to both.
+
+### `npm run baselines`
+
+Runs `scripts/baselines.mjs`: every ratchet baseline generator, in this order, each
+in its shrink-only mode, then lists the files that changed. It does not stage or
+commit anything.
+
+| Order | Generator | Writes |
+|---|---|---|
+| 1 | `npx tsx scripts/s5-inventory.mjs --write` | `test/baselines/service-role-files.json`, `sanity-event-getters.json`, `unaudited-mutations.json` |
+| 2 | `npx tsx scripts/authz-idioms.mjs --write` | `test/baselines/authz-legacy-idioms.json` |
+| 3 | `npx tsx scripts/tenant-surface-baseline.mjs --write` | `test/tenant-surface-baseline.json` |
+| 4 | `STELLR_ONLY_LISTS_WRITE=1 npx vitest run test/stellr-only-lists-ratchet.test.ts` | `test/baselines/stellr-only-lists.json` |
+| 5 | `node scripts/ds-lint.mjs --update-baseline`, only after a plain `ds-lint` passes (its write mode would record a rise too) | `scripts/ds-lint-baseline.json` |
+| 6 | `npm run idor:snapshot` | `test/idor/idor-snapshot.json`, `test/baselines/tenant-host-idor.json` |
+
+A count that fell is written down. A count that rose makes the generator refuse, and
+the script exits 1: fix the cause. Growing a baseline stays a person's decision,
+taken with that generator's own flag and the matching PR label (see each script's
+header), never through this script. On a tree whose baselines are current, it
+changes nothing and prints "No baseline changed."
 
 ## The schema diff against production
 

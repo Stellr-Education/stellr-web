@@ -1,4 +1,5 @@
-import { NextResponse } from 'next/server'
+import { NextResponse, type NextRequest } from 'next/server'
+import { parseBody } from 'next-sanity/webhook'
 import { supabaseServer } from '@/lib/supabase'
 import { syncEventSpace } from '@/lib/event-space-sync'
 import { fireObjectCreatedRules } from '@/lib/object-created-rules'
@@ -7,7 +8,7 @@ import { ensureDistribution } from '@/lib/survey/distributions'
 import { loadSurveyEvent } from '@/lib/survey/events'
 import { isRealProductionApp } from '@/lib/env-guards'
 import { syncEventOptions } from '@/lib/hubspot-event-options'
-import { syncEventMirrorSafe } from '@/lib/events/sync'
+import { fetchSanityEvent, syncEventMirrorSafe } from '@/lib/events/sync'
 
 // POST /api/admin/sanity/event-sync — Sanity → Supabase access-structure sync
 // (HANDOFF-CODE-REVIEW §7). Sanity is the source of truth for event CONTENT;
@@ -22,57 +23,112 @@ import { syncEventMirrorSafe } from '@/lib/events/sync'
 // shared with `npm run sync:event-spaces`.
 //
 // Configure in Sanity: webhook on event create/update, URL this route, secret
-// in SANITY_WEBHOOK_SECRET, sent as the `x-webhook-secret` HEADER.
+// in SANITY_WEBHOOK_SECRET.
 //
-// deep review AUTH-10: the `?secret=` query form was dropped — a query-string
-// secret lands in Vercel access logs (and any proxy/referrer), so it is a
-// leaked credential. The header form is the only one accepted now. A fuller fix
-// — verifying Sanity's HMAC body signature with @sanity/webhook's
-// isValidSignature and re-fetching the document by _id — is deliberately NOT
-// done here: it needs a direct @sanity/webhook dependency AND the live Sanity
-// webhook reconfigured to sign its payload, which is an operational change for
-// the maintainer. Flagged for follow-up; the constant-time shared-secret compare
-// below remains the guard in the meantime.
+// Two ways in, while the live webhook moves over (deep review v2 .12):
+//   1. SIGNED (the target). Sanity signs the body with the webhook's secret and
+//      sends `sanity-webhook-signature`; next-sanity/webhook's parseBody checks
+//      it against SANITY_WEBHOOK_SECRET.
+//   2. HEADER (legacy). The same secret sent as a custom `x-webhook-secret`
+//      header, compared in constant time. deep review AUTH-10 already dropped
+//      the `?secret=` query form, which leaked the secret into access logs.
+// A request passes if either holds and is refused otherwise; the log line says
+// which path let it in, never the secret. Next: the owner switches the live
+// webhook to signed delivery (docs/RUNBOOK-sanity-studio.md, "Signed event-sync
+// webhook"), the logs show only "signature" for a while, and a follow-up drops
+// the header path.
+//
+// Either way the payload is used only for the document's identity. Its fields
+// are not trusted: the event is re-read from Sanity by _id (uncached), and that
+// copy drives the sync. If the read fails, or returns an older revision than
+// the payload names, the route answers 503 so Sanity retries.
 
+const SIGNATURE_HEADER = 'sanity-webhook-signature'
+
+/** The payload fields the route reads: identity and revision time only. */
 interface SanityEventPayload {
   _id?: string
   _type?: string
-  title?: string
-  slug?: { current?: string } | string
-  activityType?: string
+  _updatedAt?: string
+}
+
+type AuthPath = 'signature' | 'header'
+
+/** Which guard let the request in, or why none did. Reads only headers and the raw body. */
+async function authorise(req: Request, raw: string, secret: string): Promise<AuthPath | 'bad-signature' | 'none'> {
+  const signature = req.headers.get(SIGNATURE_HEADER)
+  let signed = false
+  if (signature) {
+    try {
+      // parseBody wants the request; hand it one over the body already read.
+      // No eventual-consistency wait: the document is re-read below, and a
+      // stale read answers 503 instead.
+      const asRequest = { headers: req.headers, text: async () => raw } as unknown as NextRequest
+      signed = (await parseBody(asRequest, secret, false)).isValidSignature === true
+    } catch {
+      signed = false // an unparseable body or a malformed header verifies nothing
+    }
+  }
+  if (signed) return 'signature'
+  const provided = req.headers.get('x-webhook-secret')
+  if (provided && safeStrEqual(provided, secret)) return 'header'
+  return signature ? 'bad-signature' : 'none'
 }
 
 export async function POST(req: Request) {
+  // Fails closed when the secret is unset: it is the only guard on this route
+  // (there is no admin session), for both paths.
   const secret = process.env.SANITY_WEBHOOK_SECRET
-  // Header only — the ?secret= query form was removed (AUTH-10: it leaks into
-  // access logs). A secret in the URL is a leaked credential, so we no longer
-  // read one from the query string even if present.
-  const provided = req.headers.get('x-webhook-secret')
-  // Constant-time compare (this shared secret is the ONLY guard on this route —
-  // there's no admin session — so the compare quality matters). Fails closed when
-  // the secret is unset.
-  if (!secret || !provided || !safeStrEqual(provided, secret)) {
-    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  if (!secret) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+
+  // A copy of the raw body for the signature, which covers the exact bytes.
+  const raw = await req.clone().text().catch(() => '')
+  const auth = await authorise(req, raw, secret)
+  if (auth === 'bad-signature') {
+    console.warn('[event-sync] refused: invalid signature and no valid header')
+    return NextResponse.json({ error: 'Invalid signature' }, { status: 401 })
   }
+  if (auth === 'none') return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  console.info(`[event-sync] authorised by ${auth === 'signature' ? 'signature' : 'x-webhook-secret header'}`)
 
   const body = (await req.json().catch(() => null)) as SanityEventPayload | null
-  if (!body || (body._type && body._type !== 'event')) {
+  if (!body || typeof body !== 'object' || (body._type && body._type !== 'event')) {
     return NextResponse.json({ error: 'Not an event payload' }, { status: 400 })
   }
-  const slug = typeof body.slug === 'string' ? body.slug : body.slug?.current
-  if (!slug) return NextResponse.json({ error: 'slug required' }, { status: 400 })
   // Without the _id there is no durable identity to match on, and matching on
   // slug is precisely the bug this route exists to avoid — so refuse rather than
   // fall back to it. Sanity sends _id on every document webhook.
-  if (!body._id) return NextResponse.json({ error: '_id required' }, { status: 400 })
-  const title = body.title ?? slug
-  const objectType = body.activityType === 'campaign' ? ('campaign' as const) : ('event' as const)
+  if (typeof body._id !== 'string' || !body._id) return NextResponse.json({ error: '_id required' }, { status: 400 })
+  // A draft is never readable as published, so a retry could not help.
+  if (body._id.startsWith('drafts.')) return NextResponse.json({ error: 'Drafts are not synced' }, { status: 400 })
+  const sanityId = body._id
+
+  // The event as Sanity holds it now, not as the payload describes it.
+  let doc: Awaited<ReturnType<typeof fetchSanityEvent>>
+  try {
+    doc = await fetchSanityEvent({ sanityId })
+  } catch (err) {
+    console.error('[event-sync] re-fetch from Sanity failed:', err)
+    return NextResponse.json({ error: 'Could not read the event from Sanity' }, { status: 503 })
+  }
+  if (!doc) {
+    // Just published and not yet readable, or Sanity is not configured here.
+    return NextResponse.json({ error: 'Event not readable from Sanity yet' }, { status: 503 })
+  }
+  if (typeof body._updatedAt === 'string' && doc._updatedAt && doc._updatedAt < body._updatedAt) {
+    return NextResponse.json({ error: 'Sanity returned an older revision' }, { status: 503 })
+  }
+
+  const slug = typeof doc.slug === 'string' ? doc.slug : doc.slug?.current
+  if (!slug) return NextResponse.json({ error: 'slug required' }, { status: 400 })
+  const title = doc.title ?? slug
+  const objectType = doc.activityType === 'campaign' ? ('campaign' as const) : ('event' as const)
 
   const db = supabaseServer()
 
   // Container + Space + event link + roster backfill, and a slug repair across
   // every table if the slug has moved since we last saw this _id.
-  const sync = await syncEventSpace(db, { sanityId: body._id, slug, title })
+  const sync = await syncEventSpace(db, { sanityId, slug, title })
 
   // Fire object_created rules (auto-attach configured spaces/courses/resources).
   // Not for another tenant's event: a Space rule needs no container, so it would link a
@@ -138,7 +194,7 @@ export async function POST(req: Request) {
   // webhook. Re-read from Sanity by _id, like the survey above.
   let mirror: string
   try {
-    mirror = (await syncEventMirrorSafe(db, { sanityId: body._id, slug })).status
+    mirror = (await syncEventMirrorSafe(db, { sanityId, slug })).status
   } catch (err) {
     console.error('[event-sync] events mirror failed:', err)
     mirror = 'error'
@@ -146,6 +202,7 @@ export async function POST(req: Request) {
 
   return NextResponse.json({
     ok: true,
+    auth,
     slug,
     survey,
     hubspotOptions,

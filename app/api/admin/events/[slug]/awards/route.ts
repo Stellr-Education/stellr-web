@@ -18,8 +18,31 @@ import {
   type AssignmentRow,
 } from '@/lib/event-certificates'
 import { pendingAwardChanges } from '@/lib/event-award-issue'
+import { bodyIds, withAudit, type AuditMutation } from '@/lib/audit/route'
+import { auditSubject, noteAuditSubject } from '@/lib/audit/route-subject'
 
 export const dynamic = 'force-dynamic'
+
+// Platform audit (docs/TENANCY-S5.md, C7). The handler notes who passed requireEventAccess;
+// the event goes on the chain of the event's owner, read from the mirror by its slug.
+/** The event in the URL, /api/admin/events/<slug>/…: only looked up, never stored from here. */
+function eventSlugOf(req: Request): string {
+  const parts = new URL(req.url).pathname.split('/')
+  const at = parts.indexOf('events')
+  return at < 0 ? '' : (parts[at + 1] ?? '')
+}
+function eventAudit(req: Request, table: string): Omit<AuditMutation, 'action'> {
+  return { ...auditSubject(req, table), tenant: { eventSlug: eventSlugOf(req) } }
+}
+
+// Which change (an enum), the award type and the ids it named are the metadata.
+const assignAudit = ({ args: [req] }: { args: [Request, { params: Promise<{ slug: string }> }] }) => ({
+  action: 'event.awards.assign' as const,
+  ...eventAudit(req, 'event_award_assignments'),
+})
+const AWARD_ACTIONS = ['set_champion', 'add', 'remove', 'set_specialist'] as const
+
+export const PUT = withAudit(assignAudit, changeAssignment)
 
 // Judging results for an event, as a draft. Nothing here reaches a student
 // until ./issue turns the assignments into credentials.
@@ -71,12 +94,21 @@ type Body =
   | { action: 'set_specialist'; awardType: AssignedAwardType; companyId: string | null; participantId: string | null }
 
 // PUT — one change at a time; returns the new snapshot.
-export async function PUT(req: Request, { params }: { params: Promise<{ slug: string }> }) {
+async function changeAssignment(req: Request, { params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params
   const access = await requireEventAccess(slug)
   if (!access.ok) return NextResponse.json({ error: 'Forbidden' }, { status: access.status })
 
   const body = (await req.json().catch(() => ({}))) as Partial<Body> & Record<string, unknown>
+  noteAuditSubject(req, {
+    userId: access.userId,
+    eventSlug: slug,
+    detail: {
+      ...((AWARD_ACTIONS as readonly unknown[]).includes(body.action) ? { award_action: body.action } : {}),
+      ...(isAssignedAwardType(body.awardType) ? { award_type: body.awardType } : {}),
+      ...bodyIds(body, ['participantId', 'companyId']),
+    },
+  })
   const db = supabaseServer()
   const students = await eligibleStudents(db, slug)
   const byId = new Map(students.map((s) => [s.id, s]))

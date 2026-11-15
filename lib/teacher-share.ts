@@ -3,6 +3,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { getEventBySlug } from '@/lib/events/repo'
 import { isAdultRole, isSharedGroup, payerOf, type PayerGroup } from '@/lib/group-payer'
 import type { CouponTerms } from '@/lib/group-billing'
+import type { ParticipantRow, RegistrationRow } from '@/lib/database.types'
 
 // Students share the teacher's cost (9 Nov 2026). Owner decisions, recorded in
 // docs/PLAN-group-payment-options-2026-11-09.md:
@@ -145,12 +146,22 @@ export function summarise(reg: ShareGroup, people: SharePerson[]): ShareSummary 
 const SHARE_REG_COLUMNS = 'id, event_slug, event_title, member_pays_individually, late_joiner_payer, share_estimate, share_unit_cents, share_cents, share_first_paid_at, share_settled_at'
 const SHARE_PEOPLE_COLUMNS = 'id, payer, individual_payment_status, event_role, share_paid_cents, stripe_payment_intent_id, member_id'
 
+// group-payment-options.12: the rows these reads return, from the schema in
+// lib/database.types.ts (participants.member_id isn't in that hand-written file yet).
+type ShareRegRow = Pick<RegistrationRow,
+  'id' | 'event_slug' | 'event_title' | 'member_pays_individually' | 'late_joiner_payer'
+  | 'share_estimate' | 'share_unit_cents' | 'share_cents' | 'share_first_paid_at' | 'share_settled_at'>
+type SharePersonRow = Pick<ParticipantRow,
+  'id' | 'payer' | 'individual_payment_status' | 'event_role' | 'share_paid_cents' | 'stripe_payment_intent_id'>
+  & { member_id: string | null }
+
 export async function loadShareGroup(db: Db, registrationId: string): Promise<{ reg: ShareGroup & { event_title?: string }; people: SharePerson[] } | null> {
-  const { data: reg } = await db.from('registrations').select(SHARE_REG_COLUMNS).eq('id', registrationId).maybeSingle()
+  const { data: reg } = await db.from('registrations').select(SHARE_REG_COLUMNS).eq('id', registrationId).maybeSingle<ShareRegRow>()
   if (!reg) return null
-  const { data: people, error } = await db.from('participants').select(SHARE_PEOPLE_COLUMNS).eq('registration_id', registrationId)
+  const { data, error } = await db.from('participants').select(SHARE_PEOPLE_COLUMNS).eq('registration_id', registrationId)
   if (error) throw new Error(`Could not read the group: ${error.message}`)
-  return { reg: reg as unknown as ShareGroup, people: (people ?? []) as SharePerson[] }
+  const people: SharePersonRow[] = data ?? []
+  return { reg, people }
 }
 
 // ── Keeping the share current ────────────────────────────────────────────────
@@ -164,7 +175,15 @@ export async function loadShareGroup(db: Db, registrationId: string): Promise<{ 
 export async function refreshShare(db: Db, registrationId: string): Promise<ShareSummary | null> {
   const loaded = await loadShareGroup(db, registrationId)
   if (!loaded || !isSharedGroup(loaded.reg)) return null
+  return refreshLoaded(db, loaded)
+}
+
+type LoadedShareGroup = NonNullable<Awaited<ReturnType<typeof loadShareGroup>>>
+
+/** refreshShare on a group already read; updates `loaded` in place as it writes. */
+async function refreshLoaded(db: Db, loaded: LoadedShareGroup): Promise<ShareSummary> {
   const { reg, people } = loaded
+  const registrationId = reg.id
 
   // An adult who joined with no payer recorded and folds into the pool.
   const folding = people.filter((p) => p.payer == null && p.individual_payment_status == null && payerOf(p, reg) === 'shared')
@@ -239,6 +258,50 @@ async function refundShare(
   }
 }
 
+/**
+ * group-payment-options.10 fallback: a student who paid through a shared-cost
+ * checkout but whose share_paid_cents is NULL (the webhook's write failed) would
+ * otherwise be counted as "paid before sharing": left out of the share and never
+ * trued up. Their Checkout session still carries the split recordSeatShare reads,
+ * so look it up by their payment intent and use it. The recovered split is
+ * written back (best effort) so later reads agree; settlement uses it either way.
+ * A student whose session isn't a shared-cost one really did pay before sharing.
+ */
+async function recoverUnrecordedShares(db: Db, stripe: Stripe, loaded: LoadedShareGroup): Promise<number> {
+  const { reg, people } = loaded
+  const candidates = people.filter((p) => paidBeforeSharing(p) && !isAdultRole(p.event_role) && payerOf(p, reg) === 'self')
+  let recovered = 0
+  for (const p of candidates) {
+    const intent = p.stripe_payment_intent_id
+    if (!intent) continue
+    let split: ReturnType<typeof seatSplitFromMetadata> = null
+    try {
+      const sessions = await stripe.checkout.sessions.list({ payment_intent: intent, limit: 1 })
+      const session = sessions.data[0]
+      if (session && session.metadata?.participantId === p.id) split = seatSplitFromMetadata(session.metadata)
+    } catch (e) {
+      console.error('[teacher-share] could not read the checkout session for an unrecorded share:', e instanceof Error ? e.message : e, { registrationId: reg.id, participantId: p.id })
+      continue
+    }
+    if (!split) continue
+    p.share_paid_cents = split.shareCents
+    recovered++
+    const { error } = await db.from('participants')
+      .update({ base_paid_cents: split.baseCents, share_paid_cents: split.shareCents, discount_code: split.discountCode })
+      .eq('id', p.id).is('share_paid_cents', null)
+    if (error) console.error('[teacher-share] could not write back a recovered share:', error.message, { registrationId: reg.id, participantId: p.id })
+  }
+  // The same failed webhook may have missed the first-paid stamp, which starts
+  // the "only goes down" rule.
+  if (!reg.share_first_paid_at && candidates.some((p) => (p.share_paid_cents ?? 0) > 0)) {
+    const stamp = new Date().toISOString()
+    reg.share_first_paid_at = stamp
+    const { error } = await db.from('registrations').update({ share_first_paid_at: stamp }).eq('id', reg.id).is('share_first_paid_at', null)
+    if (error) console.error('[teacher-share] could not stamp the first share paid:', error.message, { registrationId: reg.id })
+  }
+  return recovered
+}
+
 async function alertTeam(body: string) {
   // Lazy, through the billing helper: it reaches Clerk, which the pure tests never load.
   const { alertTeam: alert } = await import('@/lib/group-billing')
@@ -251,10 +314,13 @@ async function alertTeam(body: string) {
  * trued up has nothing left above the final share.
  */
 export async function settleShare(db: Db, stripe: Stripe, registrationId: string): Promise<{ refunded: number; failed: number } | null> {
-  const summary = await refreshShare(db, registrationId)
-  if (!summary || summary.settled) return null
   const loaded = await loadShareGroup(db, registrationId)
-  if (!loaded) return null
+  if (!loaded || !isSharedGroup(loaded.reg) || loaded.reg.share_settled_at) return null
+  // Before counting: a student whose share the webhook couldn't record is not
+  // "paid before sharing". Their split is on their Checkout session.
+  await recoverUnrecordedShares(db, stripe, loaded)
+  const summary = await refreshLoaded(db, loaded)
+  if (summary.settled) return null
   const final = summary.shareCents
   const results: ShareRefund[] = []
   for (const p of loaded.people) {
@@ -289,7 +355,8 @@ export async function settleDueShares(db: Db, stripe: Stripe, limit = 50): Promi
   if (error) throw new Error(error.message)
   const tally: Record<string, number> = { settled: 0, not_due: 0, refunds: 0, refunds_failed: 0 }
   const events = new Map<string, boolean>()
-  for (const row of (data ?? []) as { id: string; event_slug: string }[]) {
+  const due: Pick<RegistrationRow, 'id' | 'event_slug'>[] = data ?? []
+  for (const row of due) {
     if (!events.has(row.event_slug)) {
       const event = (await getEventBySlug(row.event_slug).catch(() => null)) as { date?: string; endDate?: string } | null
       events.set(row.event_slug, eventIsOver(event))
@@ -483,30 +550,71 @@ export async function createSharedSeatCheckout(db: Db, stripe: Stripe, opts: Sha
   return { url: session.url, sessionId: session.id, charge }
 }
 
+/** The split a shared-cost Checkout session carries in its metadata, or null when it isn't one. */
+export function seatSplitFromMetadata(
+  metadata: Record<string, string> | null | undefined,
+): { baseCents: number; shareCents: number; discountCode: string | null } | null {
+  if (metadata?.teacherShare !== 'true') return null
+  const base = Number(metadata.baseCents)
+  const share = Number(metadata.shareCents)
+  if (metadata.baseCents == null || metadata.shareCents == null || !Number.isFinite(base) || !Number.isFinite(share)) return null
+  return { baseCents: base, shareCents: share, discountCode: metadata.discountCode ?? null }
+}
+
+export type SeatShareResult =
+  | { status: 'skipped' }
+  | { status: 'recorded' }
+  | { status: 'failed'; error: string }
+
 /**
  * The webhook's half: what a student paid toward their place and the share,
  * read from the session (never the live share, which may have dropped since).
  * The first share paid starts the "only goes down" rule. Never throws.
+ *
+ * group-payment-options.10: a write that comes back with a Supabase `{ error }`
+ * used to pass silently, leaving share_paid_cents NULL, so settlement counted the
+ * student as "paid before sharing" and never trued them up. A failure is now
+ * reported to app_errors (the staff digest) with the registration and participant
+ * ids only, and returned so the webhook can note it. The payment itself
+ * succeeded, so the webhook still answers 200; settleShare recovers the split
+ * from the Checkout session.
  */
 export async function recordSeatShare(
   db: Db,
   registrationId: string,
   participantId: string | null | undefined,
   metadata: Record<string, string> | null | undefined,
-): Promise<void> {
-  if (metadata?.teacherShare !== 'true' || !participantId) return
-  const base = Number(metadata.baseCents)
-  const share = Number(metadata.shareCents)
-  if (!Number.isFinite(base) || !Number.isFinite(share)) return
+): Promise<SeatShareResult> {
+  if (!participantId) return { status: 'skipped' }
+  const split = seatSplitFromMetadata(metadata)
+  if (!split) return { status: 'skipped' }
+  const failures: string[] = []
   try {
-    await db.from('participants')
-      .update({ base_paid_cents: base, share_paid_cents: share, discount_code: metadata.discountCode ?? null })
+    const { error } = await db.from('participants')
+      .update({ base_paid_cents: split.baseCents, share_paid_cents: split.shareCents, discount_code: split.discountCode })
       .eq('id', participantId)
-    if (share > 0) {
-      await db.from('registrations').update({ share_first_paid_at: new Date().toISOString() })
-        .eq('id', registrationId).is('share_first_paid_at', null)
-    }
+    if (error) failures.push(`participant write: ${error.code ?? error.message ?? 'unknown'}`)
   } catch (e) {
-    console.error('[teacher-share] could not record a share payment:', e, { registrationId, participantId })
+    failures.push(`participant write threw: ${e instanceof Error ? e.name : 'unknown'}`)
   }
+  if (split.shareCents > 0) {
+    try {
+      const { error } = await db.from('registrations').update({ share_first_paid_at: new Date().toISOString() })
+        .eq('id', registrationId).is('share_first_paid_at', null)
+      if (error) failures.push(`first-paid write: ${error.code ?? error.message ?? 'unknown'}`)
+    } catch (e) {
+      failures.push(`first-paid write threw: ${e instanceof Error ? e.name : 'unknown'}`)
+    }
+  }
+  if (failures.length === 0) return { status: 'recorded' }
+
+  const error = failures.join('; ')
+  console.error('[teacher-share] could not record a share payment:', error, { registrationId, participantId })
+  // Lazy, like alertTeam: app-errors reaches the email stack, which the pure tests never load.
+  const { reportError } = await import('@/lib/app-errors')
+  await reportError(
+    new Error(`Shared-cost share not recorded for registration ${registrationId}, participant ${participantId} (${error})`),
+    { route: 'POST /api/stripe/webhook' },
+  )
+  return { status: 'failed', error }
 }

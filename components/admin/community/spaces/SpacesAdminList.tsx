@@ -9,6 +9,7 @@ import { Modal } from '@/components/ui/Modal'
 import { toast } from '@/components/ui/Toast'
 import { AccessBadge, ThemeDot, TierPill, ACCESS_META } from '@/components/community/spaces/badges'
 import type { SpaceAccessType, SpaceTheme } from '@/lib/spaces'
+import { useCan } from '@/components/admin/CapabilitiesContext'
 
 export interface AdminSpaceRow {
   id: string
@@ -28,6 +29,8 @@ const STICKY = 'sticky left-0 z-10 border-r border-line-light'
 export function SpacesAdminList({ initial }: { initial: AdminSpaceRow[] }) {
   const router = useRouter()
   const [creating, setCreating] = useState(false)
+  // Creating and changing a Space is community:manage, an admin's alone.
+  const canWrite = useCan('community:manage')
 
   const stats = useMemo(() => {
     const by = (t: SpaceAccessType) => initial.filter((s) => s.access_type === t).length
@@ -36,6 +39,7 @@ export function SpacesAdminList({ initial }: { initial: AdminSpaceRow[] }) {
 
   return (
     <div>
+      {canWrite && (
       <div className="mb-5 flex items-center justify-end">
         <button
           onClick={() => setCreating(true)}
@@ -44,6 +48,7 @@ export function SpacesAdminList({ initial }: { initial: AdminSpaceRow[] }) {
           <Plus className="h-4 w-4" /> New Space
         </button>
       </div>
+      )}
 
       {/* Stat cards */}
       <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
@@ -73,7 +78,7 @@ export function SpacesAdminList({ initial }: { initial: AdminSpaceRow[] }) {
               <th scope="col" className={TH}>Members</th>
               <th scope="col" className={TH}>Posting</th>
               <th scope="col" className={TH}>
-                <span className="sr-only">Edit</span>
+                <span className="sr-only">{canWrite ? 'Edit' : 'View'}</span>
               </th>
             </tr>
           </thead>
@@ -110,7 +115,7 @@ export function SpacesAdminList({ initial }: { initial: AdminSpaceRow[] }) {
                     href={`/admin/community/spaces/${s.id}`}
                     className="inline-flex items-center gap-1 rounded-lg border border-line px-2.5 py-1.5 text-xs font-subheading font-semibold text-content-body hover:bg-surface"
                   >
-                    <Pencil className="h-3.5 w-3.5" /> Edit
+                    {canWrite ? <><Pencil className="h-3.5 w-3.5" /> Edit</> : 'View'}
                   </Link>
                 </td>
               </tr>
@@ -127,7 +132,7 @@ export function SpacesAdminList({ initial }: { initial: AdminSpaceRow[] }) {
       </div>
 
       <NewSpaceModal
-        open={creating}
+        open={canWrite && creating}
         onClose={() => setCreating(false)}
         onCreated={(id) => {
           toast('Space created')

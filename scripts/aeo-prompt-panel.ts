@@ -53,8 +53,10 @@ async function askClaude(prompt: string): Promise<Answer> {
   // Web search can pause a long turn; resume it by sending the content back.
   for (let turn = 0; turn < 4; turn++) {
     const res = await client.beta.messages.create({
-      model: 'claude-opus-5',
+      // Claude Opus 5.5 defaults to medium effort; high keeps what Opus 5 did by default.
+      model: 'claude-opus-5-5',
       max_tokens: 16000,
+      output_config: { effort: 'high' },
       betas: ['server-side-fallback-2026-07-01'],
       fallbacks: 'default',
       tools: [{ type: 'web_search_20260209', name: 'web_search', max_uses: 5 }],

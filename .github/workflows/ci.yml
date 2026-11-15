@@ -225,6 +225,20 @@ jobs:
       - name: PII lint (added lines in docs)
         run: npm run lint:pii
 
+      # The composite actions' shell scripts (playwright-apt-offline.8). The
+      # runner image ships shellcheck, so nothing is downloaded; the version is
+      # printed so a finding that appears with a new image can be traced. Before
+      # `npm ci` for the same reason as the PII lint.
+      - name: Shell lint (.github/actions scripts)
+        run: |
+          shellcheck --version
+          mapfile -t scripts < <(find .github/actions -type f -name '*.sh' | sort)
+          if [ "${#scripts[@]}" -eq 0 ]; then
+            echo "::error::No shell scripts found under .github/actions, so the lint checked nothing."; exit 1
+          fi
+          printf 'Checking %s\n' "${scripts[@]}"
+          shellcheck "${scripts[@]}"
+
       - run: npm ci
 
       - name: Typecheck
@@ -509,6 +523,18 @@ jobs:
           name: playwright-report
           path: playwright-report/
           retention-days: 7
+
+      # The counts and the title of every skipped test, as e2e-local prints them
+      # (e2e-local-stack.3), so the two jobs' skip lists can be compared. Titles
+      # and counts only: nothing from the run's sessions reaches the summary.
+      - if: always() && steps.config.outputs.ready == 'true'
+        name: Summarise the run
+        run: |
+          if [ -f test-results/e2e-results.json ]; then
+            node scripts/e2e-report-summary.mjs test-results/e2e-results.json e2e-tests | tee -a "$GITHUB_STEP_SUMMARY"
+          else
+            echo "No Playwright report: the suite did not finish." | tee -a "$GITHUB_STEP_SUMMARY"
+          fi
 
   # Storybook (mobile review G5): every story renders at phone width with no
   # page error and no serious/critical axe issue (e2e/storybook). Static files
@@ -1065,7 +1091,7 @@ jobs:
         name: Summarise the run
         run: |
           if [ -f test-results/e2e-results.json ]; then
-            node scripts/e2e-report-summary.mjs test-results/e2e-results.json | tee -a "$GITHUB_STEP_SUMMARY"
+            node scripts/e2e-report-summary.mjs test-results/e2e-results.json e2e-local | tee -a "$GITHUB_STEP_SUMMARY"
           else
             echo "No Playwright report: the suite did not finish." | tee -a "$GITHUB_STEP_SUMMARY"
           fi

@@ -80,5 +80,5 @@ On the day someone leaves, or stops volunteering:
 - Count production Clerk users with `publicMetadata.role = 'staff'` before promoting phase 1: anyone holding it would get portal access. Dev had none.
 - Apply the migrations to production before the code, outside event hours: `20261113120000`, `20261113200000`, `20261113210000`, `20261114090000`.
 - Decide on `PLATFORM_AUDIT_ENABLED` (unset on both Vercel projects today).
-- Drop the compatibility views `staff_roles` and `event_staff_check_ins` one release after the rename reaches production.
+- Drop the compatibility views `staff_roles` and `event_staff_check_ins` one release after the rename reaches production. The rename reached production with #680 (14 Nov 2026). The drop is written as `supabase/migrations/20261114175430_drop_staff_compat_views.sql` (no CASCADE, no data change) and is proven only by CI's `db` pgTAP job; it is applied to no database yet. Apply it through the Production migration Action (`.github/workflows/prod-migrate.yml`) with the owner's yes, outside event hours, in the release after #680. Nothing in the code reads the old names, so it can go before or with that release's code.
 - Open: a purge job for `record_access_log` (3 years) and ended `staff_grants` (7 years); both tables refuse ordinary deletes.

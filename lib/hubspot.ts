@@ -26,6 +26,10 @@
 //   HUBSPOT_PORTAL_ID             portal id (24379847) — needed for Forms API
 //   HUBSPOT_FORM_*                per-route form GUIDs (see hubspot-fields.ts)
 //
+// Optional env:
+//   HUBSPOT_DRY_RUN=1             skip and log every write; reads still run (ignored on production)
+//                                 (dev only — docs/ENV-MATRIX.md §4)
+//
 // HubSpot now steers single-account server integrations to Service Keys rather
 // than legacy private apps. Both authenticate identically — `Authorization:
 // Bearer <token>` — so this module is indifferent to which one is configured.
@@ -39,6 +43,7 @@
 
 import { after } from 'next/server'
 import { sendEmail } from '@/lib/email'
+import { isProd } from '@/lib/env'
 import { supabaseServer } from '@/lib/supabase'
 import { sleep } from '@/lib/utils'
 import {
@@ -82,9 +87,77 @@ function isRetryableRead(path: string, method: string): boolean {
   return method === 'POST' && (path.includes('/search') || path.endsWith('/batch/read'))
 }
 
+/* ── Dry run (HUBSPOT_DRY_RUN=1) ─────────────────────────────────────────── */
+
+// deploy-env.hubspot-dry-run: dev has no HubSpot sandbox portal on this plan,
+// so the only way to run dev with a real token (to exercise the reads) without
+// writing to the one live portal is to skip the writes here, at the transport.
+// Every write — CRM objects, notes, associations, property and form-definition
+// edits (all through hubspotFetch) and form submissions (submitForm's post) —
+// goes through hubspotWriteSkipped first. Reads still run when a token exists.
+// docs/ENV-MATRIX.md §4: dev may set it; production never.
+
+/** The id a skipped create hands back, so callers that need one carry on. */
+export const HUBSPOT_DRY_RUN_ID = 'dry-run'
+
+/** Read at call time, so a test (or a late-injected env) can flip it. */
+export function hubspotDryRun(): boolean {
+  const value = (process.env.HUBSPOT_DRY_RUN ?? '').trim().toLowerCase()
+  return value === '1' || value === 'true'
+}
+
+/**
+ * The path as it is safe to log: no query string, and any segment that holds an
+ * email address (contacts are addressed by email, `?idProperty=email`) replaced.
+ */
+export function dryRunLogPath(path: string): string {
+  return path
+    .split('?')[0]
+    .split('/')
+    .map((segment) => (/@|%40/i.test(segment) ? '<email>' : segment))
+    .join('/')
+}
+
+let warnedDryRunInProduction = false
+
+/**
+ * True when this write must be skipped, having logged it. The one guard every
+ * HubSpot write passes through.
+ */
+function hubspotWriteSkipped(method: string, path: string): boolean {
+  if (!hubspotDryRun()) return false
+  // Never on production: a stray HUBSPOT_DRY_RUN there would silently lose every
+  // lead (the dead-letter path is bypassed too), so production ignores it and warns.
+  if (isProd()) {
+    if (!warnedDryRunInProduction) {
+      warnedDryRunInProduction = true
+      console.warn('[hubspot] HUBSPOT_DRY_RUN is set on a production deployment and is ignored; HubSpot writes go ahead')
+    }
+    return false
+  }
+  console.log(`[hubspot] dry-run ${method} ${dryRunLogPath(path)}`)
+  return true
+}
+
+/** What a skipped write returns: a 200 the callers read as success. */
+function dryRunResponse(): Response {
+  return new Response(JSON.stringify({ id: HUBSPOT_DRY_RUN_ID }), {
+    status: 200,
+    headers: { 'Content-Type': 'application/json' },
+  })
+}
+
 // The one HubSpot transport. hubspot-deals and hubspot-companies import it
 // rather than carrying their own copy of the same eight lines.
-export async function hubspotFetch(path: string, method: 'GET' | 'POST' | 'PATCH' | 'PUT', body?: unknown) {
+export async function hubspotFetch(
+  path: string,
+  method: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE',
+  body?: unknown,
+) {
+  // A search or batch-read POST is a read, so it runs; anything else that is
+  // not a GET writes, and a dry run skips it.
+  if (!isRetryableRead(path, method) && hubspotWriteSkipped(method, path)) return dryRunResponse()
+
   for (let attempt = 0; ; attempt++) {
     const res = await fetch(`${BASE}${path}`, {
       method,
@@ -410,6 +483,9 @@ async function submitForm(
     const path = secure
       ? `/submissions/v3/integration/secure/submit/${PORTAL_ID}/${formId}`
       : `/submissions/v3/integration/submit/${PORTAL_ID}/${formId}`
+    // Not through hubspotFetch (another host, and the public path carries no
+    // token), so it takes the same dry-run guard here.
+    if (hubspotWriteSkipped('POST', path)) return dryRunResponse()
     return fetch(`${FORMS_BASE}${path}`, {
       method: 'POST',
       headers: {
@@ -579,6 +655,8 @@ function runAfterResponse(task: () => Promise<unknown>): void {
  */
 async function deadLetter(input: LeadCaptureInput, reason: string): Promise<void> {
   if (!HUBSPOT_ACCESS_TOKEN) return
+  // A dry run skipped the writes on purpose; that is not a lost lead.
+  if (hubspotDryRun()) return
 
   const payload = {
     source: input.source,
@@ -773,6 +851,9 @@ export async function captureLead(input: LeadCaptureInput): Promise<LeadCaptureR
   // new record is not always readable on the next request. Retry briefly:
   // first-touch is precisely the case that needs the note most, since a brand
   // new contact has no other activity to surface it.
+  // A dry run created nothing, so there is nothing to wait for: stand in the
+  // dry-run id and let the note write below be logged as skipped too.
+  if (!contactId && hubspotDryRun()) contactId = HUBSPOT_DRY_RUN_ID
   if (!contactId && canRead) {
     for (const delayMs of [0, 400, 1200]) {
       if (delayMs) await new Promise((resolve) => setTimeout(resolve, delayMs))
@@ -807,8 +888,9 @@ export async function captureLead(input: LeadCaptureInput): Promise<LeadCaptureR
   }
 
   // Verify the append survived. Only meaningful when we actually wrote one —
-  // a form-only setup skips the log entirely because it cannot read first.
-  if (input.logEntry && canRead) {
+  // a form-only setup skips the log entirely because it cannot read first, and
+  // a dry run wrote nothing, so the repair would only "restore" into another skip.
+  if (input.logEntry && canRead && !hubspotDryRun()) {
     const entry = input.logEntry
     runAfterResponse(() => reconcileLogEntry(input.email, entry))
   }

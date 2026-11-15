@@ -3,6 +3,7 @@
 import { useId, useState } from 'react'
 import { Dialog } from '@stellr/web-ui'
 import { formatUsd } from '@/lib/mentoring-format'
+import { AdminOnlyBanner, ReadOnlyFieldset, useCan } from '@/components/admin/CapabilitiesContext'
 
 interface TierRow {
   id: string
@@ -33,6 +34,8 @@ export function MembershipAccess({ tiers: initialTiers, cohorts: initialCohorts 
   const [tiers, setTiers] = useState(initialTiers)
   const [cohorts, setCohorts] = useState(initialCohorts)
   const [editing, setEditing] = useState<CohortRow | null>(null)
+  // Access and credits are academy:manage, an admin's alone.
+  const canWrite = useCan('academy:manage')
 
   const toggleFree = async (id: string, value: boolean) => {
     setTiers((p) => p.map((t) => (t.id === id ? { ...t, includesFreeMentoring: value } : t)))
@@ -48,7 +51,9 @@ export function MembershipAccess({ tiers: initialTiers, cohorts: initialCohorts 
   }
 
   return (
+    <ReadOnlyFieldset readOnly={!canWrite}>
     <div className="space-y-8 pt-4">
+      {!canWrite && <AdminOnlyBanner>An admin sets mentoring access, credits and prices. You can see them here.</AdminOnlyBanner>}
       {/* Tiers */}
       <section className="rounded-card border border-line bg-white p-5">
         <h2 className="font-display text-[17px] font-bold text-ink">Membership tiers</h2>
@@ -128,7 +133,7 @@ export function MembershipAccess({ tiers: initialTiers, cohorts: initialCohorts 
                   </td>
                   <td className="py-3 text-content-secondary">{c.oneOffPriceCents != null ? formatUsd(c.oneOffPriceCents) : '—'}</td>
                   <td className="py-3 text-right">
-                    <button onClick={() => setEditing(c)} className="text-[13px] font-semibold text-primary hover:underline">Edit</button>
+                    {canWrite && <button onClick={() => setEditing(c)} className="text-[13px] font-semibold text-primary hover:underline">Edit</button>}
                   </td>
                 </tr>
               ))
@@ -137,7 +142,7 @@ export function MembershipAccess({ tiers: initialTiers, cohorts: initialCohorts 
         </table>
       </section>
 
-      {editing && (
+      {canWrite && editing && (
         <EditAccessModal
           cohort={editing}
           tiers={tiers}
@@ -149,6 +154,7 @@ export function MembershipAccess({ tiers: initialTiers, cohorts: initialCohorts 
         />
       )}
     </div>
+    </ReadOnlyFieldset>
   )
 }
 

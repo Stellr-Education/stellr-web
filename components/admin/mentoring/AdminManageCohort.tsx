@@ -12,6 +12,7 @@ import { ModalShell, ModalField, ScheduleAllModal, ScheduleOneModal } from '@/co
 import { formatSessionTime, themeTile, type CohortTheme } from '@/lib/mentoring-format'
 import type { RosterMember } from '@/lib/mentoring'
 import { MemberLink } from '@/components/admin/RecordLinks'
+import { AdminOnlyBanner, ReadOnlyFieldset, useCan } from '@/components/admin/CapabilitiesContext'
 import Link from 'next/link'
 
 type Tab = 'members' | 'schedule' | 'resources' | 'chat' | 'settings'
@@ -49,6 +50,9 @@ export function AdminManageCohort(props: {
   const [tab, setTab] = useState<Tab>('members')
   const [modal, setModal] = useState<null | 'scheduleAll' | 'scheduleOne' | 'invite' | 'makeMentor'>(null)
   const [mentorTarget, setMentorTarget] = useState<RosterMember | null>(null)
+  // Managing a cohort is academy:manage, an admin's alone (the routes take an
+  // admin or the cohort's own mentor). Staff see every tab, without the controls.
+  const canWrite = useCan('academy:manage')
   const tile = themeTile(cohort.theme)
   const now = Date.now()
   const remaining = Math.max(0, cohort.plannedSessions - props.sessions.length)
@@ -97,12 +101,14 @@ export function AdminManageCohort(props: {
         </nav>
       </div>
 
+      {!canWrite && <AdminOnlyBanner>An admin manages this cohort: its members, schedule, resources and settings. You can see them here.</AdminOnlyBanner>}
+
       {/* Members */}
       {tab === 'members' && (
         <Card>
           <div className="mb-3 flex items-center justify-between">
             <h2 className="font-display text-[16px] font-bold text-ink">Members</h2>
-            <button onClick={() => setModal('invite')} className="inline-flex items-center gap-1.5 rounded-[9px] bg-primary-soft px-3.5 py-2 text-[13px] font-semibold text-primary hover:bg-primary/15"><UserPlus className="h-4 w-4" /> Invite member</button>
+            {canWrite && <button onClick={() => setModal('invite')} className="inline-flex items-center gap-1.5 rounded-[9px] bg-primary-soft px-3.5 py-2 text-[13px] font-semibold text-primary hover:bg-primary/15"><UserPlus className="h-4 w-4" /> Invite member</button>}
           </div>
           {props.roster.length === 0 ? (
             <p className="text-sm text-content-muted">No members yet.</p>
@@ -116,6 +122,7 @@ export function AdminManageCohort(props: {
                     <p className="text-[12.5px] text-content-muted">{m.email}</p>
                   </div>
                   <span className={`rounded-pill px-2.5 py-0.5 text-xs font-semibold ${m.status === 'active' ? 'bg-enviro-green-bg text-enviro-green-text' : 'bg-pathway-amber-bg text-gold-ink'}`}>{m.status === 'active' ? 'Active' : 'Invited'}</span>
+                  {canWrite && (
                   <div className="flex items-center gap-2">
                     {m.status === 'invited' ? (
                       <button onClick={() => admin({ action: 'resendInvites', cohortId: cohort.id })} className="text-[13px] font-medium text-primary hover:underline">Resend invite</button>
@@ -124,6 +131,7 @@ export function AdminManageCohort(props: {
                     )}
                     <button onClick={() => admin({ action: 'removeMember', cohortId: cohort.id, memberId: m.memberId })} className="text-[13px] font-medium text-danger hover:underline">Remove</button>
                   </div>
+                  )}
                 </li>
               ))}
             </ul>
@@ -136,7 +144,7 @@ export function AdminManageCohort(props: {
         <Card>
           <div className="mb-3 flex items-center justify-between">
             <h2 className="font-display text-[16px] font-bold text-ink">Schedule</h2>
-            {remaining > 0 && <button onClick={() => setModal('scheduleAll')} className="rounded-[9px] bg-space-violet px-4 py-2 text-[13px] font-semibold text-white hover:bg-[#5B3FE0]">Schedule all sessions</button>}
+            {canWrite && remaining > 0 && <button onClick={() => setModal('scheduleAll')} className="rounded-[9px] bg-space-violet px-4 py-2 text-[13px] font-semibold text-white hover:bg-[#5B3FE0]">Schedule all sessions</button>}
           </div>
           <ul className="divide-y divide-line-light">
             {[...props.sessions].sort((a, b) => new Date(a.start).getTime() - new Date(b.start).getTime()).map((s) => {
@@ -158,7 +166,7 @@ export function AdminManageCohort(props: {
                   <div className="flex h-11 w-11 items-center justify-center rounded-[10px] border border-dashed border-line text-content-faint"><Calendar className="h-4 w-4" /></div>
                   <div><p className="font-medium text-content-secondary">Session {props.sessions.length + i + 1}</p><p className="text-[13px] text-content-faint">Not scheduled yet</p></div>
                 </div>
-                <button onClick={() => setModal('scheduleOne')} className="rounded-[9px] border border-line px-3.5 py-2 text-[13px] font-semibold text-content-secondary hover:border-space-violet hover:text-space-violet">Schedule</button>
+                {canWrite && <button onClick={() => setModal('scheduleOne')} className="rounded-[9px] border border-line px-3.5 py-2 text-[13px] font-semibold text-content-secondary hover:border-space-violet hover:text-space-violet">Schedule</button>}
               </li>
             ))}
           </ul>
@@ -166,19 +174,27 @@ export function AdminManageCohort(props: {
       )}
 
       {/* Resources */}
-      {tab === 'resources' && <AdminResources resources={props.resources} modules={props.modules} tz={cohort.timezone} manage={manage} />}
+      {tab === 'resources' && (
+        <ReadOnlyFieldset readOnly={!canWrite}>
+          <AdminResources resources={props.resources} modules={props.modules} tz={cohort.timezone} manage={manage} />
+        </ReadOnlyFieldset>
+      )}
 
       {/* Group chat */}
-      {tab === 'chat' && <ChatPanel channelId={props.channelId} selfMemberId={props.selfMemberId} selfName={props.selfName} title={cohort.name} canModerate />}
+      {tab === 'chat' && <ChatPanel channelId={props.channelId} selfMemberId={props.selfMemberId} selfName={props.selfName} title={cohort.name} canModerate={canWrite} />}
 
       {/* Settings */}
-      {tab === 'settings' && <AdminSettings cohort={cohort} tiers={props.tiers} admin={admin} />}
+      {tab === 'settings' && (
+        <ReadOnlyFieldset readOnly={!canWrite}>
+          <AdminSettings cohort={cohort} tiers={props.tiers} admin={admin} />
+        </ReadOnlyFieldset>
+      )}
 
       {/* Modals */}
-      {modal === 'scheduleAll' && <ScheduleAllModal tz={cohort.timezone} count={remaining} onClose={() => setModal(null)} onSubmit={manage} />}
-      {modal === 'scheduleOne' && <ScheduleOneModal tz={cohort.timezone} onClose={() => setModal(null)} onSubmit={manage} />}
-      {modal === 'invite' && <InviteModal cohortId={cohort.id} onClose={() => setModal(null)} onSubmit={admin} />}
-      {modal === 'makeMentor' && mentorTarget && (
+      {canWrite && modal === 'scheduleAll' && <ScheduleAllModal tz={cohort.timezone} count={remaining} onClose={() => setModal(null)} onSubmit={manage} />}
+      {canWrite && modal === 'scheduleOne' && <ScheduleOneModal tz={cohort.timezone} onClose={() => setModal(null)} onSubmit={manage} />}
+      {canWrite && modal === 'invite' && <InviteModal cohortId={cohort.id} onClose={() => setModal(null)} onSubmit={admin} />}
+      {canWrite && modal === 'makeMentor' && mentorTarget && (
         <ModalShell title="Make mentor" onClose={() => { setModal(null); setMentorTarget(null) }}>
           <p className="text-sm text-content-body">
             Make <strong>{mentorTarget.name}</strong> a mentor? They&apos;re granted the mentor role <strong>across the platform</strong> — assignable to any cohort, and can manage cohorts, schedule sessions, assign resources and actions, and host calls.

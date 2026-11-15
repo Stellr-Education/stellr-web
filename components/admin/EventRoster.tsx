@@ -19,8 +19,13 @@ import { GroupPaymentMethod } from '@/components/registration/GroupPaymentMethod
 import { AdminAddParticipantButton } from '@/components/admin/AdminAddParticipantButton'
 import { displayEventRole } from '@/lib/member-enums'
 import { STUDENT_ROLES } from '@/lib/membership-rules'
-import { Collapsible, CollapsibleGroup, CollapseAllControls } from '@stellr/web-ui'
+import { Badge, Collapsible, CollapsibleGroup, CollapseAllControls } from '@stellr/web-ui'
 import { MemberLink, SchoolLink } from '@/components/admin/RecordLinks'
+import { ROSTER_OPT_OUT_DETAIL, ROSTER_OPT_OUT_LABEL, type RosterOptOut } from '@/lib/roster-optouts'
+
+// The staff marker for a participant whose guardian has not yet signed the consent
+// for another organiser's event (T-23; wording WD-6). Stellr's events have none.
+const CONSENT_PENDING_LABEL = 'Waiting for guardian consent'
 
 // Pills with paperwork still to chase. 'issued'/'partial' resend the live
 // envelope; the rest need a new one (the server confirms before spending quota).
@@ -128,6 +133,8 @@ export default function EventRoster({
   eventSlug,
   companies,
   isAdmin,
+  optOuts = {},
+  consentPending = [],
 }: {
   roster: EventRosterData
   exportHref: string
@@ -135,6 +142,10 @@ export default function EventRoster({
   companies: CompanyRow[]
   /** Admins export Checkr's reports; event managers get the clearance summary. */
   isAdmin: boolean
+  /** Opt-outs each participant holds on their signed agreement (lib/roster-optouts.ts), by participant id. */
+  optOuts?: Record<string, RosterOptOut[]>
+  /** Participants whose guardian consent on another organiser's event is pending. */
+  consentPending?: string[]
 }) {
   const router = useRouter()
   const [payment, setPayment] = useState<PaymentFilter>('all')
@@ -201,6 +212,24 @@ export default function EventRoster({
     </>
   )
 
+  const pending = useMemo(() => new Set(consentPending), [consentPending])
+
+  // The boxes ticked on the signed agreement: one pill, none when nothing is ticked.
+  const optOutPill = (p: RosterParticipant) => {
+    const held = optOuts[p.id] ?? []
+    if (!held.length) return null
+    return (
+      <span
+        className="mt-1 flex"
+        title={`Ticked on the signed agreement: ${held.map((k) => ROSTER_OPT_OUT_DETAIL[k]).join('; ')}`}
+      >
+        <Badge className="bg-surface text-ink ring-1 ring-inset ring-line">
+          Opted out: {held.map((k) => ROSTER_OPT_OUT_LABEL[k]).join(' · ')}
+        </Badge>
+      </span>
+    )
+  }
+
   const docusignCell = (p: RosterParticipant) => (
     <>
       <Pill label={p.docusign_label} className={DOCUSIGN_PILL_CLASSES[p.docusign_pill]} />
@@ -208,12 +237,17 @@ export default function EventRoster({
           "we already signed it" meant querying the DB and then
           DocuSign — which is exactly what happened on 4 Sept 2026. */}
       {p.docusign_detail && <p className="mt-1 text-xs leading-tight text-brand-grey-dark">{p.docusign_detail}</p>}
+      {optOutPill(p)}
     </>
   )
 
+  // A participant waiting on a guardian's consent is not registered yet, and
+  // cannot be checked in until the guardian signs.
   const statusPill = (p: RosterParticipant) =>
     p.checked_in_at ? (
       <Pill label="Checked In" className="bg-green-100 text-green-700" />
+    ) : pending.has(p.id) ? (
+      <Badge className="bg-pathway-amber-bg text-gold-ink">{CONSENT_PENDING_LABEL}</Badge>
     ) : (
       <Pill label="Registered" className="bg-orange-100 text-orange-700" />
     )
@@ -420,7 +454,7 @@ export default function EventRoster({
                   )}
                 </span>
               }
-              summary={groupSummary(group.participants)}
+              summary={groupSummary(group.participants, pending)}
               actions={
                 group.type === 'group' ? (
                   <>
@@ -622,8 +656,9 @@ export default function EventRoster({
 }
 
 // The folded header line for one registration: what needs chasing, at a glance.
-function groupSummary(participants: RosterParticipant[]): string {
+function groupSummary(participants: RosterParticipant[], consentPending: ReadonlySet<string>): string {
   const n = participants.length
+  const waiting = participants.filter((p) => consentPending.has(p.id)).length
   const unpaid = participants.filter((p) => !p.paid).length
   const docusign = participants.filter((p) => p.docusign === 'outstanding').length
   const background = participants.filter((p) => OUTSTANDING_STATES.includes(p.compliance_pill)).length
@@ -632,6 +667,7 @@ function groupSummary(participants: RosterParticipant[]): string {
     unpaid && `${unpaid} unpaid`,
     docusign && `${docusign} DocuSign open`,
     background && `${background} background open`,
+    waiting && `${waiting} waiting for guardian consent`,
   ].filter(Boolean)
   return [
     `${n} participant${n === 1 ? '' : 's'}`,

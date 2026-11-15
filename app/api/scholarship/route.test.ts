@@ -78,3 +78,54 @@ describe('POST /api/scholarship', () => {
     expect(h.sendEmail).not.toHaveBeenCalled()
   })
 })
+
+// spam.L1b / spam.L3 (docs/REC-form-spam-hardening.md §3, §5).
+const timing = () => ({ website: '', renderedAt: Date.now() - 60_000, submittedAt: Date.now() })
+
+const APPLICATION = {
+  firstName: 'Robin', lastName: 'Doe', email: 'robin@example.com',
+  activity: 'Space Design Challenge', brief: 'I would love to take part.',
+}
+
+function postBody(body: unknown) {
+  return POST(
+    new Request('https://www.stellreducation.org/api/scholarship', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+    }),
+  )
+}
+
+describe('POST /api/scholarship — spam guard and validation', () => {
+  it('files and emails a valid application as before, without the spam fields', async () => {
+    const res = await postBody({ ...APPLICATION, ...timing() })
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({ ok: true })
+    expect(h.insert).toHaveBeenCalledTimes(1)
+    const row = (h.insert.mock.calls[0] as unknown as [Record<string, unknown>])[0]
+    expect(row).not.toHaveProperty('website')
+    expect(row).not.toHaveProperty('renderedAt')
+    expect(h.sendEmail).toHaveBeenCalled()
+  })
+
+  it('answers a filled honeypot with 200 and files and sends nothing', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const res = await postBody({ ...APPLICATION, ...timing(), website: 'https://spam.example' })
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({ ok: true })
+    expect(h.insert).not.toHaveBeenCalled()
+    expect(h.sendEmail).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    ['an over-long brief', { brief: 'a'.repeat(5001) }],
+    ['an over-long first name', { firstName: 'a'.repeat(101) }],
+  ])('refuses %s with 400 and files nothing', async (_label, patch) => {
+    const res = await postBody({ ...APPLICATION, ...timing(), ...patch })
+    expect(res.status).toBe(400)
+    expect(await res.json()).toEqual({ error: 'Missing required fields' })
+    expect(h.insert).not.toHaveBeenCalled()
+    expect(h.sendEmail).not.toHaveBeenCalled()
+  })
+})

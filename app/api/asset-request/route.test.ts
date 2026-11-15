@@ -70,3 +70,38 @@ describe('asset-request gate (the full file only ever goes out by email)', () =>
     expect(res.status).toBe(502)
   })
 })
+
+// spam.L1b / spam.L3 (docs/REC-form-spam-hardening.md §3, §5). This route
+// mails the submitted address, so a trap must send nothing at all.
+const timing = () => ({ website: '', renderedAt: Date.now() - 60_000, submittedAt: Date.now() })
+
+describe('asset-request spam guard and validation', () => {
+  it('captures and emails a valid email-only request as before', async () => {
+    const res = await post({ name: '', email: 'jordan@example.com', asset: 'space-rfp-2026', ...timing() })
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({ ok: true, emailed: true, crm: true })
+    expect(sendEmail).toHaveBeenCalledTimes(1)
+  })
+
+  it('answers a filled honeypot with 200 and mails and captures nothing', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const res = await post({ email: 'jordan@example.com', asset: 'space-rfp-2026', ...timing(), website: 'x' })
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({ ok: true })
+    expect(sendEmail).not.toHaveBeenCalled()
+    expect(captureLead).not.toHaveBeenCalled()
+  })
+
+  it('keeps the unknown-asset and bad-email answers', async () => {
+    expect(await (await post({ email: 'jordan@example.com', asset: 'nope' })).json()).toEqual({ error: 'Unknown asset' })
+    expect(await (await post({ email: 'jordan@', asset: 'space-rfp-2026' })).json()).toEqual({
+      error: 'A valid email is required.',
+    })
+  })
+
+  it('refuses an over-long name with 400 and mails nothing', async () => {
+    const res = await post({ name: 'a'.repeat(121), email: 'jordan@example.com', asset: 'space-rfp-2026' })
+    expect(res.status).toBe(400)
+    expect(sendEmail).not.toHaveBeenCalled()
+  })
+})

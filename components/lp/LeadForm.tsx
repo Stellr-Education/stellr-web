@@ -7,10 +7,13 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { Button } from '@stellr/web-ui'
 import FieldError from '@/components/forms/FieldError'
+import { useSpamGuard } from '@/components/forms/useSpamGuard'
+import { SpamGuardFields } from '@/components/forms/SpamGuardFields'
 import { trackLeadSubmitted } from '@/lib/analytics'
 import { trackBookingClick } from '@/components/lp/LpTracking'
 import { useUtm } from '@/components/lp/useUtm'
 import type { LandingPageConfig } from '@/content/lp/types'
+import { lpLeadFields } from '@/app/api/lp-lead/schema'
 
 /**
  * The lead form, and the booking hand-off it leads to.
@@ -35,10 +38,11 @@ import type { LandingPageConfig } from '@/content/lp/types'
  * hand-off is seamless.
  */
 
+// Name, email and role are the route's own fields, caps included.
 const schema = z.object({
-  name: z.string().min(1, 'Please tell us your name'),
-  email: z.string().email('Please enter a valid email address'),
-  role: z.enum(['teacher', 'parent', 'student']),
+  name: lpLeadFields.name,
+  email: lpLeadFields.email,
+  role: lpLeadFields.role,
   // Coerced because a number input hands back a string, and an empty field
   // must stay undefined rather than becoming 0 — HubSpot would store the zero.
   students: z.coerce.number().int().min(1, 'Enter 1 or more').optional(),
@@ -68,6 +72,7 @@ export function LeadForm({
 }) {
   const { form, audience, slug, analyticsSource } = config
   const utm = useUtm()
+  const spam = useSpamGuard()
   const [state, setState] = useState<'form' | 'redirecting' | 'booking'>('form')
   const [failed, setFailed] = useState(false)
   const confirmHeading = useRef<HTMLHeadingElement>(null)
@@ -100,6 +105,7 @@ export function LeadForm({
           pageSlug: slug,
           audience,
           ...utm,
+          ...(await spam.values()),
         }),
       })
       // res.ok is checked before the body is touched: parsing first turns a
@@ -285,6 +291,8 @@ export function LeadForm({
           </label>
           <FieldError message={errors.consent?.message} />
         </div>
+
+        <SpamGuardFields {...spam.fields} />
 
         <Button type="submit" variant="primary" className="w-full" disabled={isSubmitting}>
           {isSubmitting ? 'Sending…' : form.submitLabel}

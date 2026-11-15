@@ -16,6 +16,8 @@ import {
   savePdLayout,
   type PdScope,
 } from '@/lib/pd-certificate-store'
+import { withAudit, type AuditMutation } from '@/lib/audit/route'
+import { auditSubject, noteAuditSubject } from '@/lib/audit/route-subject'
 
 export const dynamic = 'force-dynamic'
 
@@ -39,6 +41,20 @@ function scopeOf(theme: unknown, event: unknown): PdScope | null {
   return typeof event === 'string' && SLUG_RE.test(event) ? { theme: pdTheme(theme), event } : null
 }
 
+// Platform audit (docs/TENANCY-S5.md, C7). A theme's default goes on Stellr's chain, an
+// event's own page on that event's owner's. The files live in storage, so there is no
+// row to name; the theme, page and which change (all enums) are the metadata.
+function pdEvent(req: Request): Omit<AuditMutation, 'action'> {
+  const { metadata } = auditSubject(req, 'pd_certificate')
+  const slug = metadata?.event_slug
+  return { actor: { session: true }, tenant: typeof slug === 'string' ? { eventSlug: slug } : { stellr: true }, metadata }
+}
+const saveAudit = ({ args: [req] }: { args: [Request] }) => ({ action: 'artwork.pd_certificate.save' as const, ...pdEvent(req) })
+const deleteAudit = ({ args: [req] }: { args: [Request] }) => ({ action: 'artwork.pd_certificate.delete' as const, ...pdEvent(req) })
+
+export const PUT = withAudit(saveAudit, savePdCertificate)
+export const DELETE = withAudit(deleteAudit, deletePdPage)
+
 export async function GET(req: Request) {
   if (!(await hasCapability('portal:read'))) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   const search = new URL(req.url).searchParams
@@ -53,7 +69,7 @@ export async function GET(req: Request) {
   return NextResponse.json({ theme: scope.theme, pages, layout, defaults })
 }
 
-export async function PUT(req: Request) {
+async function savePdCertificate(req: Request) {
   if (!(await hasCapability('competitions:write'))) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   const body = (await req.json().catch(() => ({}))) as {
     theme?: unknown; event?: unknown; page?: unknown; storagePath?: unknown; layout?: unknown
@@ -61,6 +77,7 @@ export async function PUT(req: Request) {
   const scope = scopeOf(body.theme, body.event)
   if (!scope) return NextResponse.json({ error: 'Unknown event' }, { status: 400 })
   const db = supabaseServer()
+  noteAuditSubject(req, { eventSlug: scope.event ?? undefined, detail: { theme: scope.theme, change: body.layout !== undefined ? 'layout' : 'artwork', ...(isPdPage(body.page) ? { page: body.page } : {}) } })
 
   if (body.layout !== undefined) {
     const layout = parsePdLayout(body.layout)
@@ -107,7 +124,7 @@ export async function PUT(req: Request) {
   return NextResponse.json({ ok: true })
 }
 
-export async function DELETE(req: Request) {
+async function deletePdPage(req: Request) {
   if (!(await hasCapability('competitions:write'))) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   const search = new URL(req.url).searchParams
   const scope = scopeOf(search.get('theme'), search.get('event'))
@@ -115,6 +132,7 @@ export async function DELETE(req: Request) {
   if (!scope?.event || !isPdPage(page)) {
     return NextResponse.json({ error: 'Say which event and page' }, { status: 400 })
   }
+  noteAuditSubject(req, { eventSlug: scope.event, detail: { theme: scope.theme, page } })
   const err = await removePdEventPage(supabaseServer(), { theme: scope.theme, event: scope.event }, page)
   if (err) {
     console.error('[pd-certificate] remove failed:', err)

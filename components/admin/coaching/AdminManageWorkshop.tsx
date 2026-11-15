@@ -13,6 +13,7 @@ import { ModalShell, ScheduleAllModal, ScheduleOneModal, EditSessionModal } from
 import { CohortResourceAttacher, type AttachedFileResource } from '@/components/community/mentoring/CohortResourceAttacher'
 import { formatSessionTime, TIMEZONES } from '@/lib/mentoring-format'
 import { MemberLink } from '@/components/admin/RecordLinks'
+import { AdminOnlyBanner, ReadOnlyFieldset, useCan } from '@/components/admin/CapabilitiesContext'
 
 type Tab = 'member' | 'schedule' | 'resources' | 'chat' | 'settings'
 
@@ -55,6 +56,9 @@ export function AdminManageWorkshop(props: {
   const [tab, setTab] = useState<Tab>('member')
   const [modal, setModal] = useState<null | 'scheduleAll' | 'scheduleOne' | 'setMember' | 'reassignCoach'>(null)
   const [editSession, setEditSession] = useState<SessionRow | null>(null)
+  // Managing a workshop is academy:manage, an admin's alone (the routes take an
+  // admin or the workshop's own coach). Staff see every tab, without the controls.
+  const canWrite = useCan('academy:manage')
   const now = Date.now()
   const remaining = Math.max(0, workshop.plannedSessions - props.sessions.length)
 
@@ -91,7 +95,7 @@ export function AdminManageWorkshop(props: {
             <h1 className="font-display text-[26px] font-bold">{workshop.name}</h1>
           </div>
           <div className="flex items-center gap-2">
-            <button onClick={() => setModal('reassignCoach')} className="rounded-[9px] border border-white/15 bg-white/5 px-4 py-2.5 text-sm font-semibold text-white hover:bg-white/10">Reassign coach</button>
+            {canWrite && <button onClick={() => setModal('reassignCoach')} className="rounded-[9px] border border-white/15 bg-white/5 px-4 py-2.5 text-sm font-semibold text-white hover:bg-white/10">Reassign coach</button>}
             <button onClick={() => setTab('settings')} className="rounded-[9px] border border-white/15 bg-white/5 px-4 py-2.5 text-sm font-semibold text-white hover:bg-white/10">Settings</button>
           </div>
         </div>
@@ -108,17 +112,21 @@ export function AdminManageWorkshop(props: {
         </nav>
       </div>
 
+      {!canWrite && <AdminOnlyBanner>An admin manages this workshop: its member, schedule, resources and settings. You can see them here.</AdminOnlyBanner>}
+
       {/* Member (single) */}
       {tab === 'member' && (
         <Card>
           <div className="mb-3 flex items-center justify-between">
             <h2 className="font-display text-[16px] font-bold text-ink">Member</h2>
+            {canWrite && (
             <button onClick={() => setModal('setMember')} className="inline-flex items-center gap-1.5 rounded-[9px] bg-primary-soft px-3.5 py-2 text-[13px] font-semibold text-primary hover:bg-primary/15">
               <UserPlus className="h-4 w-4" /> {workshop.memberId ? 'Replace member' : 'Invite member'}
             </button>
+            )}
           </div>
           {!workshop.memberId ? (
-            <p className="text-sm text-content-muted">No member yet. Invite one — they join after accepting.</p>
+            <p className="text-sm text-content-muted">{canWrite ? 'No member yet. Invite one — they join after accepting.' : 'No member yet.'}</p>
           ) : (
             <div className="flex flex-wrap items-center gap-3">
               <span className="flex h-9 w-9 items-center justify-center rounded-full bg-primary text-[12px] font-semibold text-white">{(workshop.memberName ?? 'M').charAt(0).toUpperCase()}</span>
@@ -127,7 +135,7 @@ export function AdminManageWorkshop(props: {
                 <p className="text-[12.5px] text-content-muted">{workshop.memberEmail}</p>
               </div>
               <span className={`rounded-pill px-2.5 py-0.5 text-xs font-semibold ${workshop.memberStatus === 'active' ? 'bg-enviro-green-bg text-enviro-green-text' : 'bg-pathway-amber-bg text-gold-ink'}`}>{workshop.memberStatus === 'active' ? 'Active' : 'Invited'}</span>
-              <button onClick={() => admin({ action: 'removeMember', workshopId: workshop.id, memberId: workshop.memberId })} className="text-[13px] font-medium text-danger hover:underline">Remove</button>
+              {canWrite && <button onClick={() => admin({ action: 'removeMember', workshopId: workshop.id, memberId: workshop.memberId })} className="text-[13px] font-medium text-danger hover:underline">Remove</button>}
             </div>
           )}
         </Card>
@@ -138,7 +146,7 @@ export function AdminManageWorkshop(props: {
         <Card>
           <div className="mb-3 flex items-center justify-between">
             <h2 className="font-display text-[16px] font-bold text-ink">Schedule</h2>
-            {remaining > 0 && <button onClick={() => setModal('scheduleAll')} className="rounded-[9px] bg-space-violet px-4 py-2 text-[13px] font-semibold text-white hover:bg-[#5B3FE0]">Schedule all sessions</button>}
+            {canWrite && remaining > 0 && <button onClick={() => setModal('scheduleAll')} className="rounded-[9px] bg-space-violet px-4 py-2 text-[13px] font-semibold text-white hover:bg-[#5B3FE0]">Schedule all sessions</button>}
           </div>
           <ul className="divide-y divide-line-light">
             {[...props.sessions].sort((a, b) => new Date(a.start).getTime() - new Date(b.start).getTime()).map((s) => {
@@ -156,7 +164,7 @@ export function AdminManageWorkshop(props: {
                     ) : !isPast ? (
                       <>
                         <JoinButton sessionId={s.id} scheduledStart={s.start} isHost />
-                        <button onClick={() => setEditSession(s)} className="rounded-[9px] border border-line px-3 py-1.5 text-[13px] font-semibold text-content-secondary hover:border-space-violet hover:text-space-violet">Edit</button>
+                        {canWrite && <button onClick={() => setEditSession(s)} className="rounded-[9px] border border-line px-3 py-1.5 text-[13px] font-semibold text-content-secondary hover:border-space-violet hover:text-space-violet">Edit</button>}
                       </>
                     ) : (
                       <span className="text-[13px] text-content-faint">—</span>
@@ -171,7 +179,7 @@ export function AdminManageWorkshop(props: {
                   <div className="flex h-11 w-11 items-center justify-center rounded-[10px] border border-dashed border-line text-content-faint"><Calendar className="h-4 w-4" /></div>
                   <div><p className="font-medium text-content-secondary">Session {props.sessions.length + i + 1}</p><p className="text-[13px] text-content-faint">Not scheduled yet</p></div>
                 </div>
-                <button onClick={() => setModal('scheduleOne')} className="rounded-[9px] border border-line px-3.5 py-2 text-[13px] font-semibold text-content-secondary hover:border-space-violet hover:text-space-violet">Schedule</button>
+                {canWrite && <button onClick={() => setModal('scheduleOne')} className="rounded-[9px] border border-line px-3.5 py-2 text-[13px] font-semibold text-content-secondary hover:border-space-violet hover:text-space-violet">Schedule</button>}
               </li>
             ))}
           </ul>
@@ -181,25 +189,31 @@ export function AdminManageWorkshop(props: {
       {/* Resources */}
       {tab === 'resources' && (
         <div className="space-y-4">
-          <AdminResources resources={props.resources} modules={props.modules} tz={workshop.timezone} manage={manage} />
-          <CohortResourceAttacher cohortId={workshop.id} attached={props.fileResources} tz={workshop.timezone} endpoint={MANAGE_ENDPOINT} />
+          <ReadOnlyFieldset readOnly={!canWrite} className="space-y-4">
+            <AdminResources resources={props.resources} modules={props.modules} tz={workshop.timezone} manage={manage} />
+            <CohortResourceAttacher cohortId={workshop.id} attached={props.fileResources} tz={workshop.timezone} endpoint={MANAGE_ENDPOINT} />
+          </ReadOnlyFieldset>
           <RecordingsList recordings={props.recordings} tz={workshop.timezone} />
         </div>
       )}
 
       {/* Chat */}
-      {tab === 'chat' && <ChatPanel channelId={props.channelId} selfMemberId={props.selfMemberId} selfName={props.selfName} title={workshop.name} canModerate />}
+      {tab === 'chat' && <ChatPanel channelId={props.channelId} selfMemberId={props.selfMemberId} selfName={props.selfName} title={workshop.name} canModerate={canWrite} />}
 
       {/* Settings */}
-      {tab === 'settings' && <AdminSettings workshop={workshop} tiers={props.tiers} admin={admin} />}
+      {tab === 'settings' && (
+        <ReadOnlyFieldset readOnly={!canWrite}>
+          <AdminSettings workshop={workshop} tiers={props.tiers} admin={admin} />
+        </ReadOnlyFieldset>
+      )}
 
-      {modal === 'scheduleAll' && <ScheduleAllModal tz={workshop.timezone} count={remaining} onClose={() => setModal(null)} onSubmit={manage} />}
-      {modal === 'scheduleOne' && <ScheduleOneModal tz={workshop.timezone} onClose={() => setModal(null)} onSubmit={manage} />}
-      {editSession && <EditSessionModal tz={workshop.timezone} session={editSession} onClose={() => setEditSession(null)} onSubmit={async (p) => { const ok = await manage(p); if (ok) setEditSession(null); return ok }} />}
-      {modal === 'setMember' && (
+      {canWrite && modal === 'scheduleAll' && <ScheduleAllModal tz={workshop.timezone} count={remaining} onClose={() => setModal(null)} onSubmit={manage} />}
+      {canWrite && modal === 'scheduleOne' && <ScheduleOneModal tz={workshop.timezone} onClose={() => setModal(null)} onSubmit={manage} />}
+      {canWrite && editSession && <EditSessionModal tz={workshop.timezone} session={editSession} onClose={() => setEditSession(null)} onSubmit={async (p) => { const ok = await manage(p); if (ok) setEditSession(null); return ok }} />}
+      {canWrite && modal === 'setMember' && (
         <SetMemberModal existing={!!workshop.memberId} onClose={() => setModal(null)} onSubmit={(memberId) => admin({ action: 'setMember', workshopId: workshop.id, memberId })} />
       )}
-      {modal === 'reassignCoach' && (
+      {canWrite && modal === 'reassignCoach' && (
         <ReassignCoachModal currentCoach={workshop.coachName} onClose={() => setModal(null)} onSubmit={(newCoachId) => admin({ action: 'reassignCoach', workshopId: workshop.id, newCoachId })} />
       )}
     </div>

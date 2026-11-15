@@ -27,6 +27,8 @@
     "tracker": "node scripts/tracker.mjs",
     "worktrees": "node scripts/worktree-sweep.mjs",
     "check:deploy-ready": "node scripts/check-deploy-ready.mjs",
+    "check:pr": "node scripts/pr-check.mjs",
+    "baselines": "node scripts/baselines.mjs",
     "prebuild": "node scripts/copy-scanner-wasm.mjs && node design/build-tokens.mjs && node scripts/ds-lint.mjs && node scripts/lint-staff-word.mjs && node scripts/check-migration-names.mjs && node scripts/check-migration-security.mjs && node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/check-migration-tenancy.mjs && tsx scripts/check-watermarks.ts",
     "build": "next build",
     "start": "next start",
@@ -111,7 +113,7 @@
     "zod": "^4.6.7"
   },
   "devDependencies": {
-    "@anthropic-ai/sdk": "^0.137.0",
+    "@anthropic-ai/sdk": "1.6.0",
     "@axe-core/playwright": "^4.14.0",
     "@clerk/testing": "^2.2.48",
     "@next/eslint-plugin-next": "^16.4.2",

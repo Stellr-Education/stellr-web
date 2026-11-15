@@ -222,7 +222,7 @@ describe('Stellr’s hosts', () => {
       "img-src 'self' data: blob: https:",
       "font-src 'self' data:",
       "media-src 'self' blob: https://media.test https://abc.supabase.co",
-      "connect-src 'self' https://abc.supabase.co wss://abc.supabase.co https://media.test https://clerk.example.org https://clerk-telemetry.com https://challenges.cloudflare.com https://proj1.api.sanity.io https://proj1.apicdn.sanity.io wss://proj1.api.sanity.io https://api.sanity.io https://*.google-analytics.com https://*.analytics.google.com https://*.googletagmanager.com https://*.g.doubleclick.net https://www.google.com https://*.hubspot.com https://*.hs-banner.com https://*.hscollectedforms.net https://*.hsforms.com https://*.hs-analytics.net https://www.facebook.com https://connect.facebook.net https://px.ads.linkedin.com https://*.apollo.io https://va.vercel-scripts.com",
+      "connect-src 'self' https://abc.supabase.co wss://abc.supabase.co https://media.test https://clerk.example.org https://clerk-telemetry.com https://challenges.cloudflare.com https://*.google-analytics.com https://*.analytics.google.com https://*.googletagmanager.com https://*.g.doubleclick.net https://www.google.com https://*.hubspot.com https://*.hs-banner.com https://*.hscollectedforms.net https://*.hsforms.com https://*.hs-analytics.net https://www.facebook.com https://connect.facebook.net https://px.ads.linkedin.com https://*.apollo.io https://va.vercel-scripts.com",
       "frame-src 'self' https: blob:",
       "worker-src 'self' blob:",
       "manifest-src 'self'",

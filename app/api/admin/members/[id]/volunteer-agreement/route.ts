@@ -4,6 +4,8 @@ import { NextResponse } from 'next/server'
 import { supabaseServer } from '@/lib/supabase'
 import { actorFromAuth, logActivity } from '@/lib/activity-log'
 import { dispatchVolunteerAgreement, VOLUNTEER_PROGRAM_TITLE, VOLUNTEER_MEMBER_COLUMNS } from '@/lib/volunteer'
+import { withAudit } from '@/lib/audit/route'
+import { auditSubject, noteAuditSubject } from '@/lib/audit/route-subject'
 
 // Admin (re-)issue of the Volunteer Agreement (PRD §15: "issue the Volunteer
 // DocuSign to new Volunteers"). Signup normally dispatches it automatically;
@@ -12,7 +14,28 @@ import { dispatchVolunteerAgreement, VOLUNTEER_PROGRAM_TITLE, VOLUNTEER_MEMBER_C
 // on-file reuse — a member with a valid signed agreement gets coverage, not a
 // duplicate envelope.
 
-export async function POST(_req: Request, { params }: { params: Promise<{ id: string }> }) {
+type Ctx = { params: Promise<{ id: string }> }
+
+/** The member in the URL, /api/admin/members/<id>/…: the event's target. */
+function memberIdOf(req: Request): string | null {
+  const parts = new URL(req.url).pathname.split('/')
+  const at = parts.indexOf('members')
+  return at < 0 ? null : (parts[at + 1] ?? null)
+}
+
+// Platform audit (docs/TENANCY-S5.md, C7): the member is the target, and the outcome
+// (issued, on_file, failed) goes in the metadata. A failed send is a 502, so it is recorded.
+const issueAudit = ({ args: [req] }: { args: [Request, Ctx] }) => ({
+  action: 'agreement.volunteer.issue' as const,
+  actor: { session: true } as const,
+  tenant: { stellr: true } as const,
+  target: { table: 'members', id: memberIdOf(req) },
+  metadata: auditSubject(req, 'members').metadata,
+})
+
+export const POST = withAudit(issueAudit, issueVolunteerAgreement)
+
+async function issueVolunteerAgreement(req: Request, { params }: Ctx) {
   const { sessionClaims } = await auth()
   if (!(await hasCapability('members:write'))) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
@@ -27,6 +50,7 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
   if (!member.email) return NextResponse.json({ error: 'Member has no email on file' }, { status: 400 })
 
   const agreement = await dispatchVolunteerAgreement(db, member, { force: true })
+  noteAuditSubject(req, { detail: { agreement } })
 
   // Report what actually happened. This route used to answer 200 and log
   // "issued" unconditionally — on 28 Sept 2026 two production issues were

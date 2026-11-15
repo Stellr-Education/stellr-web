@@ -381,3 +381,75 @@ describe('POST /api/members/onboarding — COPPA and linking by email (S0)', () 
     expect((await res.json()).code).toBe('member_already_linked')
   })
 })
+
+// alumni.mentor-upgrade (REG-23): the July-1 Alumni upgrade reads
+// members.graduation_year, and onboarding is where a school student gives it.
+const { graduationYearRange } = await import('@/lib/graduation-year')
+describe('POST /api/members/onboarding — expected graduation year', () => {
+  const { min, max } = graduationYearRange()
+  const fifteen = () => {
+    const d = appToday()
+    d.setUTCFullYear(d.getUTCFullYear() - 15)
+    return d.toISOString().slice(0, 10)
+  }
+  // A 15-year-old an event registration brought here (a participant row), the
+  // route onboarding accepts with self-sign-up off.
+  const STUDENT = () => ({
+    event_role: 'participant', age_bracket: 'high_school', date_of_birth: fifteen(), gender: 'female', phone: '555-1234',
+    grade: 'grade_10', tshirt_size: 'YM', school_id: 'school-1',
+    ec_first_name: 'Placeholder', ec_last_name: 'Contact', ec_email: 'contact@test', ec_phone: '555-9876', ec_relationship: 'Parent',
+  })
+  const asStudent = () => {
+    state.byClerk = { id: 'm-student', is_active: true, date_of_birth: fifteen(), clerk_user_id: 'clerk-1' }
+    state.participants = [{ id: 'p-student', date_of_birth: fifteen() }]
+  }
+  const memberWrites = () => state.writes.filter((w) => w.table === 'members')
+  const profileWrite = () => memberWrites()[0]?.payload as Record<string, unknown> | undefined
+
+  it('persists a year inside the range to members.graduation_year', async () => {
+    asStudent()
+    const res = await post({ ...STUDENT(), graduation_year: String(min + 2) })
+    expect(res.status).toBe(200)
+    expect(profileWrite()).toMatchObject({ graduation_year: min + 2 })
+    expect(memberWrites()[0].filters).toContainEqual(['eq', 'id', 'm-student'])
+  })
+
+  it('accepts both ends of the range', async () => {
+    for (const year of [min, max]) {
+      asStudent()
+      state.writes = []
+      expect((await post({ ...STUDENT(), graduation_year: year })).status).toBe(200)
+      expect(profileWrite()).toMatchObject({ graduation_year: year })
+    }
+  })
+
+  it.each([
+    ['last school year', () => min - 1],
+    ['past the eight-year window', () => max + 1],
+    ['not a year', () => 'soon'],
+    ['a fraction', () => min + 0.5],
+  ])('refuses %s with a 400 and writes nothing', async (_label, value) => {
+    asStudent()
+    const res = await post({ ...STUDENT(), graduation_year: value() })
+    expect(res.status).toBe(400)
+    expect((await res.json()).error).toBe(`Graduation year must be a year from ${min} to ${max}.`)
+    expect(memberWrites()).toEqual([])
+  })
+
+  it('left empty, writes nothing to graduation_year, so a year on file is kept', async () => {
+    for (const blank of [{ graduation_year: '' }, {}]) {
+      asStudent()
+      state.writes = []
+      expect((await post({ ...STUDENT(), ...blank })).status).toBe(200)
+      expect(profileWrite()).toBeDefined()
+      expect(profileWrite()).not.toHaveProperty('graduation_year')
+    }
+  })
+
+  it('an adult is not asked, so a year they send is neither read nor written', async () => {
+    state.byClerk = { id: 'm-adult', is_active: true, date_of_birth: '1990-01-01' }
+    const res = await post({ ...ADULT_BODY, graduation_year: 'not-a-year' })
+    expect(res.status).toBe(200)
+    expect(profileWrite()).not.toHaveProperty('graduation_year')
+  })
+})

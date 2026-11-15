@@ -17,6 +17,8 @@ import {
 import { loadCheckInView } from '@/lib/check-in-view'
 import { GUARDIAN_CONSENT_PENDING_CHECK_IN, isConsentPendingRefusal } from '@/lib/check-in-consent'
 import { reportError } from '@/lib/app-errors'
+import { withAudit, type AuditMutation } from '@/lib/audit/route'
+import { auditSubject, noteAuditSubject } from '@/lib/audit/route-subject'
 
 /** The app_errors label for this handler's own 500s: a fixed pattern, never a slug. */
 const ERROR_ROUTE = 'POST /api/check-in'
@@ -31,7 +33,30 @@ const ERROR_ROUTE = 'POST /api/check-in'
 
 const str = (v: unknown) => (typeof v === 'string' ? v.trim() : '')
 
-export async function POST(req: Request) {
+// Platform audit (docs/TENANCY-S5.md, C7). Nobody is signed in at the door, so the actor
+// is { userId: null }, which the row records as anonymous. The event's owner is read from
+// the mirror once the event code has matched, and the participant is the target. Nothing
+// typed at the door (name, date of birth, email, the code) goes in the event.
+function doorEvent(req: Request): Omit<AuditMutation, 'action'> {
+  const { target, metadata } = auditSubject(req, 'participants')
+  const slug = typeof metadata?.event_slug === 'string' ? metadata.event_slug : ''
+  return { actor: { userId: null }, tenant: { eventSlug: slug }, target, metadata }
+}
+const checkInAudit = ({ args: [req] }: { args: [Request] }) => ({ action: 'event.check_in.self_check_in' as const, ...doorEvent(req) })
+// "Not you?" clears this phone's cookie and reads no record. Its slug is the caller's own
+// text, never checked, so the event neither stores it nor looks it up: it goes on the
+// platform chain marked as resolveTenant marks an event it cannot place.
+const forgetAudit = {
+  action: 'event.check_in.self_forget',
+  actor: { userId: null },
+  tenant: { tenantId: null },
+  metadata: { tenant_unresolved: true },
+} as const
+
+export const POST = withAudit(checkInAudit, selfCheckIn)
+export const DELETE = withAudit(forgetAudit, forgetPhone)
+
+async function selfCheckIn(req: Request) {
   const body = await req.json().catch(() => null)
   const slug = str(body?.slug)
   const token = str(body?.token)
@@ -124,6 +149,7 @@ export async function POST(req: Request) {
   }
 
   const alreadyCheckedIn = Boolean(found.checked_in_at)
+  noteAuditSubject(req, { eventSlug: slug, id: found.id, detail: { already_checked_in: alreadyCheckedIn, by: byName ? 'name' : 'email' } })
   if (!alreadyCheckedIn) {
     const event = await getEventBySlug(slug)
     const method = (event as { setting?: string } | null)?.setting === 'virtual' ? 'virtual' : 'qr'
@@ -169,7 +195,7 @@ export async function POST(req: Request) {
   return res
 }
 
-export async function DELETE(req: Request) {
+async function forgetPhone(req: Request) {
   const slug = new URL(req.url).searchParams.get('slug')?.trim()
   if (!slug) return NextResponse.json({ error: 'Missing slug' }, { status: 400 })
   const res = NextResponse.json({ ok: true })

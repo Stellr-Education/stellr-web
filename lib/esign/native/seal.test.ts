@@ -4,18 +4,15 @@ import forge from 'node-forge'
 import { PDFDocument, StandardFonts } from 'pdf-lib'
 import { extractSignature } from '@signpdf/utils'
 import { loadSealIdentity, parseTimestampResponse, sealPdf, timestampRequest, tsaClient, type SealIdentity } from './seal'
+import { makeTestTsa, readRequest, tsaResponse, type TestTsa, type TokenRequest } from './fixtures/tsa-builder'
 
 const { asn1 } = forge
-const seq = (v: forge.asn1.Asn1[]) => asn1.create(asn1.Class.UNIVERSAL, asn1.Type.SEQUENCE, true, v)
 const set = (v: forge.asn1.Asn1[]) => asn1.create(asn1.Class.UNIVERSAL, asn1.Type.SET, true, v)
-const oid = (o: string) => asn1.create(asn1.Class.UNIVERSAL, asn1.Type.OID, false, asn1.oidToDer(o).getBytes())
-const octets = (b: string) => asn1.create(asn1.Class.UNIVERSAL, asn1.Type.OCTETSTRING, false, b)
-const int = (b: string) => asn1.create(asn1.Class.UNIVERSAL, asn1.Type.INTEGER, false, b)
-const ctx = (tag: number, v: forge.asn1.Asn1[]) => asn1.create(asn1.Class.CONTEXT_SPECIFIC, tag, true, v)
 const sha256 = (b: string) => forge.md.sha256.create().update(b).digest().getBytes()
 
 let identity: SealIdentity
 let p12b64: string
+let tsa: TestTsa
 
 beforeAll(() => {
   // A throwaway self-signed certificate: fine for structure, refused in production.
@@ -31,6 +28,7 @@ beforeAll(() => {
   cert.sign(keys.privateKey, forge.md.sha256.create())
   identity = { key: keys.privateKey, chain: [cert] }
   p12b64 = forge.util.encode64(asn1.toDer(forge.pkcs12.toPkcs12Asn1(keys.privateKey, [cert], 'pw', { algorithm: '3des' })).getBytes())
+  tsa = makeTestTsa()
 }, 60_000)
 
 afterEach(() => vi.unstubAllEnvs())
@@ -82,19 +80,13 @@ function verify(sealed: Uint8Array) {
   }
 }
 
-/** A minimal granted TimeStampResp for `imprint`, shaped like a real token. */
-function tsaResponse(imprint: string, at = new Date('2026-10-02T17:00:00Z')): string {
-  const tstInfo = seq([
-    int(String.fromCharCode(1)), oid('1.2.3.4'),
-    seq([seq([oid('2.16.840.1.101.3.4.2.1')]), octets(imprint)]),
-    int(String.fromCharCode(7)),
-    asn1.create(asn1.Class.UNIVERSAL, asn1.Type.GENERALIZEDTIME, false, asn1.dateToGeneralizedTime(at)),
-  ])
-  const token = seq([oid('1.2.840.113549.1.7.2'), ctx(0, [seq([
-    int(String.fromCharCode(3)), set([]),
-    seq([oid('1.2.840.113549.1.9.16.1.4'), ctx(0, [octets(asn1.toDer(tstInfo).getBytes())])]),
-  ])])])
-  return asn1.toDer(seq([seq([int(String.fromCharCode(0))]), token])).getBytes()
+/** A timestamp service that signs whatever it is asked, with `alter` applied to each answer. */
+function service(tsa: TestTsa, alter: (req: TokenRequest) => TokenRequest = (r) => r, bodies: Buffer[] = []) {
+  return vi.fn(async (_url: unknown, init?: RequestInit) => {
+    const body = Buffer.from(init?.body as Buffer)
+    bodies.push(body)
+    return new Response(Buffer.from(tsaResponse(tsa, alter({ ...readRequest(body), genTime: new Date() })), 'binary'), { status: 200 })
+  })
 }
 
 describe('sealPdf', () => {
@@ -121,39 +113,61 @@ describe('sealPdf', () => {
     expect(verify(tampered).digestMatches).toBe(false)
   })
 
-  it('adds a trusted timestamp for the signature, sending the service only a hash', async () => {
+  it('adds a verified timestamp for the signature, sending the service only a hash', async () => {
     const bodies: Buffer[] = []
-    const fetcher = vi.fn(async (_url: unknown, init?: RequestInit) => {
-      const body = Buffer.from(init?.body as Buffer)
-      bodies.push(body)
-      const req = asn1.fromDer(body.toString('binary')).value as forge.asn1.Asn1[]
-      const imprint = (req[1].value as forge.asn1.Asn1[])[1].value as string
-      return new Response(Buffer.from(tsaResponse(imprint), 'binary'), { status: 200 })
-    })
-    const sealed = await sealPdf(await agreementPdf(), { reason: 'r', at: new Date(), identity, tsa: tsaClient('https://tsa.test', fetcher as never) })
+    const client = tsaClient('https://tsa.test', service(tsa, (r) => r, bodies) as never, { trustAnchors: tsa.anchors })
+    const before = Date.now()
+    const sealed = await sealPdf(await agreementPdf(), { reason: 'r', at: new Date(), identity, tsa: client })
     expect(sealed.kind).toBe('pades-t')
-    expect(sealed.timestampedAt).toBe('2026-10-02T17:00:00.000Z')
+    expect(sealed.timestampError).toBeNull()
+    expect(new Date(sealed.timestampedAt!).getTime()).toBeGreaterThanOrEqual(before - 1000)
     expect(verify(sealed.bytes).unsignedAttrs).toEqual(['1.2.840.113549.1.9.16.2.14'])
     expect(bodies[0].length).toBeLessThan(100) // a hash and a nonce, not the document
   })
 
-  it('seals without a timestamp when the service fails or answers for another hash', async () => {
+  it('seals without a timestamp when the service fails', async () => {
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {})
     const down = tsaClient('https://tsa.test', (async () => new Response('', { status: 503 })) as never)
-    expect((await sealPdf(await agreementPdf(), { reason: 'r', at: new Date(), identity, tsa: down })).kind).toBe('pades')
-    const wrong = tsaClient('https://tsa.test', (async () => new Response(Buffer.from(tsaResponse('x'.repeat(32)), 'binary'))) as never)
-    const sealed = await sealPdf(await agreementPdf(), { reason: 'r', at: new Date(), identity, tsa: wrong })
+    const sealed = await sealPdf(await agreementPdf(), { reason: 'r', at: new Date(), identity, tsa: down })
     expect(sealed.kind).toBe('pades')
-    expect(verify(sealed.bytes).signatureValid).toBe(true)
+    expect(sealed.timestampError).toBe('unavailable: HTTP 503')
+    err.mockRestore()
   })
+
+  // Each refusal still produces a valid seal, without the timestamp, and says why.
+  it.each<[string, (r: TokenRequest) => TokenRequest, string, TestTsa | 'noEku' | 'stranger' | null]>([
+    ['a token for another hash', (r) => ({ ...r, imprint: 'x'.repeat(32) }), 'imprint', null],
+    ['a token with another nonce', (r) => ({ ...r, nonce: '\x41\x02' }), 'nonce', null],
+    ['a broken signature', (r) => ({ ...r, breakSignature: true }), 'signature', null],
+    ['a signer without the timeStamping usage', (r) => r, 'eku', 'noEku'],
+    ['a chain to an untrusted root', (r) => r, 'chain', 'stranger'],
+    ['a time far from the local clock', (r) => ({ ...r, genTime: new Date(Date.now() - 3600_000) }), 'time', null],
+  ])('seals without a timestamp for %s', async (_label, alter, reason, which) => {
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const signer = which === 'noEku' ? makeTestTsa({ eku: false }) : which === 'stranger' ? makeTestTsa({ name: 'Stranger (placeholder)' }) : tsa
+    const trust = which === 'noEku' ? signer.anchors : tsa.anchors
+    const client = tsaClient('https://tsa.test', service(signer, alter) as never, { trustAnchors: trust })
+    const sealed = await sealPdf(await agreementPdf(), { reason: 'r', at: new Date(), identity, tsa: client })
+    expect(sealed.kind).toBe('pades')
+    expect(sealed.timestampedAt).toBeNull()
+    expect(sealed.timestampError).toContain(`verification failed (${reason})`)
+    expect(verify(sealed.bytes)).toMatchObject({ digestMatches: true, signatureValid: true, unsignedAttrs: [] })
+    // The log names the failed check only.
+    expect(err.mock.calls.flat().join(' ')).toMatch(new RegExp(`timestamp verification failed \\(${reason}\\)`))
+    err.mockRestore()
+  }, 60_000)
 })
 
 describe('timestamps', () => {
-  it('builds a request and refuses a token for a different hash', () => {
+  it('builds a request, accepts a verified token, and refuses a token for a different hash', () => {
     const imprint = sha256('signature')
-    const req = asn1.fromDer(timestampRequest(imprint, '\x41\x02')).value as forge.asn1.Asn1[]
+    const nonce = '\x41\x02'
+    const req = asn1.fromDer(timestampRequest(imprint, nonce)).value as forge.asn1.Asn1[]
     expect(((req[1].value as forge.asn1.Asn1[])[1]).value).toBe(imprint)
-    expect(parseTimestampResponse(tsaResponse(imprint), imprint).genTime.toISOString()).toBe('2026-10-02T17:00:00.000Z')
-    expect(() => parseTimestampResponse(tsaResponse(imprint), sha256('other'))).toThrow(/different hash/)
+    const at = new Date('2026-10-02T17:00:00Z')
+    const resp = tsaResponse(tsa, { imprint, nonce, genTime: at })
+    expect(parseTimestampResponse(resp, { imprint, nonce, trustAnchors: tsa.anchors, now: at }).genTime.toISOString()).toBe('2026-10-02T17:00:00.000Z')
+    expect(() => parseTimestampResponse(resp, { imprint: sha256('other'), nonce, trustAnchors: tsa.anchors, now: at })).toThrow(/different hash/)
   })
 })
 

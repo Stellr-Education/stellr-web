@@ -7,6 +7,7 @@ import { isAdminClaims } from '@/lib/admin-auth'
 import { startRetentionClock } from '@/lib/esign/retention'
 import { resolveEmailPair } from '@/lib/member-email'
 import { shadowSyncFields } from '@/lib/field-crypto-shadow'
+import { parseGraduationYear } from '@/lib/graduation-year'
 
 function humanizeFields(keys: string[]): string {
   return keys.map((k) => k.replace(/^ec_/, 'emergency ').replace(/_/g, ' ')).join(', ')
@@ -23,7 +24,7 @@ const FIELD_LABEL: Record<string, string> = {
   first_name: 'First name', last_name: 'Last name', nickname: 'Nickname', phone: 'Phone',
   email: 'Email', school_email: 'School email', discord_handle: 'Discord handle',
   date_of_birth: 'Date of birth', gender: 'Gender', age_bracket: 'Age bracket', event_role: 'Role',
-  grade: 'Grade', grade_auto_promote: 'Grade auto-promote', tshirt_size: 'T-shirt size',
+  grade: 'Grade', grade_auto_promote: 'Grade auto-promote', graduation_year: 'Graduation year', tshirt_size: 'T-shirt size',
   ec_first_name: 'Emergency contact first name', ec_last_name: 'Emergency contact last name',
   ec_email: 'Emergency contact email', ec_phone: 'Emergency contact phone',
   ec_relationship: 'Emergency contact relationship', health_conditions: 'Health conditions',
@@ -96,7 +97,7 @@ export async function PATCH(
   const allowed = [
     'first_name', 'last_name', 'nickname', 'phone', 'email', 'school_email', 'discord_handle',
     'date_of_birth', 'gender', 'age_bracket', 'event_role',
-    'grade', 'grade_auto_promote', 'tshirt_size',
+    'grade', 'grade_auto_promote', 'graduation_year', 'tshirt_size',
     'ec_first_name', 'ec_last_name', 'ec_email', 'ec_phone', 'ec_relationship',
     'health_conditions', 'is_active',
   ]
@@ -125,6 +126,21 @@ export async function PATCH(
     db.from('member_ethnicities').select('ethnicity_option_id').eq('member_id', id),
     db.from('member_allergies').select('allergy_option_id').eq('member_id', id),
   ])
+
+  // Graduation year (alumni.mentor-upgrade): the onboarding range, this school
+  // year to eight on. Checked only when it changes: the form sends every field
+  // on each save, and a graduate's year on file is in the past, which must not
+  // block an unrelated edit.
+  if (updates.graduation_year !== undefined && updates.graduation_year !== null) {
+    const onFile = (before as Record<string, unknown> | null)?.graduation_year
+    if (norm(onFile) === norm(updates.graduation_year)) {
+      updates.graduation_year = onFile
+    } else {
+      const parsed = parseGraduationYear(updates.graduation_year)
+      if (!parsed.ok) return NextResponse.json({ error: parsed.error }, { status: 400 })
+      updates.graduation_year = parsed.value
+    }
+  }
 
   const { data, error } = await db
     .from('members')
