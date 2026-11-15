@@ -28,7 +28,7 @@ import { gtmInitScript } from '@/lib/gtm'
 //    script, so 'strict-dynamic' trusts it. Inline scripts a GTM Custom HTML
 //    tag injects are not covered and will report here.
 //
-// 2. HOST policy, everywhere else: the (public) group and Sanity Studio. Most
+// 2. HOST policy, everywhere else: the (public) group, /signage and so on. Most
 //    of those pages are prerendered and served from the CDN, so their HTML is
 //    the same for every visitor and can't hold a per-request nonce. Making the
 //    root layout read the request would render every public page per request,
@@ -151,18 +151,17 @@ function shared(env: Env) {
   const supabase = origin(env.NEXT_PUBLIC_SUPABASE_URL)
   const media = origin(env.NEXT_PUBLIC_MEDIA_BASE_URL)
   const clerk = clerkFrontendApi(env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY)
-  const sanityProject = env.NEXT_PUBLIC_SANITY_PROJECT_ID
-  // Sanity Studio (/studio) talks to the project API, live over a websocket.
-  const sanity = sanityProject && /^[a-z0-9]+$/i.test(sanityProject)
-    ? [`https://${sanityProject}.api.sanity.io`, `https://${sanityProject}.apicdn.sanity.io`, `wss://${sanityProject}.api.sanity.io`, 'https://api.sanity.io']
-    : []
+  // No Sanity API host: the browser never calls it. Sanity reads happen on the
+  // server (lib/sanity.ts is server-only), images come through /api/img or
+  // cdn.sanity.io (img-src https:), and the Studio left this app for Sanity's
+  // hosting (docs/RUNBOOK-sanity-studio.md), so it no longer needs connect-src.
   const list = (xs: (string | null)[]) => xs.filter((x): x is string => !!x)
 
   return {
     clerk,
     directives: [
       "default-src 'self'",
-      // Clerk, next/font and Sanity Studio inject styles.
+      // Clerk and next/font inject styles.
       "style-src 'self' 'unsafe-inline'",
       // Sanity images, media on Vercel Blob, Clerk avatars, tracking pixels.
       "img-src 'self' data: blob: https:",
@@ -178,7 +177,6 @@ function shared(env: Env) {
         clerk,
         'https://clerk-telemetry.com',
         TURNSTILE,
-        ...sanity,
         ...GOOGLE_CONNECT,
         ...HUBSPOT_CONNECT,
         ...AD_TAG_CONNECT,

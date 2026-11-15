@@ -106,6 +106,36 @@ export function typescriptConfig(env = process.env) {
 const APP_HOST = new URL(process.env.NEXT_PUBLIC_AUTH_APP_URL ?? 'https://app.stellreducation.org').host
 
 /**
+ * Sanity Studio is hosted by Sanity (`npx sanity deploy`), not this app: the
+ * embedded /studio route shipped about 10 MB in the function bundle (Vercel
+ * retention .6). When NEXT_PUBLIC_SANITY_STUDIO_URL is set at build, /studio and
+ * everything under it redirect there, so old bookmarks keep working. Unset, or
+ * not an https URL, there is no rule and /studio is the normal 404. Stellr's
+ * hosts only: a tenant host keeps its own 404 for /studio (S5).
+ * docs/RUNBOOK-sanity-studio.md.
+ *
+ * @param {Record<string, string | undefined>} [env]
+ */
+export function studioRedirects(env = process.env) {
+  let target
+  try {
+    target = new URL(env.NEXT_PUBLIC_SANITY_STUDIO_URL ?? '')
+  } catch {
+    return []
+  }
+  if (target.protocol !== 'https:' || target.username || target.password) return []
+  const base = `${target.origin}${target.pathname.replace(/\/+$/, '')}`
+  return [
+    {
+      source: '/studio/:path*',
+      has: [{ type: 'host', value: stellrHostsPattern(env) }],
+      destination: `${base}/:path*`,
+      permanent: false,
+    },
+  ]
+}
+
+/**
  * The hosts that keep Stellr's own 404: the list in proxy.ts's matcher, plus this
  * deployment's two URLs, so a build whose site or app host is not on that list keeps it
  * too. Exported for test/proxy-tenant-routing.test.ts, which holds the list to the matcher.
@@ -390,6 +420,8 @@ const nextConfig = {
       { source: '/admin/access', destination: '/admin/members/access', permanent: false },
       // Gates folded into the Training console (Reminders & escalation tab).
       { source: '/admin/community/gates', destination: '/admin/academy/training?tab=reminders', permanent: false },
+      // The embedded Studio moved to Sanity's hosting (studioRedirects above).
+      ...studioRedirects(),
     ]
   },
   async rewrites() {

@@ -124,18 +124,24 @@ describe('lib/csp policies', () => {
     expect(p).not.toContain("'unsafe-eval'")
   })
 
-  it('covers Supabase (https and wss), media, Clerk, Turnstile, Sanity and the tag hosts', () => {
+  it('covers Supabase (https and wss), media, Clerk, Turnstile and the tag hosts', () => {
     const p = hostPolicy(env)
     expect(p).toContain('https://abc.supabase.co wss://abc.supabase.co')
     expect(p).toContain('media-src \'self\' blob: https://media.test https://abc.supabase.co')
     expect(p).toContain('https://clerk.example.org')
     expect(p).toContain('https://challenges.cloudflare.com')
-    expect(p).toContain('wss://proj1.api.sanity.io')
     expect(p).toContain('https://www.googletagmanager.com')
     expect(p).toContain('https://js.hs-scripts.com')
     expect(p).toContain('https://8x8.vc https://meet.jit.si')
     expect(p).toContain("object-src 'none'")
     expect(p).toContain("frame-ancestors 'self'")
+  })
+
+  it('names no Sanity API host in either policy: the Studio is hosted by Sanity now (Vercel retention .6)', () => {
+    for (const p of [hostPolicy(env), noncePolicy('abc', env)]) {
+      expect(p).not.toContain('sanity.io')
+      expect(p).not.toContain('wss://proj1')
+    }
   })
 
   it('names the hosts of the ad tags live in GTM (Meta, LinkedIn, Apollo; docs/RUNBOOK-no-ads-students.md)', () => {
@@ -169,7 +175,6 @@ describe('lib/csp policies', () => {
     }
     for (const path of top('(public)')) expect(usesNonce(path), path).toBe(false)
     expect(usesNonce('/api/anything')).toBe(true)
-    expect(usesNonce('/studio')).toBe(false)
     expect(usesNonce('/signage')).toBe(false)
   })
 })
