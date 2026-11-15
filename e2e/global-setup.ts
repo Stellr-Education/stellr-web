@@ -1,11 +1,19 @@
+import { createClerkClient } from '@clerk/backend'
 import { clerkSetup } from '@clerk/testing/playwright'
+import { createClient, type SupabaseClient } from '@supabase/supabase-js'
+import { supabaseFetch, supabaseSecretKey } from '../lib/supabase-keys'
 import { assertE2eSupabase } from '../lib/testing/e2e-supabase-target'
+import { removeSurveyEvent } from './fixtures/survey'
+import { FIXTURES } from './fixtures/users'
 
 /**
- * Two checks before any spec runs, plus Clerk's testing setup.
+ * Two checks before any spec runs, plus Clerk's testing setup and two pieces of
+ * database housekeeping.
  *
  * 1. Refuse production.
  * 2. Refuse a target that is not actually serving this app.
+ * 3. Remove `e2e-survey-*` events a cancelled run left behind (deps-tailwind4.6).
+ * 4. Make sure the event-manager fixture is linked and assigned (event-manager-e2e.4).
  *
  * The second exists because of a false green on 10 Sept. The dev deployment sits
  * behind Vercel Authentication, so every request 302'd to vercel.com/sso-api and
@@ -71,6 +79,116 @@ export default async function globalSetup() {
   }
 
   await assertServingTheApp(url)
+
+  // Only once the target is known to be this app, and only against the dev
+  // project or a stack on this machine (assertE2eSupabase above).
+  const db = e2eDatabase()
+  if (db) {
+    await removeStaleSurveyEvents(db)
+    await ensureEventManagerFixture(db)
+  }
+}
+
+/**
+ * The secret-key client the fixtures use, or null when this run holds no
+ * database settings (a run against a deployment). Throws for any database the
+ * suite may not write to, as the fixtures do.
+ */
+function e2eDatabase(): SupabaseClient | null {
+  if (!process.env.NEXT_PUBLIC_SUPABASE_URL) return null
+  const key = supabaseSecretKey()
+  if (!key) {
+    console.log('global-setup: no Supabase secret key, so survey cleanup and the event-manager fixture are skipped.')
+    return null
+  }
+  return createClient(assertE2eSupabase(), key, { auth: { persistSession: false }, global: { fetch: supabaseFetch } })
+}
+
+// ── Leftover survey events (deps-tailwind4.6) ────────────────────────────────
+//
+// survey-cli.ts makes a throwaway `e2e-survey-<8 hex>` event per test and the
+// spec removes it afterwards. A newer push to a PR cancels that PR's running
+// suite, afterEach never runs, and the event stays, with a COMPLETED agreement
+// for the seed member. An hour is far longer than any suite runs, so an event
+// that old belongs to no running test. It goes through the fixture's own
+// `remove`, which refuses any other slug, and the pattern here is checked first.
+
+export const SURVEY_EVENT_SLUG = /^e2e-survey-[0-9a-f]{8}$/
+const STALE_AFTER_MS = 60 * 60 * 1000
+
+/** Slugs whose every row is older than the cutoff. Anything not matching SURVEY_EVENT_SLUG is ignored. */
+export function staleSurveySlugs(rows: { event_slug: string | null; created_at: string }[], cutoff: number): string[] {
+  const newest = new Map<string, number>()
+  for (const r of rows) {
+    if (!r.event_slug || !SURVEY_EVENT_SLUG.test(r.event_slug)) continue
+    const at = Date.parse(r.created_at)
+    newest.set(r.event_slug, Math.max(newest.get(r.event_slug) ?? 0, Number.isNaN(at) ? Infinity : at))
+  }
+  return [...newest].filter(([, at]) => at < cutoff).map(([slug]) => slug).sort()
+}
+
+async function removeStaleSurveyEvents(db: SupabaseClient) {
+  const rows: { event_slug: string | null; created_at: string }[] = []
+  for (const table of ['registrations', 'survey_distributions']) {
+    const { data, error } = await db.from(table).select('event_slug, created_at').like('event_slug', 'e2e-survey-%')
+    if (error) throw new Error(`global-setup: reading ${table} for leftover survey events: ${error.message}`)
+    rows.push(...(data ?? []))
+  }
+  const stale = staleSurveySlugs(rows, Date.now() - STALE_AFTER_MS)
+  for (const slug of stale) removeSurveyEvent(slug)
+  console.log(`global-setup: removed ${stale.length} leftover e2e-survey event${stale.length === 1 ? '' : 's'} older than an hour.`)
+}
+
+// ── Event-manager fixture (event-manager-e2e.4) ──────────────────────────────
+//
+// access-control.spec.ts proves an event manager reaches its one event and is
+// refused another. That needs members.clerk_user_id on the fixture's row and an
+// event_manager_assignments row, both keyed on the fixture's Clerk user id,
+// which is specific to the Clerk development instance and so is never committed
+// (supabase/seed.sql). They were applied to dev by hand; a reseeded database lost
+// them. So look the user up by its fixture address and write both, idempotently.
+// scripts/seed-e2e-stack.ts does the same for the e2e-local stack.
+
+const EVENT_MANAGER_EVENT = 'seed-regional-challenge'
+
+async function ensureEventManagerFixture(db: SupabaseClient) {
+  const fixture = FIXTURES.event_manager
+  const required = Boolean(process.env[fixture.passwordVar])
+  const clerkKey = process.env.CLERK_SECRET_KEY
+  // A live instance's user ids never belong in the e2e database.
+  if (!clerkKey?.startsWith('sk_test_')) {
+    console.log('global-setup: no Clerk test key, so the event-manager fixture is left as it is.')
+    return
+  }
+
+  const { data: users } = await createClerkClient({ secretKey: clerkKey }).users.getUserList({ emailAddress: [fixture.email] })
+  const user = users[0]
+  if (!user) {
+    // A fixture nobody has a password for skips its own spec. One that can sign
+    // in but is not linked would fail it with a misleading error.
+    if (required) throw new Error(`global-setup: no Clerk user for the event_manager fixture, but ${fixture.passwordVar} is set.`)
+    console.log('global-setup: event_manager fixture not provisioned in Clerk, left unlinked.')
+    return
+  }
+
+  const { data: member, error: readError } = await db.from('members').select('clerk_user_id').eq('id', fixture.memberId).maybeSingle()
+  if (readError) throw new Error(`global-setup: reading the event_manager member row: ${readError.message}`)
+  if (!member) {
+    if (required) throw new Error('global-setup: the event_manager member row from supabase/seed.sql is missing.')
+    console.log('global-setup: no event_manager member row, left unlinked.')
+    return
+  }
+  if (member.clerk_user_id !== user.id) {
+    const { error, count } = await db.from('members').update({ clerk_user_id: user.id }, { count: 'exact' }).eq('id', fixture.memberId)
+    if (error) throw new Error(`global-setup: linking the event_manager member row: ${error.message}`)
+    if (count !== 1) throw new Error(`global-setup: linking the event_manager member row updated ${count} rows, expected one.`)
+  }
+
+  const { error: assignError } = await db
+    .from('event_manager_assignments')
+    .upsert({ clerk_user_id: user.id, event_slug: EVENT_MANAGER_EVENT }, { onConflict: 'clerk_user_id,event_slug', ignoreDuplicates: true })
+  if (assignError) throw new Error(`global-setup: assigning the event_manager fixture: ${assignError.message}`)
+  console.log(`global-setup: event_manager fixture ${member.clerk_user_id === user.id ? 'already linked' : 'linked'}, assigned to ${EVENT_MANAGER_EVENT}.`)
 }
 
 async function assertServingTheApp(url: URL) {
