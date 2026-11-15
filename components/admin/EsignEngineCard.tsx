@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { Badge, Button, Collapsible } from '@stellr/web-ui'
 import { formatDateShort } from '@/lib/utils'
 import type { EngineSummary } from '@/lib/esign/state'
+import { AdminOnlyNote, useCan } from '@/components/admin/CapabilitiesContext'
 
 // Admin → Consent forms: which signing engine new agreements go to, how much
 // of DocuSign's monthly allowance is used, and the health of the signed-record
@@ -28,6 +29,9 @@ export function EsignEngineCard() {
   const [summary, setSummary] = useState<EngineSummary | null>(null)
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState<{ text: string; error: boolean } | null>(null)
+  // Changing the engine and running maintenance are esign:manage, an admin's
+  // alone. Reading the summary is portal:read, so Staff see the card.
+  const canWrite = useCan('esign:manage')
 
   const load = useCallback(async () => {
     const res = await fetch('/api/admin/esign/state', { cache: 'no-store' })
@@ -250,7 +254,7 @@ export function EsignEngineCard() {
         </p>
       )}
 
-      <fieldset className="space-y-2" disabled={busy}>
+      <fieldset className="space-y-2" disabled={busy || !canWrite}>
         <legend className="text-sm font-semibold text-ink">Where new agreements go</legend>
         {(Object.keys(MODE_LABEL) as (keyof typeof MODE_LABEL)[]).map((mode) => (
           <label key={mode} className="flex items-center gap-2 text-sm text-ink">
@@ -265,7 +269,7 @@ export function EsignEngineCard() {
         ))}
       </fieldset>
 
-      <fieldset className="space-y-2" disabled={busy || state.mode === 'docusign_only'}>
+      <fieldset className="space-y-2" disabled={busy || !canWrite || state.mode === 'docusign_only'}>
         <legend className="text-sm font-semibold text-ink">Agreements Stellr signing may take</legend>
         <div className="flex flex-wrap gap-x-5 gap-y-1">
           {Object.entries(TYPE_LABEL).map(([type, label]) => {
@@ -289,6 +293,9 @@ export function EsignEngineCard() {
         <p className="text-xs text-content-muted">The membership agreement always uses Stellr signing.</p>
       </fieldset>
 
+      {!canWrite && <AdminOnlyNote>An admin changes where agreements go and runs these checks.</AdminOnlyNote>}
+
+      {canWrite && (
       <div className="flex flex-wrap gap-2">
         {exhausted && (
           <Button
@@ -316,6 +323,7 @@ export function EsignEngineCard() {
           </>
         )}
       </div>
+      )}
 
       {msg && (
         <p className={`text-sm ${msg.error ? 'text-danger' : 'text-ink'}`} role="status">{msg.text}</p>

@@ -6,6 +6,7 @@ import { supabaseServer } from '@/lib/supabase'
 import { formatDateShort } from '@/lib/utils'
 import { parseFieldMap } from '@/lib/esign/native/template'
 import { ApproveTemplateVersion } from '@/components/admin/ApproveTemplateVersion'
+import { Can } from '@/components/admin/CapabilitiesContext'
 
 /**
  * A version's fields, or null when its field map cannot be read. One bad row
@@ -71,9 +72,12 @@ export default async function AgreementTemplatesPage({ searchParams }: { searchP
         <p className="mt-0.5 text-sm text-content-muted">
           The documents Stellr signing sends. A version is used only once it is approved; approved versions never change.
         </p>
-        <p className="mt-2 text-sm">
-          <Link href="/admin/docusigns/templates/edit" className="text-primary-deep underline">Add a new document</Link>
-        </p>
+        {/* Adding and editing documents is esign:manage, an admin's alone. */}
+        <Can cap="esign:manage">
+          <p className="mt-2 text-sm">
+            <Link href="/admin/docusigns/templates/edit" className="text-primary-deep underline">Add a new document</Link>
+          </p>
+        </Can>
       </div>
 
       <section className="overflow-x-auto rounded-xl border border-line bg-white">
@@ -126,11 +130,13 @@ export default async function AgreementTemplatesPage({ searchParams }: { searchP
                 : 'Not approved. Check both copies and every field below, then approve with scripts/esign-template.ts.'}
               {` SHA-256 ${selected.pdf_sha256}.`}
             </p>
-            <p className="mt-1 text-sm">
-              <Link href={`/admin/docusigns/templates/edit?from=${selected.id}`} className="text-primary-deep underline">
-                Edit fields (saves a new version)
-              </Link>
-            </p>
+            <Can cap="esign:manage">
+              <p className="mt-1 text-sm">
+                <Link href={`/admin/docusigns/templates/edit?from=${selected.id}`} className="text-primary-deep underline">
+                  Edit fields (saves a new version)
+                </Link>
+              </p>
+            </Can>
           </div>
           {!selected.approved_at && <ApproveTemplateVersion id={selected.id} label={`${selected.key} v${selected.version}`} />}
           <div className="grid gap-4 lg:grid-cols-2">

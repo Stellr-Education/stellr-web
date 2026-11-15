@@ -1,5 +1,13 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render as rtlRender, screen, waitFor } from '@testing-library/react'
+import type { ReactElement, ReactNode } from 'react'
+import { CapabilitiesProvider } from '@/components/admin/CapabilitiesContext'
+import { CAPABILITIES } from '@/lib/authz/capabilities'
+
+// These controls are an admin's (staff-role.9): render as an admin, who holds
+// every capability. The Staff view is tested in the *.staff.test.tsx beside this.
+const AsAdmin = ({ children }: { children: ReactNode }) => <CapabilitiesProvider capabilities={CAPABILITIES}>{children}</CapabilitiesProvider>
+const render = (ui: ReactElement) => rtlRender(ui, { wrapper: AsAdmin })
 import userEvent from '@testing-library/user-event'
 import { AdminBinaryActions } from './AdminBinaryActions'
 
