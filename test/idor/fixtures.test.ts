@@ -56,8 +56,8 @@ const CREW_CASES: [name: string, cls: 'tenant_crew' | 'platform_admin', reachesD
 
 // Written out, not read from CREW_PERSONAS_FOR: this is what the class must run.
 const PERSONAS_FOR_CLASS = {
-  tenant_crew: ['stellr_crew', 'canary_admin', 'stellr_event_manager'],
-  platform_admin: ['canary_admin'],
+  tenant_crew: ['stellr_crew', 'canary_admin', 'stellr_event_manager', 'stellr_staff'],
+  platform_admin: ['canary_admin', 'stellr_staff'],
 } as const
 
 describe(`IDOR fixtures: staff personas (${process.env.IDOR_FIXTURE_DIR ? 'canary copy' : 'intact'})`, () => {
@@ -119,7 +119,7 @@ describe('a staff case has to prove something', () => {
     expect(destined({ status: 200, outcome: 'ok' })).toContain('200')
     expect(destined({ status: 400, outcome: 'unexercised', touched: false })).toContain('400')
     expect(destined({ status: 403, outcome: 'refused', touched: false })).toBeNull()
-    expect(CREW_PERSONAS_FOR.platform_destined).toEqual(['canary_admin'])
+    expect(CREW_PERSONAS_FOR.platform_destined).toEqual(['canary_admin', 'stellr_staff'])
   })
 
   it('a guard exception excuses the status and nothing else', () => {

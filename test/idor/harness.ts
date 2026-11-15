@@ -47,6 +47,10 @@
 //   stellr_crew          a Stellr tenant admin naming a Canary record
 //   canary_admin          a Canary tenant admin naming a Stellr record
 //   stellr_event_manager  assigned to one Stellr event, naming another event's record
+//   stellr_staff          Stellr Staff (an active grant, a second factor on the session),
+//                         naming a Canary record. Not an admin: on a platform route it
+//                         must be refused at the guard unless the route checks a
+//                         capability Staff holds (STAFF_CAPABILITIES; staffCapabilitiesIn)
 // Staff run with AUTHZ_SOURCE=postgres and LOADSCOPED_MODE=enforce: their roles are
 // tenant_memberships rows, which is the only way a Canary admin can exist.
 //
@@ -68,13 +72,15 @@ import { applyEnv, CASE_FIXTURES, fixtureFor, type CaseFixture } from './case-fi
 import { setTenantDbDriver } from '@/lib/tenancy/db'
 import { honeyClient, newHoneyDbState, type HoneyDbState, type HoneyWrite } from './honey-db'
 import { honeyTenantDriver } from './tenant-db-fake'
+import { STAFF_ACCEPTED, type StaffAccepted } from './staff-accepted'
+import { staffCapabilitiesIn } from './staff-capabilities'
 
 export type Outcome = 'leak' | 'honey_write' | 'oracle' | 'oracle_4xx' | 'refused' | 'unexercised' | 'ok' | 'error'
 
 /** Outcomes that mean tenant B's data or rows were reached: they fail unless accepted. */
 export const FAILING_OUTCOMES: readonly Outcome[] = ['leak', 'honey_write', 'oracle', 'oracle_4xx']
-export type Persona = 'participant' | 'anonymous' | 'stellr_crew' | 'canary_admin' | 'stellr_event_manager'
-export type CrewPersona = Extract<Persona, 'stellr_crew' | 'canary_admin' | 'stellr_event_manager'>
+export type Persona = 'participant' | 'anonymous' | 'stellr_crew' | 'canary_admin' | 'stellr_event_manager' | 'stellr_staff'
+export type CrewPersona = Extract<Persona, 'stellr_crew' | 'canary_admin' | 'stellr_event_manager' | 'stellr_staff'>
 /** Which host the caller is on, and so whose record the foreign id names. */
 export type Direction = 'stellr_to_canary' | 'canary_to_stellr'
 /** Why a refusal differed: with the row there and gone, or between no row and a malformed id. */
@@ -107,7 +113,13 @@ const CREW: Record<CrewPersona, { role: string; membership: string; context: Cas
     membership: 'event_manager',
     context: { host: STELLR_HOST, callerTenantId: STELLR_TENANT_ID, honeyTenantId: STELLR_TENANT_ID },
   },
+  // Built as #712's tests build Staff: the 'staff' claim, and factorVerificationAge
+  // [0, 0] on the session (lib/authz takes the role away without a second factor).
+  stellr_staff: { role: 'staff', membership: 'staff', context: DIRECTIONS.stellr_to_canary },
 }
+
+/** Same host, caller and record tenant: only a role or capability check can refuse. */
+export const SAME_TENANT: CaseContext = { host: STELLR_HOST, callerTenantId: STELLR_TENANT_ID, honeyTenantId: STELLR_TENANT_ID }
 
 const isCrewPersona = (p: Persona): p is CrewPersona => p in CREW
 
@@ -115,9 +127,9 @@ export type CrewRouteClass = 'tenant_crew' | 'platform_admin' | 'platform_destin
 
 /** What each staff-facing route class runs. A platform route must refuse the tenant admin. */
 export const CREW_PERSONAS_FOR: Record<CrewRouteClass, readonly CrewPersona[]> = {
-  tenant_crew: ['stellr_crew', 'canary_admin', 'stellr_event_manager'],
-  platform_admin: ['canary_admin'],
-  platform_destined: ['canary_admin'],
+  tenant_crew: ['stellr_crew', 'canary_admin', 'stellr_event_manager', 'stellr_staff'],
+  platform_admin: ['canary_admin', 'stellr_staff'],
+  platform_destined: ['canary_admin', 'stellr_staff'],
 }
 
 /** Tenant A's participant: a signed-in, onboarded adult Stellr member. */
@@ -167,6 +179,8 @@ interface HarnessState {
   strict: boolean
   /** The action of each platform audit event the running case wrote. */
   audits: string[]
+  /** A stellr_staff session carries a second factor. Off only to prove lib/authz drops Staff without one. */
+  staffSecondFactor: boolean
 }
 
 export const harness: HarnessState = {
@@ -180,6 +194,7 @@ export const harness: HarnessState = {
   cookies: {},
   strict: false,
   audits: [],
+  staffSecondFactor: true,
 }
 
 export interface ResetOptions {
@@ -207,12 +222,18 @@ setTenantDbDriver(honeyTenantDriver(() => ({ db: harness.db, scopingValues: scop
 /** What a staff persona holds in the role tables: read by lib/authz under the postgres source. */
 function crewRows(persona: CrewPersona, tenantId: string): Record<string, Record<string, unknown>[]> {
   const who = { clerk_user_id: TENANT_A_PARTICIPANT.clerkUserId, member_id: TENANT_A_PARTICIPANT.memberId }
-  return {
+  const rows: Record<string, Record<string, unknown>[]> = {
     tenant_memberships: [{ ...who, tenant_id: tenantId, role: CREW[persona].membership }],
     tenants: [{ id: tenantId, status: 'active' }],
     event_manager_assignments:
       persona === 'stellr_event_manager' ? [{ clerk_user_id: who.clerk_user_id, event_slug: ASSIGNED_EVENT_SLUG, tenant_id: tenantId }] : [],
   }
+  if (persona === 'stellr_staff') {
+    // An active grant and its member_roles mirror, as reconcileStaffGrant leaves them (lib/staff.ts).
+    rows.staff_grants = [{ ...who, id: '00000000-0000-4000-8000-00000000a0f1', status: 'active', activated_at: '2026-11-01T00:00:00.000Z', expires_at: '2027-11-01T00:00:00.000Z' }]
+    rows.member_roles = [{ member_id: who.member_id, role: 'staff', scope: 'global', source: 'staff_grant' }]
+  }
+  return rows
 }
 
 export function resetHarness(persona: Persona = 'participant', opts: ResetOptions = {}) {
@@ -249,6 +270,9 @@ export function resetHarness(persona: Persona = 'participant', opts: ResetOption
 
 const clerkRole = () => (isCrewPersona(harness.persona) ? CREW[harness.persona].role : 'student')
 
+/** Clerk's factorVerificationAge: [0, 0] is both factors just verified, [0, -1] no second factor. */
+const factorVerificationAge = () => (harness.persona === 'stellr_staff' && !harness.staffSecondFactor ? [0, -1] : [0, 0])
+
 function sessionClaims() {
   return { sub: TENANT_A_PARTICIPANT.clerkUserId, metadata: { role: clerkRole() }, email: TENANT_A_PARTICIPANT.email }
 }
@@ -263,6 +287,7 @@ function clerkUser() {
     primaryEmailAddress: { id: 'idn_tenant_a', emailAddress: TENANT_A_PARTICIPANT.email, verification: { status: 'verified' } },
     emailAddresses: [{ id: 'idn_tenant_a', emailAddress: TENANT_A_PARTICIPANT.email, verification: { status: 'verified' } }],
     publicMetadata: { role: clerkRole() },
+    twoFactorEnabled: harness.persona !== 'stellr_staff' || harness.staffSecondFactor,
     privateMetadata: {},
     unsafeMetadata: {},
   }
@@ -277,6 +302,7 @@ export function clerkServerMock(original: Record<string, unknown>) {
           sessionId: 'sess_idor_tenant_a',
           orgId: null,
           sessionClaims: sessionClaims(),
+          factorVerificationAge: factorVerificationAge(),
           has: () => false,
           getToken: async () => null,
           redirectToSignIn: () => {
@@ -288,6 +314,7 @@ export function clerkServerMock(original: Record<string, unknown>) {
           sessionId: null,
           orgId: null,
           sessionClaims: null,
+          factorVerificationAge: null,
           has: () => false,
           getToken: async () => null,
           redirectToSignIn: () => {
@@ -644,6 +671,10 @@ export interface CaseOptions {
   direction?: Direction
   /** A refusal that differs is `oracle_4xx`, not only reported. */
   strict?: boolean
+  /** Host, caller tenant and record tenant, overriding the persona's own (SAME_TENANT, say). */
+  context?: CaseContext
+  /** stellr_staff only: false sends a session with no second factor. Default true. */
+  staffSecondFactor?: boolean
 }
 
 let ipSeq = 0
@@ -820,10 +851,12 @@ export async function runIdorCase(
   const fixture = fixtureFor(input.fixture, method)
   const crewEnv = isCrewPersona(persona) ? { AUTHZ_SOURCE: 'postgres', LOADSCOPED_MODE: 'enforce' } : undefined
   const restoreEnv = applyEnv({ ...crewEnv, ...fixture?.env })
-  const context = isCrewPersona(persona) ? CREW[persona].context : DIRECTIONS[opts.direction ?? 'stellr_to_canary']
+  const context = opts.context ?? (isCrewPersona(persona) ? CREW[persona].context : DIRECTIONS[opts.direction ?? 'stellr_to_canary'])
+  harness.staffSecondFactor = opts.staffSecondFactor !== false
   try {
     return await classify(handler, input, method, persona, label, fixture, context, opts.strict === true)
   } finally {
+    harness.staffSecondFactor = true
     restoreEnv()
   }
 }
@@ -846,8 +879,8 @@ export async function runCrewPersonaCases(
   return out
 }
 
-/** The personas who hold the whole tenant: a route classed tenant_crew lets them in. */
-const TENANT_WIDE: readonly CrewPersona[] = ['stellr_crew', 'canary_admin']
+/** The personas who hold the whole tenant: a route classed tenant_crew lets them in. Staff reaches every Stellr event. */
+const TENANT_WIDE: readonly CrewPersona[] = ['stellr_crew', 'canary_admin', 'stellr_staff']
 
 /**
  * Why a staff case on a real route proves nothing or fails, or null when it holds. Not
@@ -867,9 +900,37 @@ export function crewCaseProblem(c: {
    * counted decision. What it returns or writes is still judged.
    */
   guardExempt?: boolean
+  /**
+   * The capabilities in STAFF_CAPABILITIES the route checks (staffCapabilitiesIn). On a
+   * platform route, none means admin-only to Staff: stellr_staff must be refused at the
+   * guard, before the id is used. Read for stellr_staff only.
+   */
+  staffCapabilities?: readonly string[]
+  /** stellr_staff only: the reviewed entry for this case in test/idor/staff-accepted.ts. */
+  staffAccepted?: StaffAccepted
 }): string | null {
-  const { cls, persona, result, idBearing, exception, guardExempt } = c
+  const { cls, persona, result, idBearing, exception, guardExempt, staffAccepted } = c
+  const caps = c.staffCapabilities ?? []
+  if (staffAccepted) {
+    // Only Staff, only through a capability it holds, only on a platform route, only as written.
+    if (persona !== 'stellr_staff' || cls === 'tenant_crew' || caps.length === 0) return `${persona}: a Staff acceptance names a case it cannot cover`
+    if (staffAccepted.reason === 'TODO: review' || staffAccepted.reason.length <= 20) return `${persona}: the Staff acceptance has no reviewed reason`
+    if (result.outcome !== staffAccepted.outcome) return `${persona}: accepted as ${staffAccepted.outcome}, now ${result.outcome}: review test/idor/staff-accepted.ts`
+    return null
+  }
   if (FAILING_OUTCOMES.includes(result.outcome)) return `${persona}: ${result.outcome}`
+  if (cls !== 'tenant_crew' && persona === 'stellr_staff') {
+    if (caps.length) {
+      // Staff may pass through a capability it holds; then it is judged as a tenant-wide persona.
+      if (result.outcome === 'error' || result.outcome === 'unexercised') return `${persona}: ${result.outcome} proves nothing about the scope`
+      if (idBearing && !result.touched) return `${persona}: ${result.status} with nothing touched, though the route lets Staff in (${caps.join(', ')})`
+      return null
+    }
+    if (guardExempt) return result.touched ? `${persona}: a guard-exempt platform route used the id for Staff` : null
+    if (![401, 403, 404].includes(result.status)) return `${persona}: an admin-only route answered Staff with ${result.status}`
+    if (result.touched) return `${persona}: refused only after using the id: an admin-only route let Staff past its guard`
+    return null
+  }
   if (cls !== 'tenant_crew') {
     if (guardExempt) return null
     return [401, 403, 404].includes(result.status) ? null : `${persona}: a platform route answered a tenant admin with ${result.status}`
@@ -892,11 +953,21 @@ export async function runCrewTarget(
   crewUnproven?: Partial<Record<CrewPersona, string>>,
 ): Promise<{ method: string; persona: CrewPersona; result: CaseResult; problem: string | null }[]> {
   const idBearing = input.segments.length + input.query.length + input.body.length > 0
+  const staffCapabilities = staffCapabilitiesIn(t.file, t.source)
   const out = []
   for (const method of t.methods) {
     for (const { persona, result } of await runCrewPersonaCases(mod, input, method, t.cls, t.file)) {
       const problem =
-        crewCaseProblem({ cls: t.cls, persona, result, idBearing, exception: crewUnproven?.[persona], guardExempt: `${t.file}#${method}` in GUARD_EXCEPTIONS }) ??
+        crewCaseProblem({
+          cls: t.cls,
+          persona,
+          result,
+          idBearing,
+          exception: crewUnproven?.[persona],
+          guardExempt: `${t.file}#${method}` in GUARD_EXCEPTIONS,
+          staffCapabilities,
+          staffAccepted: persona === 'stellr_staff' ? STAFF_ACCEPTED[`${t.file} ${method}`] : undefined,
+        }) ??
         routeAuditProblems(t.file, t.source, [result])[0] ??
         null
       out.push({ method, persona, result, problem })
