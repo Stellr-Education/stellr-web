@@ -1,14 +1,23 @@
 import { NextResponse } from 'next/server'
+import { z } from 'zod'
 import { sendEmail, MARKETING_FROM } from '@/lib/email'
 import { LEAD_SOURCE_LIFECYCLE } from '@/lib/hubspot-fields'
 import { captureLead, logLine, readHubspotCookie } from '@/lib/hubspot'
 import { rateLimitGuard, HOUR_MS } from '@/lib/rate-limit'
-import { isEmailLike } from '@/lib/utils'
-import { GATED_ASSETS, isGatedAssetKey } from '@/lib/gated-assets'
+import { checkSpamSignals } from '@/lib/spam-guard'
+import { GATED_ASSETS, isGatedAssetKey, type GatedAssetKey } from '@/lib/gated-assets'
 import { gatedDownloadUrl } from '@/lib/gated-download-link'
 import { gatedAssetEmailHtml, gatedAssetEmailText } from '@/lib/gated-asset-email'
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://www.stellreducation.org'
+
+/** Server-side validation, with caps (docs/REC-form-spam-hardening.md §5). */
+const schema = z.object({
+  asset: z.custom<GatedAssetKey>(isGatedAssetKey),
+  // Name is optional (README §8 one-field gate); only a valid email is required.
+  name: z.string().trim().max(120).optional(),
+  email: z.string().trim().email().max(254),
+})
 /**
  * Gated marketing downloads. The requester is captured in HubSpot as a
  * `subscriber` and emailed a signed link to the full file. The file
@@ -21,19 +30,23 @@ export async function POST(req: Request) {
   const limited = rateLimitGuard(req, 'asset-request', { limit: 3, windowMs: HOUR_MS })
   if (limited) return limited
   try {
-    const { name, email, asset } = await req.json()
-
-    if (!isGatedAssetKey(asset)) {
-      return NextResponse.json({ error: 'Unknown asset' }, { status: 400 })
+    const body: unknown = await req.json()
+    const parsed = schema.safeParse(body)
+    if (!parsed.success) {
+      const failed = new Set(parsed.error.issues.map((i) => i.path[0]))
+      const error = failed.has('asset')
+        ? 'Unknown asset'
+        : failed.has('email')
+          ? 'A valid email is required.'
+          : 'Please check your details and try again.'
+      return NextResponse.json({ error }, { status: 400 })
     }
+    // A tripped trap answers 200 and mails nobody.
+    const spam = checkSpamSignals(body, req, 'asset-request')
+    if (spam) return spam
+    const { asset, email: cleanEmail } = parsed.data
+    const cleanName = parsed.data.name ?? ''
     const config = GATED_ASSETS[asset]
-
-    const cleanName = typeof name === 'string' ? name.trim() : ''
-    const cleanEmail = typeof email === 'string' ? email.trim() : ''
-    // Name is optional (README §8 one-field gate); only a valid email is required.
-    if (!isEmailLike(cleanEmail)) {
-      return NextResponse.json({ error: 'A valid email is required.' }, { status: 400 })
-    }
 
     const downloadUrl = gatedDownloadUrl(SITE_URL, asset)
     if (!downloadUrl) {

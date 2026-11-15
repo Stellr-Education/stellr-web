@@ -4,6 +4,8 @@ import { HS, LEAD_SOURCE_LIFECYCLE } from '@/lib/hubspot-fields'
 import { captureLead, logLine, readHubspotCookie } from '@/lib/hubspot'
 import { HOUR_MS, rateLimitGuard } from '@/lib/rate-limit'
 import { getLandingPage } from '@/content/lp'
+import { checkSpamSignals } from '@/lib/spam-guard'
+import { lpLeadFields as f } from './schema'
 
 /**
  * Audience landing page lead capture.
@@ -25,9 +27,9 @@ import { getLandingPage } from '@/content/lp'
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://www.stellreducation.org'
 
 const schema = z.object({
-  name: z.string().min(1).max(200),
-  email: z.string().email().max(254),
-  role: z.enum(['teacher', 'parent', 'student']),
+  name: f.name,
+  email: f.email,
+  role: f.role,
   // The client sends nothing rather than 0 for a blank field; both are rejected
   // below rather than written, because HubSpot stores what it is given.
   students: z.number().int().min(1).max(500).optional(),
@@ -63,10 +65,13 @@ export async function POST(req: Request) {
   if (limited) return limited
 
   try {
-    const parsed = schema.safeParse(await req.json())
+    const body: unknown = await req.json()
+    const parsed = schema.safeParse(body)
     if (!parsed.success) {
       return NextResponse.json({ error: 'Invalid submission' }, { status: 400 })
     }
+    const spam = checkSpamSignals(body, req, 'lp-lead')
+    if (spam) return spam
     const data = parsed.data
 
     // The slug must be a page we actually publish. Without this check the

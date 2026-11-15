@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { z } from 'zod'
 import { captureLead, logLine, readHubspotCookie } from '@/lib/hubspot'
 import {
   HS,
@@ -11,8 +12,22 @@ import {
 } from '@/lib/hubspot-fields'
 import { getEventBySlug } from '@/lib/events/repo'
 import { rateLimitGuard, HOUR_MS } from '@/lib/rate-limit'
+import { checkSpamSignals } from '@/lib/spam-guard'
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://www.stellreducation.org'
+
+/** Server-side validation, with caps (docs/REC-form-spam-hardening.md §5). */
+const schema = z.object({
+  email: z.string().trim().email().max(254),
+  name: z.string().trim().max(120).optional(),
+  source: z.string().max(40).optional(),
+  eventSlug: z.string().max(200).optional(),
+  // The pre-August-2026 name for eventSlug; see below.
+  event: z.string().max(200).optional(),
+  // Which registration button opened the notify modal. Anything but
+  // individual or group is recorded as unspecified, below.
+  interest: z.string().max(40).optional(),
+})
 
 // Newsletter / "Get Notified" subscriber capture. Two callers:
 //   • the footer SubscribeForm — email only
@@ -31,8 +46,14 @@ export async function POST(req: Request) {
   if (limited) return limited
 
   try {
-    const body = await req.json()
-    const { email, name, source, interest } = body
+    const body: unknown = await req.json()
+    const parsed = schema.safeParse(body)
+    if (!parsed.success) {
+      return NextResponse.json({ error: 'Invalid email' }, { status: 400 })
+    }
+    const spam = checkSpamSignals(body, req, 'subscribe')
+    if (spam) return spam
+    const { email: cleanEmail, name, source, interest } = parsed.data
 
     // `event` is the pre-August-2026 field name for the same value. A deploy
     // does not reload tabs that are already open, so for a while after any
@@ -40,18 +61,13 @@ export async function POST(req: Request) {
     // route. Accepting both keys is what stops that skew from silently
     // downgrading an event signup to a generic newsletter capture — which is
     // exactly what happened to the first post-deploy test.
-    const eventSlug: unknown = body.eventSlug ?? body.event
+    const eventSlug = parsed.data.eventSlug ?? parsed.data.event
 
-    if (!email || typeof email !== 'string' || !email.includes('@')) {
-      return NextResponse.json({ error: 'Invalid email' }, { status: 400 })
-    }
-
-    const cleanEmail = email.trim()
-    const trimmedName = typeof name === 'string' ? name.trim() : ''
+    const trimmedName = name ?? ''
     const [firstName, ...rest] = trimmedName.split(/\s+/)
 
     const slug =
-      source === 'event-notify' && typeof eventSlug === 'string' && eventSlug.trim()
+      source === 'event-notify' && eventSlug?.trim()
         ? eventSlug.trim()
         : null
     const leadSource: LeadSource = slug ? 'event_notify' : 'newsletter'

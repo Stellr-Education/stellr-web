@@ -4,6 +4,8 @@ import { useEffect, useId, useRef, useState } from 'react'
 import { Check } from 'lucide-react'
 import { Dialog, fieldControlClass } from '@stellr/web-ui'
 import { usePrefillNameEmail } from '@/components/forms/useMemberPrefill'
+import { useSpamGuard } from '@/components/forms/useSpamGuard'
+import { SpamGuardFields } from '@/components/forms/SpamGuardFields'
 import { trackLeadSubmitted } from '@/lib/analytics'
 import { isEmailLike } from '@/lib/utils'
 
@@ -18,6 +20,8 @@ export function WhitePaperGate() {
 
   // Pre-fill from the signed-in member's record; only fills empty fields.
   usePrefillNameEmail(name, setName, email, setEmail)
+  // Mounted with the page, not the dialog, so the timing trap measures the visit.
+  const spam = useSpamGuard()
   const [submitted, setSubmitted] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(false)
@@ -52,7 +56,7 @@ export function WhitePaperGate() {
       const res = await fetch('/api/white-paper', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: name.trim(), email: email.trim() }),
+        body: JSON.stringify({ name: name.trim(), email: email.trim(), ...(await spam.values()) }),
       })
       if (!res.ok) throw new Error('Request failed')
       trackLeadSubmitted('white_paper')
@@ -147,6 +151,8 @@ export function WhitePaperGate() {
                 className={fieldControlClass}
               />
             </div>
+
+            <SpamGuardFields {...spam.fields} />
 
             <p className="text-center text-ds-meta text-content-faint">
               We respect your inbox. No spam — just the paper and the occasional update.

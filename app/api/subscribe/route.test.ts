@@ -141,3 +141,36 @@ describe('POST /api/subscribe — newsletter', () => {
     expect((await post({ email: 'a@b.com' })).status).toBe(502)
   })
 })
+
+// spam.L1b / spam.L3 (docs/REC-form-spam-hardening.md §3, §5).
+const timing = () => ({ website: '', renderedAt: Date.now() - 60_000, submittedAt: Date.now() })
+
+describe('POST /api/subscribe — spam guard and validation', () => {
+  it('captures a valid footer subscribe as before, without the spam fields', async () => {
+    const res = await post({ email: 'a@b.com', ...timing() })
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({ ok: true })
+    expect(captureLead).toHaveBeenCalledTimes(1)
+    expect(JSON.stringify(lastCapture())).not.toMatch(/renderedAt|submittedAt|"website"/)
+  })
+
+  it('answers a filled honeypot with 200 and captures nothing', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const res = await post({ email: 'a@b.com', ...timing(), website: 'https://spam.example' })
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({ ok: true })
+    expect(captureLead).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    ['an over-long name', { email: 'a@b.com', name: 'a'.repeat(121) }],
+    ['an over-long event slug', { email: 'a@b.com', source: 'event-notify', eventSlug: 'a'.repeat(201) }],
+    ['an over-long intent', { email: 'a@b.com', source: 'event-notify', eventSlug: 'x', interest: 'a'.repeat(41) }],
+    ['an email with no domain', { email: 'a@' }],
+  ])('refuses %s with 400 and captures nothing', async (_label, body) => {
+    const res = await post({ ...body, ...timing() })
+    expect(res.status).toBe(400)
+    expect(await res.json()).toEqual({ error: 'Invalid email' })
+    expect(captureLead).not.toHaveBeenCalled()
+  })
+})

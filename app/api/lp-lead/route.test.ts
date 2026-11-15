@@ -143,3 +143,33 @@ describe('POST /api/lp-lead', () => {
     await expect(res.json()).resolves.toEqual({ ok: false, stored: false })
   })
 })
+
+// spam.L1b / spam.L3 (docs/REC-form-spam-hardening.md §3, §5).
+const timing = () => ({ website: '', renderedAt: Date.now() - 60_000, submittedAt: Date.now() })
+
+describe('POST /api/lp-lead — spam guard and validation', () => {
+  it('captures a valid submission as before, without the spam fields', async () => {
+    const res = await post({ ...VALID, ...timing() })
+    expect(res.status).toBe(200)
+    await expect(res.json()).resolves.toEqual({ ok: true, stored: true })
+    expect(captureLead).toHaveBeenCalledTimes(1)
+    expect(JSON.stringify(captureLead.mock.calls[0][0])).not.toMatch(/renderedAt|submittedAt|"website"/)
+  })
+
+  it('answers a filled honeypot with 200 and captures nothing', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const res = await post({ ...VALID, ...timing(), website: 'https://spam.example' })
+    expect(res.status).toBe(200)
+    expect(captureLead).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    ['an over-long name', { name: 'a'.repeat(201) }],
+    ['an over-long UTM', { utm_source: 'a'.repeat(201) }],
+  ])('refuses %s with 400 and captures nothing', async (_label, patch) => {
+    const res = await post({ ...VALID, ...timing(), ...patch })
+    expect(res.status).toBe(400)
+    await expect(res.json()).resolves.toEqual({ error: 'Invalid submission' })
+    expect(captureLead).not.toHaveBeenCalled()
+  })
+})
