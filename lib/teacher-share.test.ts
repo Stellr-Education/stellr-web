@@ -10,6 +10,8 @@ vi.mock('@/lib/sanity', () => ({ getEventBySlug: vi.fn(async () => ({ stripePric
 vi.mock('@/lib/events/repo', () => ({ getEventBySlug: vi.fn(async () => ({ stripePriceId: 'price_event', date: '2026-11-20' })) }))
 vi.mock('@/lib/notify', () => ({ notifyCommunityAdmins: vi.fn(async () => {}) }))
 vi.mock('@/lib/env-guards', () => ({ assertLiveCredentials: vi.fn() }))
+const errors = vi.hoisted(() => ({ reportError: vi.fn(async (_err: unknown, _opts: { route: string }) => {}) }))
+vi.mock('@/lib/app-errors', () => ({ reportError: errors.reportError }))
 
 import {
   createSharedSeatCheckout,
@@ -114,7 +116,11 @@ describe('who is in the pool, and who shares it', () => {
 
 // ── Against fakes ────────────────────────────────────────────────────────────
 
-function fakeDb(tables: Record<string, Row[]>) {
+// `failWrite(table, values)` → that update resolves with a Supabase {error}, or
+// throws when it returns 'throw' (group-payment-options.10).
+type FailWrite = (table: string, values: Row) => boolean | 'throw'
+
+function fakeDb(tables: Record<string, Row[]>, failWrite?: FailWrite) {
   function builder(table: string) {
     const filters: [string, string, unknown][] = []
     let op: 'select' | 'update' | 'insert' = 'select'
@@ -130,6 +136,9 @@ function fakeDb(tables: Record<string, Row[]>) {
       const rows = (tables[table] ??= [])
       if (op === 'insert') { rows.push({ ...values }); return { data: null, error: null } }
       if (op === 'update') {
+        const fail = failWrite?.(table, values)
+        if (fail === 'throw') throw new Error('network down')
+        if (fail) return { data: null, error: { code: 'XX000', message: `simulated ${table} write failure` } }
         const matched = rows.filter(match)
         matched.forEach((r) => Object.assign(r, values))
         return { data: matched, error: null }
@@ -147,7 +156,7 @@ function fakeDb(tables: Record<string, Row[]>) {
       update: (v: Row) => { op = 'update'; values = v; return q },
       insert: (v: Row) => { op = 'insert'; values = v; return q },
       maybeSingle: async () => ({ data: (run().data as Row[] | null)?.[0] ?? null, error: null }),
-      then: (res: (v: unknown) => unknown, rej?: (e: unknown) => unknown) => Promise.resolve(run()).then(res, rej),
+      then: (res: (v: unknown) => unknown, rej?: (e: unknown) => unknown) => Promise.resolve().then(run).then(res, rej),
     }
     return q
   }
@@ -170,7 +179,12 @@ function fakeStripe() {
         throw new Error('No such coupon')
       }),
     },
-    checkout: { sessions: { create: vi.fn(async () => ({ id: 'cs_1', url: 'https://checkout.stripe.test/cs_1' })) } },
+    checkout: {
+      sessions: {
+        create: vi.fn(async () => ({ id: 'cs_1', url: 'https://checkout.stripe.test/cs_1' })),
+        list: vi.fn(async (_args: { payment_intent: string; limit: number }): Promise<{ data: { id: string; metadata: Record<string, string> }[] }> => ({ data: [] })),
+      },
+    },
   }
 }
 
@@ -180,13 +194,13 @@ const person = (id: string, over: Row = {}) => ({
   share_paid_cents: null, base_paid_cents: null, stripe_payment_intent_id: null, member_id: null, ...over,
 })
 
-function setup(people: Row[], reg: Row = {}) {
+function setup(people: Row[], reg: Row = {}, failWrite?: FailWrite) {
   const tables: Record<string, Row[]> = {
     registrations: [{ ...REG_ROW, ...reg }],
     participants: people,
     event_refunds: [],
   }
-  return { db: fakeDb(tables), tables, reg: tables.registrations[0], stripe: fakeStripe() }
+  return { db: fakeDb(tables, failWrite), tables, reg: tables.registrations[0], stripe: fakeStripe() }
 }
 
 beforeEach(() => vi.clearAllMocks())
@@ -310,5 +324,124 @@ describe('a student’s checkout', () => {
     expect(out).toMatchObject({ waived: true })
     expect(f.tables.participants[0]).toMatchObject({ individual_payment_status: 'waived', base_paid_cents: 0, share_paid_cents: 0 })
     expect(f.stripe.checkout.sessions.create).not.toHaveBeenCalled()
+  })
+})
+
+// ── group-payment-options.10: a share the webhook couldn't record ────────────
+
+describe('recording a share payment', () => {
+  const SHARE_META = { teacherShare: 'true', baseCents: '9700', shareCents: '2425' }
+
+  it('records the split and starts the "only goes down" rule', async () => {
+    const f = setup([person('s1', { individual_payment_status: 'paid' })])
+    expect(await recordSeatShare(f.db, 'reg-1', 's1', SHARE_META)).toEqual({ status: 'recorded' })
+    expect(f.tables.participants[0]).toMatchObject({ base_paid_cents: 9700, share_paid_cents: 2425 })
+    expect(f.reg.share_first_paid_at).toBeTruthy()
+    expect(errors.reportError).not.toHaveBeenCalled()
+  })
+
+  it('a write that returns {error} is reported with the ids only, and returned as a failure', async () => {
+    const f = setup(
+      [person('s1', { individual_payment_status: 'paid', email: 's1@example.com' })],
+      {},
+      (table, values) => table === 'participants' && 'share_paid_cents' in values,
+    )
+    const out = await recordSeatShare(f.db, 'reg-1', 's1', SHARE_META)
+    expect(out).toMatchObject({ status: 'failed', error: expect.stringContaining('XX000') })
+    expect(errors.reportError).toHaveBeenCalledTimes(1)
+    const [err, opts] = errors.reportError.mock.calls[0]
+    expect(opts).toEqual({ route: 'POST /api/stripe/webhook' })
+    const message = (err as Error).message
+    expect(message).toContain('reg-1')
+    expect(message).toContain('s1')
+    expect(message).not.toContain('@')
+    // The first-paid stamp is independent of the participant write and still lands.
+    expect(f.reg.share_first_paid_at).toBeTruthy()
+  })
+
+  it('a write that throws is reported too, and never escapes', async () => {
+    const f = setup([person('s1', { individual_payment_status: 'paid' })], {}, () => 'throw')
+    expect(await recordSeatShare(f.db, 'reg-1', 's1', SHARE_META)).toMatchObject({ status: 'failed' })
+    expect(errors.reportError).toHaveBeenCalledTimes(1)
+  })
+
+  it('a session that isn\u2019t a shared-cost one is skipped', async () => {
+    const f = setup([person('s1')])
+    expect(await recordSeatShare(f.db, 'reg-1', 's1', { isIndividualGroupPayment: 'true' })).toEqual({ status: 'skipped' })
+    expect(await recordSeatShare(f.db, 'reg-1', null, SHARE_META)).toEqual({ status: 'skipped' })
+    expect(f.tables.participants[0]).toMatchObject({ share_paid_cents: null })
+  })
+})
+
+describe('settlement with a share the webhook couldn\u2019t record', () => {
+  // One $97 teacher, an estimate of 4, five students joined: the final share is
+  // $19.40. s1's share write failed (NULL); s2's landed.
+  const group = () => [
+    person('t', { payer: 'shared', individual_payment_status: 'covered', event_role: 'teacher' }),
+    person('s1', { individual_payment_status: 'paid', share_paid_cents: null, stripe_payment_intent_id: 'pi_s1' }),
+    person('s2', { individual_payment_status: 'paid', share_paid_cents: 2425, stripe_payment_intent_id: 'pi_s2' }),
+    person('s3'), person('s4'), person('s5'),
+  ]
+  const REG = { share_cents: 2425, share_first_paid_at: '2026-11-10T00:00:00Z' }
+
+  it('takes the split from the Checkout session, counts the student and trues them up', async () => {
+    const f = setup(group(), REG)
+    f.stripe.checkout.sessions.list.mockImplementation(async ({ payment_intent }) => ({
+      data: payment_intent === 'pi_s1'
+        ? [{ id: 'cs_s1', metadata: { participantId: 's1', teacherShare: 'true', baseCents: '9700', shareCents: '2425' } }]
+        : [],
+    }))
+    expect(await settleShare(f.db, f.stripe as never, 'reg-1')).toEqual({ refunded: 2, failed: 0 })
+    expect(f.stripe.checkout.sessions.list).toHaveBeenCalledWith({ payment_intent: 'pi_s1', limit: 1 })
+    expect(f.stripe.refunds.create.mock.calls.map((c) => [(c[0] as unknown as { payment_intent: string }).payment_intent, (c[0] as unknown as { amount: number }).amount]))
+      .toEqual([['pi_s1', 485], ['pi_s2', 485]])
+    // Written back, then reduced by the true-up.
+    expect(f.tables.participants[1]).toMatchObject({ base_paid_cents: 9700, share_paid_cents: 1940 })
+    expect(f.reg).toMatchObject({ share_cents: 1940 })
+    expect(f.reg.share_settled_at).toBeTruthy()
+  })
+
+  it('a session that isn\u2019t a shared-cost one means they really paid before sharing', async () => {
+    const f = setup(group(), REG)
+    f.stripe.checkout.sessions.list.mockResolvedValue({ data: [{ id: 'cs_old', metadata: { participantId: 's1', isIndividualGroupPayment: 'true' } }] })
+    // Not counted: four students carry the share, which stays $24.25, so nobody is owed anything.
+    expect(await settleShare(f.db, f.stripe as never, 'reg-1')).toEqual({ refunded: 0, failed: 0 })
+    expect(f.stripe.refunds.create).not.toHaveBeenCalled()
+    expect(f.reg).toMatchObject({ share_cents: 2425 })
+    expect(f.tables.participants[1]).toMatchObject({ share_paid_cents: null })
+  })
+
+  it('a session for another participant is not used', async () => {
+    const f = setup(group(), REG)
+    f.stripe.checkout.sessions.list.mockResolvedValue({ data: [{ id: 'cs_x', metadata: { participantId: 's9', teacherShare: 'true', baseCents: '9700', shareCents: '2425' } }] })
+    await settleShare(f.db, f.stripe as never, 'reg-1')
+    expect(f.tables.participants[1]).toMatchObject({ share_paid_cents: null })
+  })
+
+  it('Stripe failing to answer leaves the student as before and still settles', async () => {
+    const f = setup(group(), REG)
+    f.stripe.checkout.sessions.list.mockRejectedValue(new Error('stripe down'))
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    expect(await settleShare(f.db, f.stripe as never, 'reg-1')).toEqual({ refunded: 0, failed: 0 })
+    expect(f.reg.share_settled_at).toBeTruthy()
+  })
+
+  it('restores a missing first-paid stamp so the share still only goes down', async () => {
+    // Both of s1's webhook writes failed: no share and no first-paid stamp.
+    const f = setup([
+      person('t', { payer: 'shared', individual_payment_status: 'covered', event_role: 'teacher' }),
+      person('s1', { individual_payment_status: 'paid', share_paid_cents: null, stripe_payment_intent_id: 'pi_s1' }),
+    ], { share_cents: 2425, share_first_paid_at: null })
+    f.stripe.checkout.sessions.list.mockResolvedValue({ data: [{ id: 'cs_s1', metadata: { participantId: 's1', teacherShare: 'true', baseCents: '9700', shareCents: '2425' } }] })
+    expect(await settleShare(f.db, f.stripe as never, 'reg-1')).toEqual({ refunded: 0, failed: 0 })
+    expect(f.reg.share_first_paid_at).toBeTruthy()
+    // Without the stamp the share would have followed the group back up to $97.
+    expect(f.reg.share_cents).toBe(2425)
+  })
+
+  it('a settled group is not looked up again', async () => {
+    const f = setup(group(), { ...REG, share_settled_at: '2026-11-21T00:00:00Z' })
+    expect(await settleShare(f.db, f.stripe as never, 'reg-1')).toBeNull()
+    expect(f.stripe.checkout.sessions.list).not.toHaveBeenCalled()
   })
 })
