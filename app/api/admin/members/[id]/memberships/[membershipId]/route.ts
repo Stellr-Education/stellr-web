@@ -3,6 +3,8 @@ import { hasCapability } from '@/lib/authz'
 import { NextResponse } from 'next/server'
 import { supabaseServer } from '@/lib/supabase'
 import { actorFromAuth, logActivity } from '@/lib/activity-log'
+import { withAudit } from '@/lib/audit/route'
+import { auditSubject, noteAuditSubject } from '@/lib/audit/route-subject'
 
 // PATCH  /api/admin/members/[id]/memberships/[membershipId] — edit one membership
 //        (expiry, status, complimentary flag).
@@ -45,10 +47,39 @@ function tierName(row: Joined | null): string {
   return (t as { name?: string } | null | undefined)?.name ?? 'membership'
 }
 
-export async function PATCH(
-  req: Request,
-  { params }: { params: Promise<{ id: string; membershipId: string }> },
-) {
+type Ctx = { params: Promise<{ id: string; membershipId: string }> }
+
+/** The member in the URL, /api/admin/members/<id>/…: the event's target. */
+function memberIdOf(req: Request): string | null {
+  const parts = new URL(req.url).pathname.split('/')
+  const at = parts.indexOf('members')
+  return at < 0 ? null : (parts[at + 1] ?? null)
+}
+
+/** The membership in the URL, …/memberships/<membershipId>. */
+const membershipIdOf = (req: Request) => new URL(req.url).pathname.split('/').at(-1) ?? null
+
+// Platform audit (docs/TENANCY-S5.md, C7): the membership is the target, its member and
+// which fields changed (names, never values) the metadata.
+const updateAudit = ({ args: [req] }: { args: [Request, Ctx] }) => ({
+  action: 'membership.record.update' as const,
+  actor: { session: true } as const,
+  tenant: { stellr: true } as const,
+  target: { table: 'member_memberships', id: membershipIdOf(req) },
+  metadata: { member_id: memberIdOf(req), ...auditSubject(req, 'member_memberships').metadata },
+})
+const revokeAudit = ({ args: [req] }: { args: [Request, Ctx] }) => ({
+  action: 'membership.record.revoke' as const,
+  actor: { session: true } as const,
+  tenant: { stellr: true } as const,
+  target: { table: 'member_memberships', id: membershipIdOf(req) },
+  metadata: { member_id: memberIdOf(req) },
+})
+
+export const PATCH = withAudit(updateAudit, updateMembership)
+export const DELETE = withAudit(revokeAudit, revokeMembership)
+
+async function updateMembership(req: Request, { params }: Ctx) {
   const { sessionClaims } = await auth()
   if (!(await hasCapability('members:write'))) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
@@ -88,6 +119,7 @@ export async function PATCH(
     return NextResponse.json({ error: 'No editable fields supplied' }, { status: 400 })
   }
 
+  noteAuditSubject(req, { detail: { fields: Object.keys(updates) } })
   const { error } = await db
     .from('member_memberships')
     .update(updates)
@@ -111,10 +143,7 @@ export async function PATCH(
   return NextResponse.json({ success: true })
 }
 
-export async function DELETE(
-  _req: Request,
-  { params }: { params: Promise<{ id: string; membershipId: string }> },
-) {
+async function revokeMembership(_req: Request, { params }: Ctx) {
   const { sessionClaims } = await auth()
   if (!(await hasCapability('members:write'))) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 

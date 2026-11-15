@@ -10,6 +10,8 @@ import { verifyCheckInCode } from '@/lib/check-in-codes'
 import { checkInTime, crewActionName, meaningfulNote, type DeskContact, type DeskDetails, type DeskFlags, type DeskGroup } from '@/lib/check-in-desk'
 import { loadDeskCrew, loadCrewCheckIns, writeCrewCheckIn } from '@/lib/check-in-crew'
 import { GUARDIAN_CONSENT_PENDING_DESK, isConsentPendingRefusal } from '@/lib/check-in-consent'
+import { storableId, withAudit, type AuditMutation } from '@/lib/audit/route'
+import { auditSubject, noteAuditSubject } from '@/lib/audit/route-subject'
 
 // Check-in management for an event (admins + assigned event managers).
 //   GET  — settings + live list of participants and school groups (polled by the
@@ -34,6 +36,28 @@ import { GUARDIAN_CONSENT_PENDING_DESK, isConsentPendingRefusal } from '@/lib/ch
 // keeps its real arrival time (lib/check-in-desk.ts checkInTime).
 
 type Params = { params: Promise<{ slug: string }> }
+
+// Platform audit (docs/TENANCY-S5.md, C7). The handler notes who passed requireEventAccess;
+// the event goes on the chain of the event's owner, read from the mirror by its slug.
+/** The event in the URL, /api/admin/events/<slug>/…: only looked up, never stored from here. */
+function eventSlugOf(req: Request): string {
+  const parts = new URL(req.url).pathname.split('/')
+  const at = parts.indexOf('events')
+  return at < 0 ? '' : (parts[at + 1] ?? '')
+}
+function eventAudit(req: Request, table: string): Omit<AuditMutation, 'action'> {
+  return { ...auditSubject(req, table), tenant: { eventSlug: eventSlugOf(req) } }
+}
+
+// Which desk action (an enum) and how many people it named are the metadata, with the
+// participant as the target when there is one. Never a code, token, link or note.
+const DESK_ACTIONS = [
+  'open', 'close', 'regenerate', 'resources_url', 'merch_collected', 'merch_uncollected',
+  'manual', 'undo', 'group_check_in', 'group_undo', 'crew_check_in', 'crew_undo', 'scan',
+] as const
+const deskAudit = ({ args: [req] }: { args: [Request, Params] }) => ({ action: 'event.check_in.desk_action' as const, ...eventAudit(req, 'participants') })
+
+export const POST = withAudit(deskAudit, deskAction)
 
 /** A busload is 30; a whole event is under 150. Anything bigger is a mistake. */
 const MAX_GROUP_IDS = 300
@@ -219,7 +243,7 @@ function idList(v: unknown): string[] | null {
   return v.every((id) => typeof id === 'string' && id.length <= 64) ? (v as string[]) : null
 }
 
-export async function POST(req: Request, { params }: Params) {
+async function deskAction(req: Request, { params }: Params) {
   const { slug } = await params
   const access = await requireEventAccess(slug)
   if (!access.ok) return NextResponse.json({ error: 'Forbidden' }, { status: access.status })
@@ -227,6 +251,15 @@ export async function POST(req: Request, { params }: Params) {
   const body = await req.json().catch(() => null)
   const action = crewActionName(body?.action)
   const db = supabaseServer()
+  noteAuditSubject(req, {
+    userId: access.userId,
+    eventSlug: slug,
+    id: storableId(body?.participantId),
+    detail: {
+      ...((DESK_ACTIONS as readonly unknown[]).includes(action) ? { desk_action: action } : {}),
+      ...(Array.isArray(body?.participantIds) ? { count: body.participantIds.length } : {}),
+    },
+  })
 
   if (action === 'open' || action === 'close' || action === 'regenerate') {
     const { data: settings } = await db
@@ -392,6 +425,7 @@ export async function POST(req: Request, { params }: Params) {
       return NextResponse.json({ ok: true, kind: 'participant', participantId: p.id, alreadyCheckedIn: true, checkedInAt: p.checked_in_at })
     }
     const at = checkInTime(body?.at)
+    noteAuditSubject(req, { id: p.id })
     const { error } = await db
       .from('participants')
       .update({ checked_in_at: at, check_in_method: 'manual' })

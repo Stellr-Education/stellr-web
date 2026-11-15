@@ -5,6 +5,8 @@ import { isAwardType } from '@/lib/event-awards'
 import { isArtworkTheme } from '@/lib/artwork-theme'
 import { CERTIFICATE_PLACEMENT_RANGES, claimArtwork, placementInput } from '@/lib/artwork-template-input'
 import { loadDefaultTemplate, loadDefaultTemplates, pinDefaultCertificate } from '@/lib/event-certificates'
+import { withAudit } from '@/lib/audit/route'
+import { auditSubject, noteAuditSubject } from '@/lib/audit/route-subject'
 
 export const dynamic = 'force-dynamic'
 
@@ -19,6 +21,24 @@ export const dynamic = 'force-dynamic'
 
 type Ctx = { params: Promise<{ theme: string }> }
 
+// Platform audit (docs/TENANCY-S5.md, C7): a theme's default is Stellr's. One row per
+// theme and award, so no target id; the theme and award type (enums) are the metadata.
+const saveAudit = ({ args: [req] }: { args: [Request, Ctx] }) => ({
+  action: 'artwork.default_certificate.save' as const,
+  ...auditSubject(req, 'default_certificate_templates'),
+  actor: { session: true } as const,
+  tenant: { stellr: true } as const,
+})
+const deleteAudit = ({ args: [req] }: { args: [Request, Ctx] }) => ({
+  action: 'artwork.default_certificate.delete' as const,
+  ...auditSubject(req, 'default_certificate_templates'),
+  actor: { session: true } as const,
+  tenant: { stellr: true } as const,
+})
+
+export const PUT = withAudit(saveAudit, saveDefaultCertificate)
+export const DELETE = withAudit(deleteAudit, deleteDefaultCertificate)
+
 export async function GET(_req: Request, { params }: Ctx) {
   if (!(await hasCapability('portal:read'))) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   const { theme } = await params
@@ -26,7 +46,7 @@ export async function GET(_req: Request, { params }: Ctx) {
   return NextResponse.json({ theme, templates: await loadDefaultTemplates(supabaseServer(), theme) })
 }
 
-export async function PUT(req: Request, { params }: Ctx) {
+async function saveDefaultCertificate(req: Request, { params }: Ctx) {
   if (!(await hasCapability('competitions:write'))) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   const { theme } = await params
   if (!isArtworkTheme(theme)) return NextResponse.json({ error: 'Unknown theme' }, { status: 404 })
@@ -34,6 +54,7 @@ export async function PUT(req: Request, { params }: Ctx) {
   const b = (await req.json().catch(() => ({}))) as Record<string, unknown>
   const awardType = b.awardType
   if (!isAwardType(awardType)) return NextResponse.json({ error: 'awardType is required' }, { status: 400 })
+  noteAuditSubject(req, { detail: { theme, award_type: awardType } })
 
   const db = supabaseServer()
   const update: Record<string, unknown> = { theme, award_type: awardType }
@@ -75,12 +96,13 @@ export async function PUT(req: Request, { params }: Ctx) {
   return NextResponse.json({ ok: true, template: await loadDefaultTemplate(db, theme, awardType) })
 }
 
-export async function DELETE(req: Request, { params }: Ctx) {
+async function deleteDefaultCertificate(req: Request, { params }: Ctx) {
   if (!(await hasCapability('competitions:write'))) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   const { theme } = await params
   if (!isArtworkTheme(theme)) return NextResponse.json({ error: 'Unknown theme' }, { status: 404 })
   const awardType = new URL(req.url).searchParams.get('awardType')
   if (!isAwardType(awardType)) return NextResponse.json({ error: 'awardType is required' }, { status: 400 })
+  noteAuditSubject(req, { detail: { theme, award_type: awardType } })
 
   const db = supabaseServer()
   const existing = await loadDefaultTemplate(db, theme, awardType)

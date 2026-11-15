@@ -268,6 +268,43 @@ export const AUDIT_ACTIONS = [
   'event_volunteer.interest.set',
   // The unsubscribe update (A10b) keeps email.unsubscribe.apply, above: a second
   // name for the same write would split its history.
+
+  // The admin routes a Stellr Staff member can write (Staff role P3/P4, GATE-AUDIT).
+  // Members: app/api/admin/members (POST) and members/[id]/**, but not the admin-only ones
+  'member.record.create',
+  'member.invite.send',
+  'compliance.background_check.order',
+  // Save, verify or unverify a teaching license; which one is in the metadata.
+  'compliance.license.update',
+  'compliance.license_document.attach',
+  'event_participation.record.create',
+  'membership.tier.grant',
+  'membership.record.update',
+  'membership.record.revoke',
+  'agreement.volunteer.issue',
+  'role.volunteer.grant',
+  'role.volunteer.revoke',
+  // A theme's default artwork, and the PD certificate: app/api/admin/{artwork-defaults,pd-certificate}
+  'artwork.default_badge.save',
+  'artwork.default_badge.delete',
+  'artwork.default_certificate.save',
+  'artwork.default_certificate.delete',
+  'artwork.pd_certificate.save',
+  'artwork.pd_certificate.delete',
+  // Under an event: app/api/admin/events/[slug]/{awards,badge-templates,certificate-templates,credentials}
+  'event.awards.assign',
+  'event.awards.issue',
+  'event.badge_template.save',
+  'event.badge_template.delete',
+  'event.certificate_template.save',
+  'event.certificate_template.delete',
+  'event.credentials.configure',
+  'event.credentials.issue',
+  // The check-in desk (…/check-in), one action whatever the tap; which tap is in the metadata.
+  'event.check_in.desk_action',
+  // Self check-in at the door by event code (app/api/check-in): nobody is signed in.
+  'event.check_in.self_check_in',
+  'event.check_in.self_forget',
 ] as const
 
 export type AuditAction = (typeof AUDIT_ACTIONS)[number]
