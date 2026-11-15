@@ -24,6 +24,7 @@ import { MemberMergeDialog } from '@/components/admin/MemberMergeDialog'
 import { MemberEventManagerRole } from '@/components/admin/MemberEventManagerRole'
 import { MemberStaffRole } from '@/components/admin/MemberStaffRole'
 import { PERSONAL_EMAIL_LABEL, SCHOOL_EMAIL_LABEL, showsSchoolEmail } from '@/lib/member-email'
+import { graduationYearRange } from '@/lib/graduation-year'
 
 interface Member {
   id: string
@@ -41,6 +42,8 @@ interface Member {
   event_role: string
   grade: string | null
   grade_auto_promote: boolean
+  /** The school year they finish high school in; the July-1 Alumni upgrade reads it. */
+  graduation_year?: number | null
   tshirt_size: string | null
   discord_handle: string | null
   health_conditions: string | null
@@ -171,6 +174,7 @@ export function AdminMemberDetail({ member, tiers, schools, ethnicityOptions, al
     event_role: member.event_role,
     grade: member.grade ?? '',
     grade_auto_promote: member.grade_auto_promote,
+    graduation_year: member.graduation_year != null ? String(member.graduation_year) : '',
     tshirt_size: member.tshirt_size ?? '',
     discord_handle: member.discord_handle ?? '',
     health_conditions: member.health_conditions ?? '',
@@ -209,6 +213,9 @@ export function AdminMemberDetail({ member, tiers, schools, ethnicityOptions, al
   const eligibleRoles = ROLES_FOR_BRACKET[form.age_bracket] ?? []
   const eligibleTierNames = getEligibleTierNames(form.age_bracket, form.event_role)
   const showGrade = form.age_bracket === 'high_school' || form.age_bracket === 'college'
+  // Students, and anyone with a year on file (a graduate now in college or an adult).
+  const showGraduationYear = showGrade || member.graduation_year != null
+  const gradYears = graduationYearRange()
 
   async function handleSave() {
     setSaving(true)
@@ -224,7 +231,9 @@ export function AdminMemberDetail({ member, tiers, schools, ethnicityOptions, al
     })
     setSaving(false)
     if (!res.ok) {
-      setError('Save failed. Please try again.')
+      // The route says why in words an admin can act on (TRACKER 20.5).
+      const j = await res.json().catch(() => ({}))
+      setError(typeof j.error === 'string' && j.error ? j.error : 'Save failed. Please try again.')
     } else {
       setSaved(true)
       setTimeout(() => setSaved(false), 3000)
@@ -456,6 +465,21 @@ export function AdminMemberDetail({ member, tiers, schools, ethnicityOptions, al
                       <option key={g.value} value={g.value}>{g.label}</option>
                     ))}
                   </Select>
+                </Field>
+              )}
+              {showGraduationYear && (
+                <Field
+                  label="Graduation year"
+                  hint={`The year they finish high school, ${gradYears.min}–${gradYears.max}. Alumni membership starts on 1 July that year.`}
+                >
+                  <Input
+                    type="number"
+                    inputMode="numeric"
+                    autoComplete="off"
+                    step={1}
+                    value={form.graduation_year}
+                    onChange={(e) => set('graduation_year', e.target.value)}
+                  />
                 </Field>
               )}
               {/* Sits on the grade select's baseline when the two share a row. */}

@@ -7,6 +7,7 @@ import { isMinorOn, isValidDob } from '@/lib/age'
 import { T_SHIRT_SIZES } from '@/lib/registration-constants'
 import { SchoolSearchInput, SchoolSelection } from '@/components/member/SchoolSearchInput'
 import { onboardingRequirements, emergencyContactComplete } from '@/lib/onboarding-requirements'
+import { graduationYearRange, parseGraduationYear } from '@/lib/graduation-year'
 
 interface ExistingMember {
   id: string
@@ -122,6 +123,7 @@ export function OnboardingForm({ existingMember, next, selectedTier, volunteerFl
     gender: '',
     phone: '',
     grade: '',
+    graduation_year: '',
     tshirt_size: '',
     ec_first_name: '',
     ec_last_name: '',
@@ -144,6 +146,11 @@ export function OnboardingForm({ existingMember, next, selectedTier, volunteerFl
     volunteerFlow,
   })
   const schoolRequired = req.school === 'required'
+  // Expected graduation year: optional, school students only (the grade list
+  // below shows school grades to exactly these members). It feeds the July-1
+  // Alumni upgrade; the route reads it only for a school student too.
+  const showGraduationYear = req.grade !== 'hidden' && (req.isMinor || form.age_bracket === 'high_school')
+  const gradYears = graduationYearRange()
 
   // The active step list is dynamic: role only when asked, emergency only for
   // those who attend events (students and mentors).
@@ -212,6 +219,9 @@ export function OnboardingForm({ existingMember, next, selectedTier, volunteerFl
     if (!form.gender) e.gender = 'Choose your gender.'
     if (!form.phone.trim()) e.phone = 'Enter your phone number.'
     if (req.grade === 'required' && !form.grade) e.grade = 'Choose your grade or year.'
+    if (showGraduationYear && !parseGraduationYear(form.graduation_year).ok) {
+      e.graduation_year = `Enter a year from ${gradYears.min} to ${gradYears.max}.`
+    }
     if (req.tshirtSize === 'required' && !form.tshirt_size) e.tshirt_size = 'Choose a t-shirt size.'
     if (schoolRequired && !schoolValid(schoolSelection)) {
       e.school = schoolSelection?.type === 'new'
@@ -338,7 +348,8 @@ export function OnboardingForm({ existingMember, next, selectedTier, volunteerFl
       const res = await fetch('/api/members/onboarding', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...form, ...schoolPayload }),
+        // A year typed before the answers changed (and the field hid) is not sent.
+        body: JSON.stringify({ ...form, graduation_year: showGraduationYear ? form.graduation_year : '', ...schoolPayload }),
       })
       const data = await res.json().catch(() => ({}))
       if (!res.ok) {
@@ -621,6 +632,30 @@ export function OnboardingForm({ existingMember, next, selectedTier, volunteerFl
                       <option key={s} value={s}>{s}</option>
                     ))}
                   </Select>
+                </Field>
+              )}
+              {showGraduationYear && (
+                <Field
+                  label={
+                    <>
+                      Expected graduation year
+                      <span className="text-content-muted"> (optional)</span>
+                    </>
+                  }
+                  hint="The year you finish high school."
+                  error={fieldErrors.graduation_year}
+                >
+                  <Input
+                    id={fid('graduation_year')}
+                    type="number"
+                    inputMode="numeric"
+                    autoComplete="off"
+                    min={gradYears.min}
+                    max={gradYears.max}
+                    step={1}
+                    value={form.graduation_year}
+                    onChange={(e) => set('graduation_year', e.target.value)}
+                  />
                 </Field>
               )}
             </div>
