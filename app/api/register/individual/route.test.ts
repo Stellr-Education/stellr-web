@@ -107,6 +107,8 @@ function post(overrides: Record<string, unknown> = {}) {
     event_slug: 'colorado', event_title: 'Colorado',
     email: 'kid@example.com', first_name: 'K', last_name: 'Id',
     date_of_birth: '2012-01-01', school_name: 'Denver High',
+    // What the form always sends, and participants holds NOT NULL.
+    phone: '555 0100', gender: 'Female', t_shirt_size: 'M', age_bracket: 'High School',
     ...overrides,
   }
   return POST(
@@ -159,6 +161,42 @@ describe('POST /api/register/individual', () => {
     const res = await post()
     expect(res.status).toBe(429)
     expect(h.regInsert).not.toHaveBeenCalled()
+  })
+})
+
+// K11 (16 Nov 2026): the canary runner posted a body with no phone. The gate let it
+// through, the registration row was written, and the participants insert failed on
+// NOT NULL with a 500 and an app_errors row. A body without what the form always
+// sends is now the 400 any other missing field gets, before anything is written.
+describe('POST /api/register/individual — the participant details the form always sends', () => {
+  it.each([
+    ['phone', { phone: undefined }],
+    ['phone (blank)', { phone: '  ' }],
+    ['phone (not text)', { phone: 5550100 }],
+    ['gender', { gender: undefined }],
+    ['T-shirt size', { t_shirt_size: '' }],
+    ['age bracket', { age_bracket: undefined }],
+  ])('without a %s it is a 400 and nothing is written', async (_l, overrides) => {
+    const res = await post({ date_of_birth: '1985-04-01', ...overrides })
+    expect(res.status).toBe(400)
+    expect(await res.json()).toEqual({ error: 'Missing required fields' })
+    expect(h.regInsert).not.toHaveBeenCalled()
+    expect(h.memberUpsert).not.toHaveBeenCalled()
+    expect(h.partInsert).not.toHaveBeenCalled()
+    expect(h.dispatch).not.toHaveBeenCalled()
+    expect(h.createUser).not.toHaveBeenCalled()
+  })
+
+  it('an unknown event still answers 404 first, whatever the body lacks', async () => {
+    h.getEventBySlug.mockResolvedValue(null)
+    const res = await post({ phone: undefined })
+    expect(res.status).toBe(404)
+  })
+
+  it('with them, the same body registers', async () => {
+    const res = await post({ date_of_birth: '1985-04-01' })
+    expect(res.status).toBe(201)
+    expect(h.partInsert).toHaveBeenCalledWith(expect.objectContaining({ phone: '555 0100', gender: 'Female', t_shirt_size: 'M' }))
   })
 })
 

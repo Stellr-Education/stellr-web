@@ -53,7 +53,8 @@ import { DEV_SUPABASE_REF } from './e2e-supabase-target'
 import { PRODUCTION_SUPABASE_REF } from './two-tenant-seed'
 import { ageOn, isMinorOn } from '../age'
 import { guardianFromForm } from '../registration/tenant-guardian-consent'
-import { hasSchool } from '../registration/individual/parse'
+import { hasParticipantDetails, hasSchool } from '../registration/individual/parse'
+import { DIETARY, ETHNICITIES, GENDERS, SCHOOL_GRADES, T_SHIRT_SIZES } from '../registration-constants'
 import { STELLR_TENANT_ID } from '../tenancy/constants'
 import { PRODUCTION_TENANT_ZONE } from '../tenancy/host-pure'
 
@@ -354,16 +355,40 @@ describe("the run's people", () => {
   it("send register bodies the gate accepts: a school, and a guardian the consent flow can use for each minor", () => {
     const adult = registrationBody(IDS.adult, CANARY_FLOW_EVENT.slug, '2026-12-29')
     expect(hasSchool(adult)).toBe(true)
+    expect(hasParticipantDetails(adult)).toBe(true)
     expect(adult.emergency_contact_email).toBeUndefined()
     expect(guardianFromForm(adult, IDS.adult.email)).toBeNull()
     for (const k of ['minor-sign', 'minor-decline'] as const) {
       const body = registrationBody(IDS[k], CANARY_FLOW_EVENT.slug, '2026-12-29')
       expect(hasSchool(body), k).toBe(true)
+      expect(hasParticipantDetails(body), k).toBe(true)
       expect(body.event_slug).toBe(CANARY_FLOW_EVENT.slug)
       const guardian = guardianFromForm(body, IDS[k].email)
       expect(guardian, k).not.toBeNull()
       expect(guardian!.email).toBe(IDS[k].guardian!.email)
     }
+  })
+
+  it('send what the individual form sends, from its own option lists (K11: a body without a phone 500ed at the insert)', () => {
+    const adult = registrationBody(IDS.adult, CANARY_FLOW_EVENT.slug, '2026-12-29')
+    const minor = registrationBody(IDS['minor-sign'], CANARY_FLOW_EVENT.slug, '2026-12-29')
+    for (const body of [adult, minor]) {
+      // The form's zod rule: a phone of at least 7 characters.
+      expect(body.phone.length).toBeGreaterThanOrEqual(7)
+      expect(GENDERS).toContain(body.gender)
+      expect(T_SHIRT_SIZES).toContain(body.t_shirt_size)
+      for (const e of body.ethnicity) expect(ETHNICITIES).toContain(e)
+      for (const d of body.dietary_requirements) expect(DIETARY).toContain(d)
+      expect(body.ethnicity.length).toBeGreaterThan(0)
+      expect(body.dietary_requirements.length).toBeGreaterThan(0)
+      expect(body.merch_addons).toEqual([])
+    }
+    // registrantTypeToAgeBracket and the form's event_role for each registrant type.
+    expect(adult).toMatchObject({ age_bracket: 'Adult', event_role: 'Adult', grade: '' })
+    expect(minor).toMatchObject({ age_bracket: 'High School', event_role: 'School Student' })
+    expect(SCHOOL_GRADES).toContain(minor.grade)
+    expect(minor.emergency_contact_phone!.length).toBeGreaterThanOrEqual(7)
+    expect(adult.emergency_contact_phone).toBeUndefined()
   })
 })
 
