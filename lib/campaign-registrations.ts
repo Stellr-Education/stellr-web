@@ -11,6 +11,8 @@ export interface MemberCampaignContext {
   memberId: string | null
   /** Slugs of campaigns this member is registered for. */
   registeredSlugs: Set<string>
+  /** Per registered slug: when the teacher registered and whether the proposal is in (upgrade prompts). */
+  registrations: Map<string, { registeredAt: string | null; submitted: boolean }>
   /** Recognised-membership details for the registration modal banner. */
   membership: CampaignMembership | null
 }
@@ -20,11 +22,11 @@ export interface MemberCampaignContext {
 // membership" banner. Returns empties for signed-out visitors.
 export async function getMemberCampaignContext(): Promise<MemberCampaignContext> {
   const member = await getCurrentMember()
-  if (!member) return { memberId: null, registeredSlugs: new Set(), membership: null }
+  if (!member) return { memberId: null, registeredSlugs: new Set(), registrations: new Map(), membership: null }
 
   const db = supabaseServer()
   const [{ data: regs }, { data: school }] = await Promise.all([
-    db.from('registrations').select('event_slug').eq('type', 'campaign').eq('teacher_member_id', member.id),
+    db.from('registrations').select('event_slug, created_at, proposal_submitted_at').eq('type', 'campaign').eq('teacher_member_id', member.id),
     db
       .from('member_schools')
       .select('schools(name)')
@@ -39,6 +41,12 @@ export async function getMemberCampaignContext(): Promise<MemberCampaignContext>
   return {
     memberId: member.id,
     registeredSlugs: new Set((regs ?? []).map((r) => r.event_slug as string)),
+    registrations: new Map(
+      (regs ?? []).map((r) => [
+        r.event_slug as string,
+        { registeredAt: (r.created_at as string | null) ?? null, submitted: !!r.proposal_submitted_at },
+      ]),
+    ),
     membership: { schoolName, roleLabel: member.activeTierName ?? 'Educator' },
   }
 }
@@ -56,6 +64,7 @@ export interface CampaignRegistrationRow {
   proposal_storage_path: string | null
   proposal_notes: string | null
   proposal_submitted_at: string | null
+  created_at?: string | null
 }
 
 export async function getMemberCampaignRegistration(
@@ -66,7 +75,7 @@ export async function getMemberCampaignRegistration(
   const { data } = await db
     .from('registrations')
     .select(
-      'id, event_slug, event_title, group_name, contact_role, student_count, proposal_file_name, proposal_storage_path, proposal_notes, proposal_submitted_at',
+      'id, event_slug, event_title, group_name, contact_role, student_count, proposal_file_name, proposal_storage_path, proposal_notes, proposal_submitted_at, created_at',
     )
     .eq('type', 'campaign')
     .eq('event_slug', campaignSlug)
