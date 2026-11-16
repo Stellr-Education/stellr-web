@@ -37,7 +37,8 @@ const navLinks: NavLink[] = [
       { label: 'Competitions', href: '/competitions' },
       { label: 'Curriculum', href: '/curriculum' },
       { label: 'Teacher Grant', href: '/grant' },
-      { label: 'Events & Classroom Qualifier', href: '/events' },
+      { label: 'Classroom Qualifier', href: '/classroom-qualifier' },
+      { label: 'Events', href: '/events' },
       { label: 'Scholarships', href: '/scholarship' },
       { label: 'Host An Event', href: '/host-an-event' },
     ],
@@ -85,7 +86,7 @@ const navLinks: NavLink[] = [
 
 const getInvolvedLinks: NavLink['dropdown'] = [
   { label: 'Register For An Event', href: '/events' },
-  { label: 'Download Curriculum Material', href: '/curriculum' },
+  { label: 'Download Curriculum Material', href: '/classroom-qualifier/resources' },
   { label: 'Join Our Community', href: `${AUTH_URL}/sign-up` },
   { label: 'Become A Sponsor', href: '/network#corporate' },
   { label: 'Volunteer With Us', href: '/mentors' },
