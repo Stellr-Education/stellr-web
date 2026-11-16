@@ -39,7 +39,7 @@ type Tab = 'overview' | 'roster' | 'emails' | 'survey' | 'training' | 'settings'
 const TABS: { id: Tab; label: string }[] = [
   { id: 'overview', label: 'Overview' },
   { id: 'roster', label: 'Roster' },
-  { id: 'emails', label: 'Email Reminders' },
+  { id: 'emails', label: 'Email Engagement' },
   { id: 'survey', label: 'Survey' },
   { id: 'training', label: 'Training' },
   { id: 'settings', label: 'Settings' },
@@ -228,7 +228,7 @@ export default async function AdminEventDetailPage({
     }
   }
 
-  // ── Visible tabs (campaigns skip Settings, Email Reminders and Survey — a
+  // ── Visible tabs (campaigns skip Settings, Email Engagement and Survey — a
   //    campaign has its own proposal emails, and no event day to count down to
   //    or survey after)
   const visibleTabs = isCampaign ? TABS.filter((t) => t.id !== 'settings' && t.id !== 'emails' && t.id !== 'survey') : TABS
@@ -384,7 +384,7 @@ export default async function AdminEventDetailPage({
         </CollapsibleGroup>
       )}
 
-      {/* ── Email Reminders (live events only) ─────────────────────────────── */}
+      {/* ── Email Engagement (live events only) ─────────────────────────────── */}
       {tab === 'emails' && !isCampaign && (
         <CollapsibleGroup storageKey={`event.${slug}.emails`}>
           <div className="space-y-4">

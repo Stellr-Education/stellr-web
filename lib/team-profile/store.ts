@@ -567,7 +567,7 @@ export async function resendOutstanding(
 }
 
 /**
- * For the Email Reminders audience: each outstanding student's link, creating
+ * For the Email Engagement audience: each outstanding student's link, creating
  * rows as needed when `mint` (a real send). A preview gets placeholders and
  * writes nothing.
  */
