@@ -307,9 +307,11 @@ async function alreadyRefunded(
  * A student whose session isn't a shared-cost one really did pay before sharing.
  *
  * backlog-batch2.2 (unwindShares): a student whose split can't be worked out
- * either way (no payment intent, no session found for it, a session for someone
- * else, or Stripe not answering) is returned as unresolved, never silently
- * skipped; the caller reports them to app_errors for a person to check.
+ * either way (no payment intent, no session found for it, a shared-cost session
+ * for someone else, or Stripe not answering) is returned as unresolved, never
+ * silently skipped; the caller reports them to app_errors for a person to check.
+ * A session that isn't a shared-cost one is never reported, whatever its
+ * participantId says (pre-PAY-7 per-seat sessions have none).
  */
 interface UnresolvedShare { participantId: string; reason: string }
 
@@ -326,14 +328,17 @@ async function recoverUnrecordedShares(db: Db, stripe: Stripe, loaded: LoadedSha
       const sessions = await stripe.checkout.sessions.list({ payment_intent: intent, limit: 1 })
       const session = sessions.data[0]
       if (!session) { unresolved.push({ participantId: p.id, reason: 'no checkout session for the payment' }); continue }
-      if (session.metadata?.participantId !== p.id) { unresolved.push({ participantId: p.id, reason: 'checkout session is for another participant' }); continue }
       split = seatSplitFromMetadata(session.metadata)
+      // Not a shared-cost session: they really paid before sharing, and owe no
+      // share. Checked before the participant match, because per-seat sessions
+      // from before PAY-7 (#390) carry no participantId at all.
+      if (!split) continue
+      if (session.metadata?.participantId !== p.id) { unresolved.push({ participantId: p.id, reason: 'checkout session is for another participant' }); continue }
     } catch (e) {
       console.error('[teacher-share] could not read the checkout session for an unrecorded share:', e instanceof Error ? e.message : e, { registrationId: reg.id, participantId: p.id })
       unresolved.push({ participantId: p.id, reason: 'checkout session lookup failed' })
       continue
     }
-    // Not a shared-cost session: they really paid before sharing, and owe no share.
     if (!split) continue
     p.share_paid_cents = split.shareCents
     recovered++

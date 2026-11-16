@@ -414,10 +414,23 @@ describe('settlement with a share the webhook couldn\u2019t record', () => {
     expect(f.tables.participants[1]).toMatchObject({ share_paid_cents: null })
   })
 
-  it('a session for another participant is not used', async () => {
+  it('a session for another participant is not used, and is reported', async () => {
     const f = setup(group(), REG)
+    vi.spyOn(console, 'error').mockImplementation(() => {})
     f.stripe.checkout.sessions.list.mockResolvedValue({ data: [{ id: 'cs_x', metadata: { participantId: 's9', teacherShare: 'true', baseCents: '9700', shareCents: '2425' } }] })
     await settleShare(f.db, f.stripe as never, 'reg-1')
+    expect(f.tables.participants[1]).toMatchObject({ share_paid_cents: null })
+    expect(errors.reportError).toHaveBeenCalledTimes(1)
+    expect((errors.reportError.mock.calls[0][0] as Error).message).toContain('participant s1 (checkout session is for another participant)')
+    expect(errors.reportError.mock.calls[0][1]).toEqual({ route: 'lib/teacher-share settleShare' })
+  })
+
+  it('a per-seat session from before PAY-7 (no participantId, no share) is neither refunded nor reported', async () => {
+    const f = setup(group(), REG)
+    f.stripe.checkout.sessions.list.mockResolvedValue({ data: [{ id: 'cs_old', metadata: { isIndividualGroupPayment: 'true', participantEmail: 'student@example.test' } }] })
+    expect(await settleShare(f.db, f.stripe as never, 'reg-1')).toEqual({ refunded: 0, failed: 0 })
+    expect(f.stripe.refunds.create).not.toHaveBeenCalled()
+    expect(errors.reportError).not.toHaveBeenCalled()
     expect(f.tables.participants[1]).toMatchObject({ share_paid_cents: null })
   })
 
@@ -546,6 +559,16 @@ describe('leaving the shared cost with a share the webhook couldn\u2019t record'
     }))
     expect(await unwindShares(f.db, f.stripe as never, 'reg-1')).toEqual({ refunded: 1, failed: 0 })
     expect(f.stripe.refunds.create).toHaveBeenCalledTimes(1)
+    expect(errors.reportError).not.toHaveBeenCalled()
+  })
+
+  it('a per-seat session from before PAY-7 (no participantId, no share): nothing to refund or report', async () => {
+    const f = setup(group(), REG)
+    f.stripe.checkout.sessions.list.mockImplementation(async ({ payment_intent }) => ({
+      data: payment_intent === 'pi_s1' ? [{ id: 'cs_old', metadata: { isIndividualGroupPayment: 'true', participantEmail: 'student@example.test' } }] : [],
+    }))
+    expect(await unwindShares(f.db, f.stripe as never, 'reg-1')).toEqual({ refunded: 1, failed: 0 })
+    expect(f.stripe.refunds.create.mock.calls.map((c) => (c[0] as unknown as { payment_intent: string }).payment_intent)).toEqual(['pi_s2'])
     expect(errors.reportError).not.toHaveBeenCalled()
   })
 
