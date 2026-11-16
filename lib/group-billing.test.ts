@@ -31,7 +31,12 @@ import {
   syncDueGroupInvoices,
   resolveDiscountCode,
   promotionCodeUsable,
+  createGroupInvoice,
+  TenantBillingRefused,
+  TENANT_BILLING_UNAVAILABLE,
 } from './group-billing'
+import { STELLR_TENANT_ID } from '@/lib/tenancy/constants'
+import { TENANT_PAYMENTS_UNAVAILABLE } from '@/lib/registration/event-context'
 import { runAfterResponse } from '@/lib/after-response'
 import { notifyCommunityAdmins } from '@/lib/notify'
 
@@ -924,5 +929,113 @@ describe('recordGroupInvoicePaid', () => {
     expect(f.tables.group_invoices[0]).toMatchObject({ status: 'paid', payment_intent_id: 'pi_add' })
     expect(f.tables.participants[0]).toMatchObject({ stripe_payment_intent_id: 'pi_add' })
     expect(f.tables.registrations[0].stripe_payment_intent_id).toBeNull()
+  })
+})
+
+// S5 A8b. Every group_invoices row carries its registration's tenant_id, so derivation
+// enforce keeps it (the row's event_slug can be empty, or an event the mirror lacks).
+// For Stellr that is the value the trigger derives today. And nothing is billed for
+// another tenant's group (BF-58 default: here, before any priced tenant event).
+describe('S5 A8b: the ledger tenant and the tenant backstop', () => {
+  const TENANT = '00000000-0000-4000-8000-0000000000aa'
+  const ledgerUpserts = (f: { writes: { table: string; op: string; values: Row }[] }) =>
+    f.writes.filter((w) => w.table === 'group_invoices' && w.op === 'upsert').map((w) => w.values)
+
+  function issuingStripe() {
+    const store = new Map<string, Row>()
+    return {
+      ...fakeStripe(),
+      store,
+      invoices: {
+        create: vi.fn(async (p: Row) => { const inv = { ...openInvoice('in_new'), status: 'draft', number: null, lines: { data: [] }, metadata: p.metadata }; store.set('in_new', inv); return inv }),
+        finalizeInvoice: vi.fn(async (id: string) => Object.assign(store.get(id)!, { status: 'open', number: 'INV-NEW' })),
+        sendInvoice: vi.fn(async (id: string) => store.get(id)),
+        retrieve: vi.fn(async (id: string) => store.get(id)),
+        update: vi.fn(async () => ({})),
+      },
+    }
+  }
+  const spec = (reg: Row) => ({
+    reg: reg as never, customerId: 'cus_1', seats: 3, perSeatCents: 9700, currency: 'usd',
+    reason: 'Group registration', actor: { memberId: null, label: 'system' }, couponId: null, kind: 'seats' as const,
+  })
+
+  it('a new invoice’s ledger row carries Stellr’s id for a Stellr group', async () => {
+    const f = fakeDb({ registrations: [{ ...REG, tenant_id: STELLR_TENANT_ID }], group_invoices: [] })
+    const stripe = issuingStripe()
+    await createGroupInvoice(f.db, stripe as never, spec({ ...REG, tenant_id: STELLR_TENANT_ID }))
+    expect(ledgerUpserts(f)).toEqual([expect.objectContaining({ stripe_invoice_id: 'in_new', event_slug: 'mn-edc', tenant_id: STELLR_TENANT_ID })])
+  })
+
+  it('a row the backfill has not reached (NULL tenant_id) counts as Stellr’s', async () => {
+    const f = fakeDb({ registrations: [{ ...REG }], group_invoices: [] })
+    await createGroupInvoice(f.db, issuingStripe() as never, spec({ ...REG, tenant_id: null }))
+    expect(ledgerUpserts(f)[0]).toMatchObject({ tenant_id: STELLR_TENANT_ID })
+  })
+
+  it('another tenant’s group is never invoiced: refused before Stripe is asked anything', async () => {
+    const f = fakeDb({ registrations: [{ ...REG, tenant_id: TENANT }], group_invoices: [] })
+    const stripe = issuingStripe()
+    await expect(createGroupInvoice(f.db, stripe as never, spec({ ...REG, tenant_id: TENANT }))).rejects.toBeInstanceOf(TenantBillingRefused)
+    expect(stripe.invoices.create).not.toHaveBeenCalled()
+    expect(stripe.invoiceItems.create).not.toHaveBeenCalled()
+    expect(f.writes).toEqual([])
+  })
+
+  it('a roster change on another tenant’s group bills nothing and reads no invoice', async () => {
+    const f = fakeDb({ registrations: [{ ...REG, tenant_id: TENANT }], participants: roster(18), group_invoices: [] })
+    const stripe = { invoices: { search: vi.fn(), retrieve: vi.fn(), create: vi.fn() }, prices: { retrieve: vi.fn() } }
+    const out = await applyRosterChange(f.db, stripe as never, {
+      registrationId: 'reg-1', change: { kind: 'removed' }, eventRole: 'participant', actor: { memberId: 'm-teacher', label: 'organiser' },
+    })
+    expect(out).toEqual({ message: null, action: 'none', seatsAfter: 19 })
+    expect(stripe.invoices.search).not.toHaveBeenCalled()
+    expect(stripe.invoices.create).not.toHaveBeenCalled()
+    expect(stripe.prices.retrieve).not.toHaveBeenCalled()
+    expect(f.writes).toEqual([])
+  })
+
+  it('an admin discount or reissue on another tenant’s group is refused before anything is saved', async () => {
+    const f = fakeDb({ registrations: [{ ...REG, tenant_id: TENANT }], participants: roster(19), group_invoices: [] })
+    const stripe = { invoices: { search: vi.fn(), retrieve: vi.fn(), create: vi.fn() } }
+    await expect(setGroupDiscount(f.db, stripe as never, 'reg-1', null, { memberId: null, label: 'admin' }))
+      .resolves.toEqual({ ok: false, error: TENANT_BILLING_UNAVAILABLE })
+    await expect(reissueGroupInvoice(f.db, stripe as never, 'reg-1', { memberId: null, label: 'admin' }))
+      .resolves.toEqual({ ok: false, error: TENANT_BILLING_UNAVAILABLE })
+    expect(stripe.invoices.search).not.toHaveBeenCalled()
+    expect(stripe.invoices.create).not.toHaveBeenCalled()
+    expect(f.writes.filter((w) => w.table !== 'registrations' || !('invoice_sync_lock_until' in w.values))).toEqual([])
+  })
+
+  it('the refusal reads as the tenant payments answer', () => {
+    expect(TENANT_BILLING_UNAVAILABLE).toBe(TENANT_PAYMENTS_UNAVAILABLE.error)
+  })
+
+  describe('recordGroupInvoicePaid, an invoice the ledger has not seen', () => {
+    const paidStripe = { invoices: { retrieve: vi.fn(async () => ({ payments: { data: [{ status: 'paid', payment: { payment_intent: 'pi_1' } }] } })) } }
+    const invoice = { id: 'in_new', metadata: { registrationId: 'reg-1', kind: 'seats', seats: '3', eventSlug: 'mn-edc' }, status_transitions: { paid_at: 1_800_000_000 }, subtotal: 29_100, total: 29_100, currency: 'usd' }
+
+    it('takes the registration’s tenant (Stellr’s, NULL read as Stellr’s)', async () => {
+      for (const tenant of [STELLR_TENANT_ID, null]) {
+        const f = fakeDb({ registrations: [{ ...REG, tenant_id: tenant }], group_invoices: [] })
+        await recordGroupInvoicePaid(f.db, paidStripe as never, invoice as never)
+        expect(ledgerUpserts(f)).toEqual([expect.objectContaining({ stripe_invoice_id: 'in_new', status: 'paid', tenant_id: STELLR_TENANT_ID })])
+      }
+    })
+
+    it('a registration it cannot find leaves tenant_id to the trigger, as before', async () => {
+      const f = fakeDb({ registrations: [], group_invoices: [] })
+      await recordGroupInvoicePaid(f.db, paidStripe as never, invoice as never)
+      expect(ledgerUpserts(f)).toHaveLength(1)
+      expect(ledgerUpserts(f)[0]).not.toHaveProperty('tenant_id')
+    })
+
+    it('a row already in the ledger costs no registration read', async () => {
+      const f = fakeDb({ registrations: [{ ...REG, tenant_id: STELLR_TENANT_ID }], group_invoices: [{ id: 'gi-1', stripe_invoice_id: 'in_new', kind: 'seats', seats: 3 }] })
+      const from = vi.spyOn(f.db as unknown as { from: (t: string) => unknown }, 'from')
+      await recordGroupInvoicePaid(f.db, paidStripe as never, invoice as never)
+      expect(from.mock.calls.filter(([t]) => t === 'registrations')).toHaveLength(1) // the payment intent update only
+      expect(ledgerUpserts(f)).toEqual([])
+    })
   })
 })

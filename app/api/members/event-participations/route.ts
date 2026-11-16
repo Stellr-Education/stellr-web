@@ -1,6 +1,7 @@
 import { auth } from '@clerk/nextjs/server'
 import { NextResponse } from 'next/server'
 import { supabaseServer } from '@/lib/supabase'
+import { STELLR_TENANT_ID } from '@/lib/tenancy/constants'
 import { assertNotImpersonating } from '@/lib/impersonation'
 import { auditMutation } from '@/lib/audit/route'
 import { noteAudit, selfServiceEvent, type SelfServiceAudit } from '@/lib/community/self-service-audit'
@@ -37,6 +38,9 @@ async function addParticipation(req: Request) {
     .from('event_participations')
     .insert({
       member_id: member.id,
+      // S5 A8b: a member's own past-event record has no event, so the trigger can't
+      // derive a tenant (enforce would refuse it). Event history is Stellr's (decision B8).
+      tenant_id: STELLR_TENANT_ID,
       event_year: event_year || null,
       event_location: event_location || null,
       team_name: team_name || null,

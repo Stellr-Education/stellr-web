@@ -11,6 +11,11 @@ export interface GroupInvoiceInput {
   registrationId: string
   eventSlug: string
   eventTitle: string
+  /**
+   * The registration's tenant (S5 A8b), for the ledger row when the registration
+   * can't be read back. Omitted: Stellr's, as for a row the backfill has not reached.
+   */
+  tenantId?: string
   teacher: { email: string; firstName: string; lastName: string }
   registrantMemberId: string | null
   amountCents: number
@@ -63,6 +68,7 @@ export async function createAndSendGroupInvoice(
     teacher_first_name: input.teacher.firstName, teacher_last_name: input.teacher.lastName,
     teacher_email: input.teacher.email, teacher_member_id: input.registrantMemberId,
     invoice_coupon_id: null, invoice_promotion_code: null, late_joiner_payer: null, share_estimate: null, share_first_paid_at: null,
+    tenant_id: input.tenantId ?? null,
   }
   const sent = await createGroupInvoice(db, stripe, {
     reg,
