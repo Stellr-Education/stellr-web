@@ -5,10 +5,15 @@
 //   npm run baselines
 //   npm run baselines -- --keep-going    run every generator even after one fails
 //
-// Every generator runs in its shrink-only mode: a count that FELL is written down,
-// a count that ROSE makes the generator refuse (or, for the IDOR snapshot, fail its
-// test), and this script exits 1. A rise is a finding to fix, or a decision for a
-// person with the generator's own grow flag; it is never taken in here.
+// Every generator but one runs in its shrink-only mode: a count that FELL is written
+// down, a count that ROSE makes the generator refuse, and this script exits 1. A rise
+// is a finding to fix, or a decision for a person with the generator's own grow flag.
+//
+// The exception is the IDOR snapshot step (npm run idor:snapshot). It is not
+// shrink-only: with IDOR_UPDATE_SNAPSHOT=1 it rewrites the snapshot and the
+// tenant-host baseline to whatever it measures, a new route or a wider class
+// included, and refuses nothing. Read its diff before committing it; the plain
+// IDOR suite, without the flag, is what fails on a change.
 //
 // On a clean tree that matches its baselines, nothing changes and it says so.
 // docs/RUNBOOK-ci-database.md, "Before you push", has the context.

@@ -2632,6 +2632,7 @@ export type Database = {
           reason: string
           sent_at: string | null
           status: string
+          tenant_id: string | null
         }
         Insert: {
           attachment_hashes?: string[]
@@ -2652,6 +2653,7 @@ export type Database = {
           reason: string
           sent_at?: string | null
           status?: string
+          tenant_id?: string | null
         }
         Update: {
           attachment_hashes?: string[]
@@ -2672,8 +2674,17 @@ export type Database = {
           reason?: string
           sent_at?: string | null
           status?: string
+          tenant_id?: string | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "email_outbox_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       email_outbox_blobs: {
         Row: {
@@ -9397,6 +9408,13 @@ export type Database = {
           p_table: string
         }
         Returns: undefined
+      }
+      tenant_host_map: {
+        Args: never
+        Returns: {
+          host: string
+          tenant_id: string
+        }[]
       }
       tenant_self_ref_visible: {
         Args: { p_id: string; p_table: string }

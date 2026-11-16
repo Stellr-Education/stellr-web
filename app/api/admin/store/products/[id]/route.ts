@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server'
 import { canManageStoreCatalog } from '@/lib/store/auth'
 import { archiveProduct, getProduct, updateProduct } from '@/lib/store/products'
+import { storableId, withAudit } from '@/lib/audit/route'
+import { adminAuditSubject, noteAuditSubject } from '@/lib/audit/route-subject'
 
 export const dynamic = 'force-dynamic'
 
@@ -19,10 +21,22 @@ export async function GET(_req: Request, { params }: Ctx) {
   }
 }
 
-export async function PATCH(req: Request, { params }: Ctx) {
+// Platform audit (docs/TENANCY-S5.md, C7): the product is the target; the fields sent
+// (names, never values) the metadata.
+export const PATCH = withAudit(
+  ({ args: [req] }: { args: [Request, Ctx] }) => ({ action: 'store.product.update', ...adminAuditSubject(req, 'store_products') }),
+  update,
+)
+export const DELETE = withAudit(
+  ({ args: [req] }: { args: [Request, Ctx] }) => ({ action: 'store.product.archive', ...adminAuditSubject(req, 'store_products') }),
+  archive,
+)
+
+async function update(req: Request, { params }: Ctx) {
   if (!(await canManageStoreCatalog())) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   const { id } = await params
   const body = await req.json().catch(() => ({}))
+  noteAuditSubject(req, { id: storableId(id), detail: { fields: body && typeof body === 'object' ? Object.keys(body) : [] } })
   try {
     await updateProduct(id, body)
     return NextResponse.json({ ok: true })
@@ -33,9 +47,10 @@ export async function PATCH(req: Request, { params }: Ctx) {
 }
 
 // Soft delete = archive (retain, hide). Hard purge runs through lib/deletion.
-export async function DELETE(_req: Request, { params }: Ctx) {
+async function archive(req: Request, { params }: Ctx) {
   if (!(await canManageStoreCatalog())) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   const { id } = await params
+  noteAuditSubject(req, { id: storableId(id) })
   try {
     await archiveProduct(id)
     return NextResponse.json({ ok: true })

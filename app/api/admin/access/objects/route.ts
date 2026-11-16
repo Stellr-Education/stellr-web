@@ -6,6 +6,8 @@ import { fireObjectCreatedRules } from '@/lib/object-created-rules'
 import { getAllEvents, getAllCampaigns } from '@/lib/events/repo'
 import { isAdminClaims } from '@/lib/admin-auth'
 import { STELLR_TENANT_ID } from '@/lib/tenancy/constants'
+import { withAudit } from '@/lib/audit/route'
+import { adminAuditSubject, noteAuditSubject } from '@/lib/audit/route-subject'
 
 // GET /api/admin/access/objects — every object in the converged model, across
 // all seven types, for the Objects-tab list. Content metadata for events stays
@@ -115,7 +117,16 @@ export async function GET() {
 // storage row for the chosen type, then fires the object_created rules
 // (auto-attach). Events/campaigns are created in Sanity (content source of
 // truth) and arrive via the event-sync webhook instead.
-export async function POST(req: Request) {
+//
+// Platform audit (docs/TENANCY-S5.md, C7): the new row is the target and its type the
+// metadata, never the name typed in. A refused type (an event, a course) is a 4xx or 501;
+// a 501 wrote nothing, and its event says so with no target id.
+export const POST = withAudit(
+  ({ args: [req] }: { args: [Request] }) => ({ action: 'access.object.create', ...adminAuditSubject(req, 'mentoring_cohorts') }),
+  createObject,
+)
+
+async function createObject(req: Request) {
   const { sessionClaims } = await auth()
   if (!isAdminClaims(sessionClaims)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
@@ -149,6 +160,7 @@ export async function POST(req: Request) {
       .single()
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
     ref = data.id as string
+    noteAuditSubject(req, { table: 'community_spaces', id: ref, detail: { object_type: objectType } })
     await db.from('community_channels').insert({ space_id: ref, slug: 'general', name: 'General', display_order: 0 })
   } else if (objectType === 'cohort' || objectType === 'workshop') {
     const { data, error } = await db
@@ -165,6 +177,7 @@ export async function POST(req: Request) {
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
     ref = data.id as string
     containerId = ref
+    noteAuditSubject(req, { table: 'mentoring_cohorts', id: ref, detail: { object_type: objectType } })
   } else {
     return NextResponse.json(
       { error: `Create ${objectType}s from their dedicated tools (course builder / resource upload).` },

@@ -284,6 +284,9 @@ export const TABLE_REGISTRY: Record<string, TableEntry> = {
   // Stays system: its nullable tenant_id only labels a per-tenant child row
   // (S5 B3). tenant_app has no grant on it (TENANT_APP_NO_ACCESS_TABLES).
   'public.cron_runs': system(),
+  // Stays system: its nullable tenant_id (S5 M7) only labels a queued row for
+  // the per-tenant drain; NULL counts as Stellr's (WD-2). tenant_app has no
+  // grant on it (TENANT_APP_NO_ACCESS_TABLES).
   'public.email_outbox': system('platform mail queue; each row was addressed by the sender that queued it'),
   'public.email_outbox_blobs': system(),
   'public.email_send_quota': system(),
