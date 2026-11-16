@@ -5,6 +5,7 @@ import { formatDateShort } from '@/lib/utils'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { ExternalLink } from 'lucide-react'
+import { AdminOnlyNote, useCan } from '@/components/admin/CapabilitiesContext'
 
 interface FlagRow {
   id: string
@@ -33,6 +34,8 @@ function memberName(m: { first_name: string | null; last_name: string | null } |
 export function FlagQueue({ flags }: Props) {
   const router = useRouter()
   const [loading, setLoading] = useState<string | null>(null)
+  // Resolving a flag is community:manage, an admin's alone.
+  const canWrite = useCan('community:manage')
 
   const resolve = async (flagId: string, action: 'resolved' | 'dismissed', hideContent = false) => {
     setLoading(flagId)
@@ -104,7 +107,10 @@ export function FlagQueue({ flags }: Props) {
               )}
             </div>
 
-            {flag.status === 'pending' && (
+            {flag.status === 'pending' && !canWrite && (
+              <AdminOnlyNote className="shrink-0">An admin reviews flags.</AdminOnlyNote>
+            )}
+            {flag.status === 'pending' && canWrite && (
               <div className="flex shrink-0 flex-col gap-1.5">
                 <button
                   onClick={() => resolve(flag.id, 'resolved', true)}

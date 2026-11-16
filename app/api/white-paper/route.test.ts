@@ -65,3 +65,37 @@ describe('white-paper email escaping (PUB-2)', () => {
     expect(html).toContain('Hi Jordan,')
   })
 })
+
+// spam.L1b / spam.L3 (docs/REC-form-spam-hardening.md §3, §5). This route
+// mails the submitted address, so a trap must send nothing at all.
+const timing = () => ({ website: '', renderedAt: Date.now() - 60_000, submittedAt: Date.now() })
+
+describe('white-paper spam guard and validation', () => {
+  it('captures and emails a valid request as before', async () => {
+    const res = await post({ name: 'Jordan Blake', email: 'jordan@example.com', ...timing() })
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({ ok: true, emailed: true, crm: true })
+    expect(captureLead).toHaveBeenCalledTimes(1)
+    expect(sendEmail).toHaveBeenCalledTimes(1)
+  })
+
+  it('answers a filled honeypot with 200 and mails and captures nothing', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const res = await post({ name: 'Jordan Blake', email: 'jordan@example.com', ...timing(), website: 'x' })
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({ ok: true })
+    expect(sendEmail).not.toHaveBeenCalled()
+    expect(captureLead).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    ['an over-long name', { name: 'a'.repeat(121), email: 'jordan@example.com' }],
+    ['an over-long email', { name: 'Jordan', email: `${'a'.repeat(250)}@example.com` }],
+    ['a malformed email', { name: 'Jordan', email: 'jordan@' }],
+  ])('refuses %s with 400 and mails nothing', async (_label, body) => {
+    const res = await post({ ...body, ...timing() })
+    expect(res.status).toBe(400)
+    expect(await res.json()).toEqual({ error: 'A name and valid email are required.' })
+    expect(sendEmail).not.toHaveBeenCalled()
+  })
+})

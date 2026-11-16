@@ -93,3 +93,117 @@ describe('hubspotFetch', () => {
     expect(fetchMock).toHaveBeenCalledTimes(3)
   })
 })
+
+// deploy-env.hubspot-dry-run: HUBSPOT_DRY_RUN=1 skips every write at this one
+// transport, so dev can hold a token (to exercise the reads) without writing to
+// the one live portal. Unset, nothing changes.
+describe('hubspotFetch — HUBSPOT_DRY_RUN', () => {
+  const OLD_TOKEN = process.env.HUBSPOT_ACCESS_TOKEN
+  const OLD_DRY = process.env.HUBSPOT_DRY_RUN
+  const ok200 = () => new Response(JSON.stringify({ id: 'real' }), { status: 200 })
+
+  beforeEach(() => {
+    process.env.HUBSPOT_ACCESS_TOKEN = 'test-token'
+    vi.resetModules()
+  })
+  afterEach(() => {
+    process.env.HUBSPOT_ACCESS_TOKEN = OLD_TOKEN
+    if (OLD_DRY === undefined) delete process.env.HUBSPOT_DRY_RUN
+    else process.env.HUBSPOT_DRY_RUN = OLD_DRY
+    vi.unstubAllGlobals()
+    vi.restoreAllMocks()
+  })
+
+  describe('on (HUBSPOT_DRY_RUN=1)', () => {
+    beforeEach(() => {
+      process.env.HUBSPOT_DRY_RUN = '1'
+    })
+
+    it.each([
+      ['POST', '/crm/v3/objects/deals'],
+      ['POST', '/crm/v3/objects/notes'],
+      ['PATCH', '/crm/v3/objects/deals/77'],
+      ['PUT', '/crm/v4/objects/contacts/1/associations/default/companies/2'],
+      ['DELETE', '/crm/v3/objects/contacts/1'],
+      ['PATCH', '/crm/v3/properties/contacts/event'],
+      ['PATCH', '/marketing/v3/forms/form-guid'],
+    ] as const)('does not fetch a %s write to %s, and returns a success', async (method, path) => {
+      const fetchMock = vi.fn(async () => ok200())
+      vi.stubGlobal('fetch', fetchMock)
+      const log = vi.spyOn(console, 'log').mockImplementation(() => {})
+      const { hubspotFetch, HUBSPOT_DRY_RUN_ID } = await import('./hubspot')
+
+      const res = await hubspotFetch(path, method, { properties: {} })
+
+      expect(fetchMock).not.toHaveBeenCalled()
+      expect(res.ok).toBe(true)
+      expect(await res.json()).toEqual({ id: HUBSPOT_DRY_RUN_ID })
+      expect(log).toHaveBeenCalledWith(`[hubspot] dry-run ${method} ${path}`)
+    })
+
+    it('logs no personal data: the email segment and the query string are dropped', async () => {
+      vi.stubGlobal('fetch', vi.fn(async () => ok200()))
+      const log = vi.spyOn(console, 'log').mockImplementation(() => {})
+      const { hubspotFetch } = await import('./hubspot')
+
+      await hubspotFetch(
+        `/crm/v3/objects/contacts/${encodeURIComponent('someone@example.com')}?idProperty=email`,
+        'PATCH',
+        { properties: { firstname: 'Placeholder' } },
+      )
+
+      expect(log).toHaveBeenCalledTimes(1)
+      const line = String(log.mock.calls[0][0])
+      expect(line).toBe('[hubspot] dry-run PATCH /crm/v3/objects/contacts/<email>')
+      expect(line).not.toMatch(/example\.com|%40|@|Placeholder|idProperty/)
+    })
+
+    it('still runs reads: a GET, a search POST and a batch-read POST all fetch', async () => {
+      const fetchMock = vi.fn(async () => ok200())
+      vi.stubGlobal('fetch', fetchMock)
+      const { hubspotFetch } = await import('./hubspot')
+
+      await hubspotFetch('/crm/v3/objects/contacts/1', 'GET')
+      await hubspotFetch('/crm/v3/objects/contacts/search', 'POST', { filterGroups: [] })
+      await hubspotFetch('/crm/v3/objects/deals/batch/read', 'POST', { inputs: [] })
+
+      expect(fetchMock).toHaveBeenCalledTimes(3)
+      expect(fetchMock.mock.calls.map((c) => (c as unknown as [string])[0])).toEqual([
+        'https://api.hubapi.com/crm/v3/objects/contacts/1',
+        'https://api.hubapi.com/crm/v3/objects/contacts/search',
+        'https://api.hubapi.com/crm/v3/objects/deals/batch/read',
+      ])
+    })
+
+    it('accepts "true" as well as "1"', async () => {
+      process.env.HUBSPOT_DRY_RUN = 'true'
+      const fetchMock = vi.fn(async () => ok200())
+      vi.stubGlobal('fetch', fetchMock)
+      vi.spyOn(console, 'log').mockImplementation(() => {})
+      const { hubspotFetch } = await import('./hubspot')
+      await hubspotFetch('/crm/v3/objects/deals', 'POST', {})
+      expect(fetchMock).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('off', () => {
+    it.each([undefined, '', '0', 'false'])('HUBSPOT_DRY_RUN=%s writes as before', async (value) => {
+      if (value === undefined) delete process.env.HUBSPOT_DRY_RUN
+      else process.env.HUBSPOT_DRY_RUN = value
+      const fetchMock = vi.fn(async () => ok200())
+      vi.stubGlobal('fetch', fetchMock)
+      const log = vi.spyOn(console, 'log').mockImplementation(() => {})
+      const { hubspotFetch } = await import('./hubspot')
+
+      const res = await hubspotFetch('/crm/v3/objects/deals', 'POST', { properties: { dealname: 'x' } })
+
+      expect(fetchMock).toHaveBeenCalledWith('https://api.hubapi.com/crm/v3/objects/deals', {
+        method: 'POST',
+        headers: { Authorization: 'Bearer test-token', 'Content-Type': 'application/json' },
+        body: JSON.stringify({ properties: { dealname: 'x' } }),
+      })
+      expect(await res.json()).toEqual({ id: 'real' })
+      expect(log).not.toHaveBeenCalled()
+    })
+  })
+})

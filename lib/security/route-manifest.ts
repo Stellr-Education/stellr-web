@@ -384,7 +384,7 @@ export const ROUTE_MANIFEST: Record<string, RouteClass> = {
   'app/indexnow-key.txt/route.ts': 'public',
   'app/llms.txt/route.ts': 'public',
 
-  // ── Pages (158) ───────────────────────────────────────────────────────
+  // ── Pages (157) ───────────────────────────────────────────────────────
   'app/(stellr)/(admin)/admin/academy/coaching/[id]/page.tsx': 'stellr_only',
   'app/(stellr)/(admin)/admin/academy/coaching/access/page.tsx': 'stellr_only',
   'app/(stellr)/(admin)/admin/academy/coaching/calendar/page.tsx': 'stellr_only',
@@ -561,7 +561,6 @@ export const ROUTE_MANIFEST: Record<string, RouteClass> = {
   'app/(stellr)/(public)/terms/page.tsx': 'public',
   'app/(stellr)/(public)/volunteer/page.tsx': 'public',
   'app/(stellr)/(public)/why-stellr/page.tsx': 'public',
-  'app/(stellr)/studio/[[...tool]]/page.tsx': 'stellr_only',
 
   // ── Metadata routes (5) ───────────────────────────────────────────────
   // Next serves these as GET route handlers: crawlers, unfurlers and browsers

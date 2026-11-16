@@ -5,7 +5,7 @@ import { auditSubject, noteAuditSubject } from '@/lib/audit/route-subject'
 import { withAudit } from '@/lib/audit/route'
 import { stellrOnlyDb } from '@/lib/events/admin-records'
 import { addEventOffering, loadEventOfferings, removeEventOffering } from '@/lib/events/admin-config'
-import { refuseOutsideStellr, refuseUnlessStellrEvent } from '@/lib/tenancy/load-scoped'
+import { stellrOnlyEvent } from '@/lib/tenancy/load-scoped'
 
 export const dynamic = 'force-dynamic'
 
@@ -18,14 +18,12 @@ const arr = <T>(x: T | T[] | null | undefined): T | undefined => (Array.isArray(
 // Which store products/variants an event offers, and how: 'included' (free shirt,
 // allocated per size at confirmation) or 'addon' (paid extra). Admins and the
 // event's managers. The products are Stellr's store, so a tenant's staff are refused,
-// and a tenant's event is refused for everyone (refuseUnlessStellrEvent).
+// and a tenant's event is refused for everyone (stellrOnlyEvent).
 export async function GET(_req: Request, { params }: Ctx) {
   const { slug } = await params
   const crew = await requireEventRoute(slug, { route: ROUTE })
   if (!crew.ok) return crew.response
-  const refused = refuseOutsideStellr(crew.scope)
-  if (refused) return refused
-  const foreign = await refuseUnlessStellrEvent(supabaseServer(), slug, ROUTE)
+  const foreign = await stellrOnlyEvent(crew.scope, supabaseServer(), slug, ROUTE)
   if (foreign) return foreign
 
   const { offs, products } = await loadEventOfferings(stellrOnlyDb(crew.scope, supabaseServer()), slug)
@@ -56,9 +54,7 @@ async function addOffering(req: Request, { params }: Ctx) {
   const crew = await requireEventRoute(slug, { route: ROUTE })
   if (!crew.ok) return crew.response
   noteAuditSubject(req, { userId: crew.userId, tenantId: crew.tenantId, eventSlug: slug })
-  const refused = refuseOutsideStellr(crew.scope)
-  if (refused) return refused
-  const foreign = await refuseUnlessStellrEvent(supabaseServer(), slug, ROUTE)
+  const foreign = await stellrOnlyEvent(crew.scope, supabaseServer(), slug, ROUTE)
   if (foreign) return foreign
 
   const body = await req.json().catch(() => ({}))
@@ -86,9 +82,7 @@ async function removeOffering(req: Request, { params }: Ctx) {
   const crew = await requireEventRoute(slug, { route: ROUTE })
   if (!crew.ok) return crew.response
   noteAuditSubject(req, { userId: crew.userId, tenantId: crew.tenantId, eventSlug: slug })
-  const refused = refuseOutsideStellr(crew.scope)
-  if (refused) return refused
-  const foreign = await refuseUnlessStellrEvent(supabaseServer(), slug, ROUTE)
+  const foreign = await stellrOnlyEvent(crew.scope, supabaseServer(), slug, ROUTE)
   if (foreign) return foreign
 
   const id = new URL(req.url).searchParams.get('id')

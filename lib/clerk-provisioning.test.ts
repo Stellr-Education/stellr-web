@@ -13,12 +13,13 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 const getUserList = vi.fn()
 const createUser = vi.fn()
 const createSignInToken = vi.fn()
+const revokeSignInToken = vi.fn()
 const assertLiveCredentials = vi.fn()
 
 vi.mock('@clerk/nextjs/server', () => ({
   clerkClient: async () => ({
     users: { getUserList, createUser },
-    signInTokens: { createSignInToken },
+    signInTokens: { createSignInToken, revokeSignInToken },
   }),
 }))
 vi.mock('@/lib/env-guards', () => ({ assertLiveCredentials: (...a: unknown[]) => assertLiveCredentials(...a) }))
@@ -40,6 +41,7 @@ beforeEach(() => {
   getUserList.mockReset()
   createUser.mockReset()
   createSignInToken.mockReset()
+  revokeSignInToken.mockReset()
   assertLiveCredentials.mockReset()
   createSignInToken.mockResolvedValue({ token: 'tkt_minted' })
   createUser.mockResolvedValue({ id: 'user_new' })
@@ -168,5 +170,36 @@ describe('guardedEnsureClerkUser', () => {
       .toEqual({ allowed: true, clerkUserId: 'user_old', created: false, basis: 'dob' })
     getUserList.mockRejectedValue(new Error('clerk 500'))
     await expect(guardedEnsureClerkUser('a@x.test', 'A', 'B', { dateOfBirth: bornYearsAgo(14) })).rejects.toThrow('clerk 500')
+  })
+})
+
+// Registration identity hardening: a caller whose login link is refused after
+// the ticket was minted must be able to take the ticket back, not only withhold it.
+describe('ensureClerkUserAndSignInToken — withdrawing a minted ticket', () => {
+  it('revokes the minted ticket by its id, once', async () => {
+    getUserList.mockResolvedValue({ data: [] })
+    createSignInToken.mockResolvedValue({ id: 'sit_placeholder', token: 'tkt_minted' })
+    const r = await ensureClerkUserAndSignInToken('new@x.test', 'New', 'Person', { memberIsNew: true, age: ADULT })
+    expect(r.signInToken).toBe('tkt_minted')
+    await r.withdraw?.()
+    expect(revokeSignInToken).toHaveBeenCalledOnce()
+    expect(revokeSignInToken).toHaveBeenCalledWith('sit_placeholder')
+  })
+
+  it('never throws when Clerk refuses the revoke', async () => {
+    getUserList.mockResolvedValue({ data: [] })
+    createSignInToken.mockResolvedValue({ id: 'sit_placeholder', token: 'tkt_minted' })
+    revokeSignInToken.mockRejectedValue(new Error('clerk down'))
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const r = await ensureClerkUserAndSignInToken('new@x.test', 'New', 'Person', { memberIsNew: true, age: ADULT })
+    await expect(r.withdraw?.()).resolves.toBeUndefined()
+    errors.mockRestore()
+  })
+
+  it('offers nothing to withdraw when no ticket was minted', async () => {
+    getUserList.mockResolvedValue({ data: [{ id: 'user_existing' }] })
+    const r = await ensureClerkUserAndSignInToken('old@x.test', 'Old', 'Person', { memberIsNew: true, age: ADULT })
+    expect(r.signInToken).toBeNull()
+    expect(r.withdraw).toBeUndefined()
   })
 })

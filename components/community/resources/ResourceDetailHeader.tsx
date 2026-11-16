@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Download, Pencil, Flag, ExternalLink, PlayCircle } from 'lucide-react'
 import type { ResourceKind } from '@/lib/resources-catalogue'
 import { openPendingTab } from '@/lib/open-in-new-tab'
@@ -21,6 +21,11 @@ export function ResourceDetailHeader({ attachmentId, initialName, kind, canRenam
   const [value, setValue] = useState(initialName)
   const [saving, setSaving] = useState(false)
   const [busy, setBusy] = useState(false)
+  const renameInputRef = useRef<HTMLInputElement>(null)
+  // Focus the field when a click opens it (no autoFocus: jsx-a11y/no-autofocus).
+  useEffect(() => {
+    if (editing) renameInputRef.current?.focus()
+  }, [editing])
   const [err, setErr] = useState<string | null>(null)
 
   const rename = async () => {
@@ -84,7 +89,7 @@ export function ResourceDetailHeader({ attachmentId, initialName, kind, canRenam
             value={value}
             onChange={(e) => setValue(e.target.value)}
             maxLength={200}
-            autoFocus
+            ref={renameInputRef}
             className="min-w-0 flex-1 rounded border border-line-strong px-2 py-1 text-lg font-semibold focus:border-brand-blue-dark focus:outline-hidden"
           />
           <button

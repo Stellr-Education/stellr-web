@@ -74,7 +74,7 @@ export interface CaseFixture {
    * For a staff persona on a tenant_crew route that really cannot get to the id: why.
    * crewCaseProblem in test/idor/harness.ts refuses the case otherwise.
    */
-  crewUnproven?: Partial<Record<'stellr_crew' | 'canary_admin' | 'stellr_event_manager', string>>
+  crewUnproven?: Partial<Record<'stellr_crew' | 'canary_admin' | 'stellr_event_manager' | 'stellr_staff', string>>
 }
 
 const STRIPE_ENV = { STRIPE_SECRET_KEY: 'sk_test_x' }
@@ -136,6 +136,13 @@ export const CASE_FIXTURES: Record<string, CaseFixture> = {
     reason: 'only a group registration goes on to the event check',
     refusesWithoutQuery: 'the participant holds no role: the staff check answers before any read',
     honey: { type: 'group' },
+  },
+  // Staff holds schools:write, so the stellr_staff persona gets past the guard; without a
+  // field to update it then stopped at 400 before the id was used.
+  'app/api/admin/schools/[id]/route.ts': {
+    reason: 'PATCH needs a field to update: an empty body stops at "No fields to update" before the id is used',
+    refusesWithoutQuery: 'the participant holds no role: the schools:write capability check answers before any read',
+    body: { name: 'IDOR harness school' },
   },
   'app/api/credentials/[number]/events/route.ts': {
     reason: 'kind is an allow-list of share events',

@@ -5,11 +5,15 @@ import { useRouter } from 'next/navigation'
 import { Button } from '@stellr/web-ui'
 import { MemberLink } from '@/components/admin/RecordLinks'
 import { SCHOLARSHIP_LEVELS, discountedCents, formatUsd, type ScholarshipStage } from '@/lib/scholarship-levels'
+import { AdminOnlyNote, useCan } from '@/components/admin/CapabilitiesContext'
 
 // The decision panel on /admin/scholarships/[id]: event, member, level, then
 // "Offer & register" (or "Not offered"). Sequenced one choice at a time, and
 // the confirm step states exactly what will happen — who is emailed, what they
 // will pay, and whether an existing registration is being reused.
+//
+// Every decision here is scholarships:write, an admin's alone: Staff see the
+// application and the outcome, and a line saying an admin decides.
 
 export interface ReviewEvent {
   slug: string
@@ -65,15 +69,7 @@ interface RefundQuote {
   detail: string
 }
 
-export function ScholarshipReview({
-  id,
-  applicantEmail,
-  initialEventSlug,
-  events,
-  members,
-  registrations,
-  couponProblems = {},
-}: {
+type ScholarshipReviewProps = {
   id: string
   applicantEmail: string
   initialEventSlug: string | null
@@ -82,7 +78,31 @@ export function ScholarshipReview({
   registrations: ReviewRegistration[]
   /** Per level, why its Stripe coupon can't be used (absent = fine). */
   couponProblems?: Record<number, string | null>
-}) {
+}
+
+export function ScholarshipReview(props: ScholarshipReviewProps) {
+  const canWrite = useCan('scholarships:write')
+  if (!canWrite) {
+    return (
+      <section className="rounded-ds-card border border-line bg-white p-6 space-y-2">
+        <h2 className="font-display text-lg font-bold text-ink">Decision</h2>
+        <p className="text-sm text-content-body">Waiting for a decision.</p>
+        <AdminOnlyNote>An admin reviews applications and makes the offer.</AdminOnlyNote>
+      </section>
+    )
+  }
+  return <ScholarshipDecision {...props} />
+}
+
+function ScholarshipDecision({
+  id,
+  applicantEmail,
+  initialEventSlug,
+  events,
+  members,
+  registrations,
+  couponProblems = {},
+}: ScholarshipReviewProps) {
   const router = useRouter()
   const exactEmail = members.find((m) => m.email.toLowerCase() === applicantEmail.toLowerCase())
   const [eventSlug, setEventSlug] = useState(initialEventSlug ?? '')
@@ -350,6 +370,12 @@ export function ScholarshipReview({
 
 /** "Resend offer emails" on an application already offered. */
 export function ScholarshipResendButton({ id }: { id: string }) {
+  const canWrite = useCan('scholarships:write')
+  if (!canWrite) return <AdminOnlyNote className="pt-2">An admin resends the offer emails or cancels the scholarship.</AdminOnlyNote>
+  return <ResendButton id={id} />
+}
+
+function ResendButton({ id }: { id: string }) {
   const [busy, setBusy] = useState(false)
   const [result, setResult] = useState<{ ok: boolean; text: string } | null>(null)
 
@@ -379,6 +405,12 @@ export function ScholarshipResendButton({ id }: { id: string }) {
 
 /** "Retry reimbursement" — shown when an already-paid student's refund needs handling. */
 export function ScholarshipRetryRefundButton({ id }: { id: string }) {
+  const canWrite = useCan('scholarships:write')
+  if (!canWrite) return <AdminOnlyNote>An admin retries the reimbursement.</AdminOnlyNote>
+  return <RetryRefundButton id={id} />
+}
+
+function RetryRefundButton({ id }: { id: string }) {
   const router = useRouter()
   const [method, setMethod] = useState<'cash' | 'credit'>('cash')
   const [busy, setBusy] = useState(false)
@@ -431,6 +463,13 @@ const CANCEL_EFFECT: Partial<Record<ScholarshipStage, string>> = {
 
 /** "Cancel scholarship" on an offered application, at any stage. */
 export function ScholarshipCancelButton({ id, stage }: { id: string; stage: ScholarshipStage }) {
+  // The note sits with the resend button, which always shows beside this one.
+  const canWrite = useCan('scholarships:write')
+  if (!canWrite) return null
+  return <CancelButton id={id} stage={stage} />
+}
+
+function CancelButton({ id, stage }: { id: string; stage: ScholarshipStage }) {
   const router = useRouter()
   const [open, setOpen] = useState(false)
   const [reason, setReason] = useState('')

@@ -3,12 +3,26 @@ import { hasCapability } from '@/lib/authz'
 import { NextResponse } from 'next/server'
 import { supabaseServer } from '@/lib/supabase'
 import { applyGrantTrigger } from '@/lib/membership-grants'
+import { withAudit } from '@/lib/audit/route'
+import { auditSubject, noteAuditSubject } from '@/lib/audit/route-subject'
+import { memberIdOf } from '@/lib/audit-route-helpers'
+
+type Ctx = { params: Promise<{ id: string }> }
+
+// Platform audit (docs/TENANCY-S5.md, C7): the new record is the target; the member,
+// and how many grant rules fired, go in the metadata. No team name or award text.
+const createAudit = ({ args: [req] }: { args: [Request, Ctx] }) => ({
+  action: 'event_participation.record.create' as const,
+  actor: { session: true } as const,
+  tenant: { stellr: true } as const,
+  target: auditSubject(req, 'event_participations').target,
+  metadata: { member_id: memberIdOf(req), ...auditSubject(req, 'event_participations').metadata },
+})
+
+export const POST = withAudit(createAudit, createParticipation)
 
 // POST /api/admin/members/[id]/event-participations — admin adds event record for a member
-export async function POST(
-  req: Request,
-  { params }: { params: Promise<{ id: string }> }
-) {
+async function createParticipation(req: Request, { params }: Ctx) {
   const { sessionClaims } = await auth()
   if (!(await hasCapability('members:write'))) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
@@ -50,5 +64,6 @@ export async function POST(
     console.error('Admin event participation grant-trigger error:', e)
   }
 
+  noteAuditSubject(req, { id: data.id, detail: { has_award: !!award, grants: grants.filter((g) => g.granted).length } })
   return NextResponse.json({ participation: data, grants })
 }

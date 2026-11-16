@@ -7,16 +7,20 @@ import { z } from 'zod'
 import { Check } from 'lucide-react'
 import { Field, Input, Select, Textarea } from '@stellr/web-ui'
 import { usePrefillForm } from '@/components/forms/useMemberPrefill'
+import { useSpamGuard } from '@/components/forms/useSpamGuard'
+import { SpamGuardFields } from '@/components/forms/SpamGuardFields'
 import { trackLeadSubmitted } from '@/lib/analytics'
+import { scholarshipFields as f } from '@/app/api/scholarship/schema'
 
+// The route's own fields and caps.
 const schema = z.object({
-  firstName: z.string().min(1, 'First name is required'),
-  lastName: z.string().min(1, 'Last name is required'),
-  email: z.string().email('Please enter a valid email address'),
-  phone: z.string().optional(),
-  activity: z.string().min(1, 'Please choose a Stellr activity'),
-  school: z.string().optional(),
-  brief: z.string().min(1, 'Please tell us a little about your application'),
+  firstName: f.firstName,
+  lastName: f.lastName,
+  email: f.email,
+  phone: f.phone,
+  activity: f.activity,
+  school: f.school,
+  brief: f.brief,
 })
 
 type FormData = z.infer<typeof schema>
@@ -32,6 +36,7 @@ export function ScholarshipForm({
   usedFallback?: boolean
 }) {
   const [status, setStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle')
+  const spam = useSpamGuard()
 
   const {
     register,
@@ -55,7 +60,7 @@ export function ScholarshipForm({
       const res = await fetch('/api/scholarship', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data),
+        body: JSON.stringify({ ...data, ...(await spam.values()) }),
       })
 
       if (res.ok) trackLeadSubmitted('scholarship')
@@ -153,6 +158,8 @@ export function ScholarshipForm({
           placeholder="Tell us a little about why you're applying. You don't need to share more than you're comfortable with."
         />
       </Field>
+
+      <SpamGuardFields {...spam.fields} />
 
       {(Object.keys(errors).length > 0 || status === 'error') && (
         <p

@@ -4,7 +4,7 @@ One list of the owner decisions that S5 wave 7 depends on, grouped by the gate e
 
 This is a new file so that it never collides with `docs/TENANCY-S5.md`, which stays the plan of record. Decisions already written up elsewhere are linked, not copied (see [Settled elsewhere](#settled-elsewhere)). Open questions go to the owner about 5 at a time, each with its default. Tracker row `s5-programme.41` points here. Batch 2 was answered on 12 Nov 2026, with the merges of A10a (#655) and A10b (#660). Batch 3 (`W7-14` and `W7-17` to `W7-32`) and the remaining questions from wave 7 PR bodies were answered on 13 Nov 2026. The row stays open until the rest of the decisions are added.
 
-Started 12 Nov 2026; batch 2, `W7-16` and the PR-review answers recorded on 12 Nov 2026 (docs train D2); batch 3, the dev canary zone and the rest of the PR-review answers recorded on 13 Nov 2026 (docs train D3). People are named by role only: "the owner" is the programme's owner.
+Started 12 Nov 2026; batch 2, `W7-16` and the PR-review answers recorded on 12 Nov 2026 (docs train D2); batch 3, the dev canary zone and the rest of the PR-review answers recorded on 13 Nov 2026 (docs train D3); the open questions from backlog batch 1's and batch 2's S5 PRs recorded on 14 Nov 2026, and batch 3's on 15 Nov 2026. People are named by role only: "the owner" is the programme's owner.
 
 ## How to read an entry
 
@@ -106,10 +106,44 @@ Smaller questions a code PR asked, answered by the owner in chat when approving 
 | PR653-2 | **K5:** lock the organiser, event, child's details and relationship on the guardian form, when Stellr's own minor form locks nothing? | Kept: those fields stay locked; the guardian can correct only their own name and email | 13 Nov 2026 |
 | PR654-2 | **O1:** accept the stale "auto:" reason the generator re-derived for `admin/competitions/[slug]/page.tsx` in the service-role baseline? | Accepted; fixed at the baseline's next regeneration | 13 Nov 2026 |
 | PR655-2 | **A10a:** accept one event-owner read per Stellr credential issue (one per batch for bulk issues)? | Accepted | 13 Nov 2026 |
-| PR655-3 | **A10a follow-up:** in the admin bulk issue, show refusals as "skipped" rather than "failures"; and should `pd-credentials` answer 409 rather than 500 for a refused tenant event? | Follow-up approved: bulk issue shows "skipped", and `pd-credentials` answers 409. In review as #667, open on 13 Nov 2026 | 13 Nov 2026 |
+| PR655-3 | **A10a follow-up:** in the admin bulk issue, show refusals as "skipped" rather than "failures"; and should `pd-credentials` answer 409 rather than 500 for a refused tenant event? | Follow-up approved: bulk issue shows "skipped", and `pd-credentials` answers 409. Built in #667 (`1b7e25bf`), merged 13 Nov 2026, on production via #680 | 13 Nov 2026 |
 | PR656-1 | **B10r:** pin the required jobs' Actions to SHAs, as `tenant-db` does, in a later slice? | Yes, after the GitHub organisation move (tracker `s5-programme.47`) | 13 Nov 2026 |
-| PR661-1 | **#661 follow-up:** hide the event-email merge field `feedback_link` and the check-in flow's survey link for another tenant's events, until tenant-host survey links exist? | Approved. In review as #666, open on 13 Nov 2026 | 13 Nov 2026 |
+| PR661-1 | **#661 follow-up:** hide the event-email merge field `feedback_link` and the check-in flow's survey link for another tenant's events, until tenant-host survey links exist? | Approved. Built in #666 (`b37bab60`), merged 13 Nov 2026, on production via #680 | 13 Nov 2026 |
 | PR661-2 | **#661 copy:** the held label "Held: surveys for this organisation's events can't be sent yet.", and the panel note's promise that kept invitations go out once they can | Approved as written | 13 Nov 2026 |
+
+## Open: backlog batch 1 PR review (14 Nov 2026)
+
+Raised by the reviews of batch 1's S5 PRs (`docs/handovers/tracker/2026-11-14-backlog-batch1.md`), all of which merged into `dev` later on 14 Nov 2026. Each question is still open; the default is what the PR built, and it stands until the owner answers.
+
+| Id | Question | Recommended default | Answer | Answered |
+|---|---|---|---|---|
+| PR624-1 | **503 or 404.** When the read of the event's owner fails for Stellr's own event, the C17 routes `remind`, `docusign-reissue` and `guardian` (and C20c's money routes) answer a retryable 503, where `requireEventRoute` answers 404. The docs called this accepted, reasoning from the register routes, without the owner's answer | Keep 503: it fails closed and tells the client to retry, and a 404 would read as "no such event" | Open | open |
+| PR701-1 | **B22 (#701):** if the read that counts other tenants' held rows fails, the run is marked not ok in `cron_runs`, for a count that is informational | Keep as built: a failed read is visible, and Stellr's own sweep has still run | Open | open |
+| PR705-1 | **#705 and #708:** add `test/stellr-only-lists-ratchet.test.ts` and `test/registration/tenant-guardian-consent-edges-sql.test.ts` to `.github/CODEOWNERS`, as their sibling ratchets and tests are | Yes, in a slice that may edit `.github/CODEOWNERS` | Open | open |
+| PR708-1 | **#708's readiness guard** is a new `tenantGuardianConsentReady()`, which every admission path reads. `tenantGuardianConsentEnabled()` still reads the flag alone and still gates the consent sweep, so with the flag on and a precondition missing, minors are refused but the sweep keeps settling held rows | Keep the split: refusing admission is the safety property, and letting the sweep settle beats stranding held rows | Open | open |
+| PR708-2 | **#708's migration** (`20261114072142`) must reach a database before or with the code wherever the consent flag is on, because the sweep's retry read names the new column. The flag is unset everywhere today | Apply it to the `dev` database once #708 merges and its `db` job passes, before the flag is set there; to production through the Production migration Action before the code is promoted | Open | open |
+
+## Open: backlog batch 2 PR review (14 Nov 2026)
+
+Raised by the reviews of batch 2's S5 PRs (`docs/handovers/tracker/2026-11-14-backlog-batch2.md`), all of which merged into `dev` on 15 Nov 2026. Each question is still open; the default is what the PR built unless it says otherwise, and it stands until the owner answers. `PR725-1`'s follow-up is built in batch 3's #738 (`PR738-2`). Platform audit is off everywhere, so `PR721-1` gates `PLATFORM_AUDIT_ENABLED`, not the merge.
+
+| Id | Question | Recommended default | Answer | Answered |
+|---|---|---|---|---|
+| PR720-1 | **#720, the Staff persona:** Staff may edit `public.schools` through `app/api/admin/schools/[id]` PATCH, the one platform route that lets Staff in (`schools:write`), and the harness records it as a leak. Accept it in `test/idor/staff-accepted.ts`, since `public.schools` is the tenantless school directory (`lib/tenancy/registry.ts`), so the honey school is a shared row, not another tenant's record? | Accept, as built. An acceptance covers only Staff, on a platform route that checks a capability Staff holds, with the exact outcome it names, and tests pin those limits | Open | open |
+| PR720-2 | **#720, the two community snapshot reasons** (the coaching request and training item-flag routes) were rewritten from `TODO(S5)` by the builder and checked by the reviewer, not the owner: the mentoring-cohort and training-module rows are Stellr-only by database checks (migration `20261106234759`), and training items are covered through their parent module | Accept the rewritten reasons | Open | open |
+| PR721-1 | **#721, "Not you?" on check-in:** `DELETE /api/check-in` is unauthenticated and not rate-limited. With platform audit on, each request appends one row to the append-only chain, with an anonymous actor, no tenant and no target, so anyone could flood a table that is never erased | Drop the audit event from that handler (the row carries no information); rate-limiting it is the alternative. Decide before `PLATFORM_AUDIT_ENABLED` is set anywhere | Open | open |
+| PR725-1 | **#725, C20a:** a failed `events` read in `ensureEventMerchOrder` now returns quietly. At registration, a registrant's chosen add-ons are dropped and only the fee is charged; with a full scholarship plus add-ons, the registration is left unconfirmed. Ignored errors on this path already behaved this way | Accept for the merge, and make that read fail loudly in the registration path in a follow-up slice | Open | open |
+| PR728-1 | **#728, the roster opt-out pill:** on a tenant event, the pill and the CSV columns fall back to the member's newest Stellr agreement, which can be from a form signed for another event. Only Stellr staff see it (the page and export are Stellr-scoped), so nothing crosses tenants | Accept for now: every event is Stellr's today; revisit when tenant agreements exist | Open | open |
+
+## Open: backlog batch 3 PR review (15 Nov 2026)
+
+Raised by the reviews of batch 3's S5 PRs, none merged on 15 Nov 2026 (`docs/handovers/tracker/2026-11-15-backlog-batch3.md`). Each is open; the default is what the PR builds, and nothing changes until the owner answers or merges. `B3-AUDIT-1` belongs to a slice that is built but not yet pushed, because open PR #730 changes the same audit baseline. Platform audit is off everywhere.
+
+| Id | Question | Recommended default | Answer | Answered |
+|---|---|---|---|---|
+| PR738-1 | **#738, REQ-EVT's placement:** the plan put the Stellr-only check inside `requireEventAccess`. It is built as a separate `stellrOnlyEvent(scope, db, slug, label)` in `lib/tenancy/load-scoped.ts`, because nine route test files mock `@/lib/authz` wholesale, so a check inside it would vanish under the mocks and their existing 404 and 503 tests would fail. Same order, reads and answers as the hand-written checks it replaces | Accept the separate option; the guard test holds register entries to it, and C19a clears the pending list | Open | open |
+| PR738-2 | **#738, event merch at registration:** a failed `events` read now fails loudly (the follow-up to `PR725-1`). On the individual path it is thrown after the registration is saved and its hooks have run, before checkout: the registrant sees a generic error and has a pending registration with no pay link, and a retry counts against the hourly limit. The old code dropped the chosen add-ons silently | Accept: a visible failure staff can see in `app_errors` beats charging without the add-ons. Revisit if the read fails in practice | Open | open |
+| B3-AUDIT-1 | **The admin-only audit slice (`backlog-batch3.1`), the access routes keyed by slug:** the audit row's chain is picked from the raw URL slug. `resolveTenant` checks it against the events mirror (the platform chain, `tenant_unresolved`, on a miss) and the slug is never stored, so the result matches a verified slug, but the spec said never to use the raw URL param | Accept, as built; the alternative is to resolve the slug through `getMirroredEvent` in the route and pass the tenant id | Open | open |
 
 ## Settled elsewhere
 
@@ -124,4 +158,5 @@ Linked, not copied. The wording that counts is at the link.
 
 - The decisions that gate a production consent flip, listed in `docs/TENANCY-S5.md` under "Owner decisions wave 6 raised" (the consent document's wording, guardian identity assurance, invitation caps, the consent window, the new wording, and the rest). They do not gate wave 7, which uses a placeholder document on `dev` only (W7-6).
 - The decisions held in tracker `s5-programme.42` (B15, B5d, B20, the C0b composite foreign key, the C14 remainder), which wave 7 leaves out of scope.
-- The rest of the 46 to 60 decisions across the earlier wave tables (`s5-programme.41`). Each is added here, under the gate it blocks, before it is brought to the owner.
+- The rest of the 46 to 60 decisions across the earlier wave tables (`s5-programme.41`). Each is added here, under the gate it blocks, before it is brought to the owner. PR #706 (merged into `dev` on 14 Nov 2026) drafts 72 of them in `docs/S5-DECISION-BACKFILL-DRAFT.md`; they move here once that draft is reviewed.
+- B17's staff alert contact per tenant (`AMD-NOTIFY-TENANT`), which gates the first non-owner tenant's alerts.

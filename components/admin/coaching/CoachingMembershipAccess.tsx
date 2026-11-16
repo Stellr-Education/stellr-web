@@ -3,6 +3,7 @@
 import { useId, useState } from 'react'
 import { Dialog } from '@stellr/web-ui'
 import { formatUsd } from '@/lib/mentoring-format'
+import { AdminOnlyBanner, ReadOnlyFieldset, useCan } from '@/components/admin/CapabilitiesContext'
 
 interface TierRow {
   id: string
@@ -32,6 +33,8 @@ export function CoachingMembershipAccess({ tiers: initialTiers, workshops: initi
   const [tiers, setTiers] = useState(initialTiers)
   const [workshops, setWorkshops] = useState(initialWorkshops)
   const [editing, setEditing] = useState<WorkshopRow | null>(null)
+  // Access and pricing are academy:manage, an admin's alone.
+  const canWrite = useCan('academy:manage')
 
   const setFreeSessions = async (id: string, value: number) => {
     const v = Math.max(0, Math.floor(value))
@@ -44,7 +47,9 @@ export function CoachingMembershipAccess({ tiers: initialTiers, workshops: initi
   }
 
   return (
+    <ReadOnlyFieldset readOnly={!canWrite}>
     <div className="space-y-8 pt-1">
+      {!canWrite && <AdminOnlyBanner>An admin sets coaching access and prices. You can see them here.</AdminOnlyBanner>}
       <p className="text-[14px] text-content-secondary">
         Set which membership tiers include free coaching. Prices are in USD, read from Stripe. Free sessions reset each
         membership year (annual, no rollover).
@@ -116,7 +121,7 @@ export function CoachingMembershipAccess({ tiers: initialTiers, workshops: initi
                   <td className="py-3 text-content-secondary">{w.freeForTierIds.length === 0 ? '—' : `${w.freeForTierIds.length} tier${w.freeForTierIds.length === 1 ? '' : 's'}`}</td>
                   <td className="py-3 text-content-secondary">{w.oneOffPriceCents != null ? formatUsd(w.oneOffPriceCents) : '—'}</td>
                   <td className="py-3 text-right">
-                    <button onClick={() => setEditing(w)} className="text-[13px] font-semibold text-primary hover:underline">Edit</button>
+                    {canWrite && <button onClick={() => setEditing(w)} className="text-[13px] font-semibold text-primary hover:underline">Edit</button>}
                   </td>
                 </tr>
               ))
@@ -125,7 +130,7 @@ export function CoachingMembershipAccess({ tiers: initialTiers, workshops: initi
         </table>
       </section>
 
-      {editing && (
+      {canWrite && editing && (
         <EditAccessModal
           workshop={editing}
           tiers={tiers}
@@ -134,6 +139,7 @@ export function CoachingMembershipAccess({ tiers: initialTiers, workshops: initi
         />
       )}
     </div>
+    </ReadOnlyFieldset>
   )
 }
 

@@ -7,8 +7,24 @@ import { sendCredentialIssuedEmail } from '@/lib/credentials-notify'
 import { themeFromType } from '@/lib/campaigns'
 import { EVENT_AWARDS, mentorCredentialTitle } from '@/lib/event-awards'
 import { listEventMentors } from '@/lib/event-certificates'
+import { withAudit } from '@/lib/audit/route'
+import { noteAuditSubject } from '@/lib/audit/route-subject'
+import { verifiedEventAudit } from '@/lib/audit-route-helpers'
 
 export const dynamic = 'force-dynamic'
+
+// Platform audit (docs/TENANCY-S5.md, C7). The handler notes who passed requireEventAccess;
+// the event goes on the chain of the owner of the event that check verified (the slug it
+// noted), read from the mirror, never from the raw slug in the URL (lib/audit-route-helpers).
+
+// The audience and mode (enums) and the run's counts are the metadata: never a name,
+// and never the wording, which is free text.
+type Ctx = { params: Promise<{ slug: string }> }
+const configureAudit = ({ args: [req] }: { args: [Request, Ctx] }) => ({ action: 'event.credentials.configure' as const, ...verifiedEventAudit(req, 'event_settings') })
+const issueAudit = ({ args: [req] }: { args: [Request, Ctx] }) => ({ action: 'event.credentials.issue' as const, ...verifiedEventAudit(req, 'credentials') })
+
+export const PATCH = withAudit(configureAudit, configureCredentials)
+export const POST = withAudit(issueAudit, issueCredentials)
 
 // Participation credentials for an event — the verifiable, per-person record
 // beside the print certificates in ../certificates. Design: PLAN §3.3.
@@ -102,12 +118,13 @@ export async function GET(req: Request, { params }: { params: Promise<{ slug: st
 }
 
 // PATCH — credential config (title, description, criteria, skills) for `audience`.
-export async function PATCH(req: Request, { params }: { params: Promise<{ slug: string }> }) {
+async function configureCredentials(req: Request, { params }: Ctx) {
   const { slug } = await params
   const access = await requireEventAccess(slug)
   if (!access.ok) return NextResponse.json({ error: 'Forbidden' }, { status: access.status })
 
   const body = (await req.json().catch(() => ({}))) as Partial<Record<keyof Settings | 'audience', unknown>>
+  noteAuditSubject(req, { userId: access.userId, eventSlug: slug, detail: { audience: audienceOf(body.audience) } })
   const cols = COLUMNS[audienceOf(body.audience)]
   const clean = (v: unknown) => (typeof v === 'string' && v.trim() ? v.trim() : null)
   const update = {
@@ -134,7 +151,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ slug: 
 // A person issueCredential refuses (another tenant's event, or a consent form not yet
 // signed: S5 A10a) is counted in `skipped` with the reason in `skips`, not as a
 // failure (owner-approved follow-up, 13 Nov 2026). `failures` is for what went wrong.
-export async function POST(req: Request, { params }: { params: Promise<{ slug: string }> }) {
+async function issueCredentials(req: Request, { params }: Ctx) {
   const { slug } = await params
   const access = await requireEventAccess(slug)
   if (!access.ok) return NextResponse.json({ error: 'Forbidden' }, { status: access.status })
@@ -142,6 +159,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ slug: s
   const body = (await req.json().catch(() => ({}))) as { mode?: string; audience?: string }
   const audience = audienceOf(body.audience)
   const mode = body.mode === 'all' ? 'all' : 'checked_in'
+  noteAuditSubject(req, { userId: access.userId, eventSlug: slug, detail: { audience, mode: audience === 'mentors' ? 'all' : mode } })
 
   const db = supabaseServer()
   const [event, settings] = await Promise.all([getEventBySlug(slug).catch(() => null), loadSettings(slug, audience)])
@@ -150,7 +168,9 @@ export async function POST(req: Request, { params }: { params: Promise<{ slug: s
   const theme = themeFromType((event as { type?: string } | null)?.type) === 'enviro' ? 'environmental' : 'space'
 
   if (audience === 'mentors') {
-    return NextResponse.json(await issueToMentors(db, slug, eventTitle, theme, settings))
+    const run = await issueToMentors(db, slug, eventTitle, theme, settings)
+    noteAuditSubject(req, { detail: runDetail(audience, run) })
+    return NextResponse.json(run)
   }
   const title = settings?.credential_title ?? `${eventTitle} — Participant`
 
@@ -213,7 +233,20 @@ export async function POST(req: Request, { params }: { params: Promise<{ slug: s
     }
   }
 
+  noteAuditSubject(req, { detail: runDetail(audience, { mode, considered: people.length, created, existing, emailed, skipped: skips.length, failures }) })
   return NextResponse.json({ ok: true, mode, considered: people.length, created, existing, emailed, skipped: skips.length, skips, failures })
+}
+
+/**
+ * A run's counts, for the audit event: the names in skips and failures stay out. The
+ * emailed count is recorded as `notified`: the audit sanitiser drops any key containing
+ * 'email' (lib/audit/platform.ts). The response keeps `emailed`.
+ */
+function runDetail(
+  audience: Audience,
+  run: { mode: string; considered: number; created: number; existing: number; emailed: number; skipped: number; failures: string[] },
+) {
+  return { audience, mode: run.mode, considered: run.considered, created: run.created, existing: run.existing, notified: run.emailed, skipped: run.skipped, failed: run.failures.length }
 }
 
 async function issueToMentors(

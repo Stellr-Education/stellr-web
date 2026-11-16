@@ -5,8 +5,23 @@ import { isAwardType } from '@/lib/event-awards'
 import { eventArtworkTheme } from '@/lib/artwork-defaults'
 import { CERTIFICATE_PLACEMENT_RANGES, claimArtwork, placementInput } from '@/lib/artwork-template-input'
 import { loadDefaultTemplates, loadEventTemplate, loadEventTemplates } from '@/lib/event-certificates'
+import { withAudit } from '@/lib/audit/route'
+import { noteAuditSubject } from '@/lib/audit/route-subject'
+import { verifiedEventAudit } from '@/lib/audit-route-helpers'
 
 export const dynamic = 'force-dynamic'
+
+// Platform audit (docs/TENANCY-S5.md, C7). The handler notes who passed requireEventAccess;
+// the event goes on the chain of the owner of the event that check verified (the slug it
+// noted), read from the mirror, never from the raw slug in the URL (lib/audit-route-helpers).
+
+// One row per event and award, so no target id; the award type (an enum) is the metadata.
+type Ctx = { params: Promise<{ slug: string }> }
+const saveAudit = ({ args: [req] }: { args: [Request, Ctx] }) => ({ action: 'event.certificate_template.save' as const, ...verifiedEventAudit(req, 'event_certificate_templates') })
+const deleteAudit = ({ args: [req] }: { args: [Request, Ctx] }) => ({ action: 'event.certificate_template.delete' as const, ...verifiedEventAudit(req, 'event_certificate_templates') })
+
+export const PUT = withAudit(saveAudit, saveCertificateTemplate)
+export const DELETE = withAudit(deleteAudit, deleteCertificateTemplate)
 
 // Certificate artwork, one per award. GET lists the event's own templates and
 // its theme's defaults, which stand in for any award without one; PUT replaces
@@ -25,7 +40,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ slug: s
 }
 
 // PUT { awardType, storagePath?, fileType?, name_y?, name_max_width?, name_size? }
-export async function PUT(req: Request, { params }: { params: Promise<{ slug: string }> }) {
+async function saveCertificateTemplate(req: Request, { params }: Ctx) {
   const { slug } = await params
   const access = await requireEventAccess(slug)
   if (!access.ok) return NextResponse.json({ error: 'Forbidden' }, { status: access.status })
@@ -33,6 +48,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ slug: st
   const b = (await req.json().catch(() => ({}))) as Record<string, unknown>
   const awardType = b.awardType
   if (!isAwardType(awardType)) return NextResponse.json({ error: 'awardType is required' }, { status: 400 })
+  noteAuditSubject(req, { userId: access.userId, eventSlug: slug, detail: { award_type: awardType } })
 
   const db = supabaseServer()
   const update: Record<string, unknown> = { event_slug: slug, award_type: awardType }
@@ -65,12 +81,13 @@ export async function PUT(req: Request, { params }: { params: Promise<{ slug: st
 // DELETE ?awardType= — the award prints its theme default again (or, with no
 // default, the admin print asks for artwork and member downloads use the
 // plain design).
-export async function DELETE(req: Request, { params }: { params: Promise<{ slug: string }> }) {
+async function deleteCertificateTemplate(req: Request, { params }: Ctx) {
   const { slug } = await params
   const access = await requireEventAccess(slug)
   if (!access.ok) return NextResponse.json({ error: 'Forbidden' }, { status: access.status })
   const awardType = new URL(req.url).searchParams.get('awardType')
   if (!isAwardType(awardType)) return NextResponse.json({ error: 'awardType is required' }, { status: 400 })
+  noteAuditSubject(req, { userId: access.userId, eventSlug: slug, detail: { award_type: awardType } })
   const { error } = await supabaseServer()
     .from('event_certificate_templates')
     .delete()

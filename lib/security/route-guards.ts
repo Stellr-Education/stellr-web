@@ -355,8 +355,6 @@ export const GUARD_EXCEPTIONS: Record<string, string> = {
     'liveness probe for the provider dashboard; returns {ok:true} and reads nothing',
   'app/api/webhooks/docusign/route.ts#GET':
     'liveness probe for DocuSign Connect; returns {ok:true} and reads nothing',
-  'app/api/webhooks/google-sheets/route.ts#POST':
-    'Google push channels carry no signature; acts only on a channel id it registered (sheet_watch_channels), unexpired',
 
   // ── platform_destined ───────────────────────────────────────────────────
   'app/api/admin/impersonation/route.ts#DELETE':
@@ -365,10 +363,6 @@ export const GUARD_EXCEPTIONS: Record<string, string> = {
   // ── participant ─────────────────────────────────────────────────────────
   'app/(stellr)/(member)/community/training/[moduleId]/[itemId]/page.tsx#default':
     'legacy link stub: redirects to the course page, which reads the session itself; renders no data',
-
-  // ── stellr_only ─────────────────────────────────────────────────────────
-  'app/(stellr)/studio/[[...tool]]/page.tsx#default':
-    'embedded Sanity Studio; the editor authenticates against Sanity, not Clerk, and the page holds no Stellr data',
 
   // ── public, not rate-limited (each reviewed in S2) ──────────────────────
   'app/(stellr)/(public)/credentials/[number]/badge/route.tsx#GET':

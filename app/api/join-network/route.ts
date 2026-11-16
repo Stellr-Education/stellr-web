@@ -1,8 +1,23 @@
 import { NextResponse } from 'next/server'
+import { z } from 'zod'
 import { sendEmail } from '@/lib/email'
 import { rateLimitGuard, HOUR_MS } from '@/lib/rate-limit'
+import { checkSpamSignals } from '@/lib/spam-guard'
+import { joinNetworkFields as f } from './schema'
 
 const CONTACT_EMAIL = process.env.CONTACT_EMAIL ?? 'hello@stellreducation.org'
+
+/** Server-side validation, with caps (docs/REC-form-spam-hardening.md §5). */
+const joinNetworkSchema = z.object({
+  firstName: f.firstName,
+  lastName: f.lastName,
+  email: f.email,
+  phone: f.phone,
+  companyName: f.companyName,
+  address: f.address,
+  whatYouDo: f.whatYouDo,
+  reason: f.reason,
+})
 
 // deep review PUB-2: unauthenticated public form; its values go into a
 // Stellr-branded HTML email to staff. Escape every value before the HTML so a
@@ -20,14 +35,17 @@ export async function POST(req: Request) {
   const limited = rateLimitGuard(req, 'join-network', { limit: 3, windowMs: HOUR_MS })
   if (limited) return limited
   try {
+    const body: unknown = await req.json()
+    const parsed = joinNetworkSchema.safeParse(body)
+    if (!parsed.success) {
+      return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
+    }
+    const spam = checkSpamSignals(body, req, 'join-network')
+    if (spam) return spam
     const {
       firstName, lastName, email, phone,
       companyName, address, whatYouDo, reason,
-    } = await req.json()
-
-    if (!firstName || !lastName || !email || !phone || !companyName || !whatYouDo || !reason) {
-      return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
-    }
+    } = parsed.data
 
     const name = `${firstName} ${lastName}`
     const rows: [string, string][] = [

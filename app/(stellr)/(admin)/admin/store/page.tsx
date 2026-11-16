@@ -4,6 +4,7 @@ import { listProducts } from '@/lib/store/products'
 import { ProductTable } from '@/components/admin/store/ProductTable'
 import { StoreNav } from './StoreNav'
 import { requireAdminPage } from '@/lib/admin-auth'
+import { Can } from '@/components/admin/CapabilitiesContext'
 
 export const metadata = { title: 'Admin — Store' }
 export const dynamic = 'force-dynamic'
@@ -26,12 +27,15 @@ export default async function StoreProductsPage() {
             Merchandise catalog. Products sync from Printful; prices and discounts are managed here.
           </p>
         </div>
+        {/* The catalogue is an admin's (store:write). */}
+        <Can cap="store:write">
         <Link
           href="/admin/store/new"
           className="flex items-center gap-1 rounded-md bg-brand-blue px-3 py-1.5 text-sm text-white hover:bg-brand-blue-dark"
         >
           <Plus className="h-4 w-4" /> New product
         </Link>
+        </Can>
       </div>
       <StoreNav />
       <ProductTable products={products} />

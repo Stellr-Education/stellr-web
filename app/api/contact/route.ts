@@ -1,8 +1,14 @@
 import { NextResponse } from 'next/server'
+import { z } from 'zod'
 import { sendEmail } from '@/lib/email'
 import { rateLimitGuard, HOUR_MS } from '@/lib/rate-limit'
+import { checkSpamSignals } from '@/lib/spam-guard'
+import { contactFields as f, numberAsText } from './schema'
 
 const CONTACT_EMAIL = process.env.CONTACT_EMAIL ?? 'hello@stellreducation.org'
+
+/** Server-side validation, with caps (docs/REC-form-spam-hardening.md §5). */
+const contactSchema = z.object({ name: f.name, email: f.email, type: f.type, message: numberAsText(f.message) })
 
 /** Escape user input before interpolating into notification-email HTML, so a
  *  submitted name/message can't inject markup or a scripted link into the inbox. */
@@ -19,11 +25,14 @@ export async function POST(req: Request) {
   const limited = rateLimitGuard(req, 'contact', { limit: 3, windowMs: HOUR_MS })
   if (limited) return limited
   try {
-    const { name, email, type, message } = await req.json()
-
-    if (!name || !email || !type || !message) {
+    const body: unknown = await req.json()
+    const parsed = contactSchema.safeParse(body)
+    if (!parsed.success) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
     }
+    const spam = checkSpamSignals(body, req, 'contact')
+    if (spam) return spam
+    const { name, email, type, message } = parsed.data
 
     const subject = `[${type}] New enquiry from ${name}`
     const html = `

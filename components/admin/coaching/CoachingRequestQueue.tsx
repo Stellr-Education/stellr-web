@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { Check, Clock, UserCheck, XCircle } from 'lucide-react'
 import type { CoachingRequest, CoachingEligibility, CoachOption } from '@/lib/coaching-requests'
 import { MemberLink } from '@/components/admin/RecordLinks'
+import { AdminOnlyNote, useCan } from '@/components/admin/CapabilitiesContext'
 
 const STATUS_META: Record<CoachingRequest['status'], { label: string; className: string; Icon: typeof Clock }> = {
   pending: { label: 'Pending', className: 'bg-[#FDEFD6] text-brand-gold-ink', Icon: Clock },
@@ -53,6 +54,8 @@ function RequestRow({ req, coaches, suggested }: { req: CoachingRequest; coaches
   const [busy, setBusy] = useState<null | 'match' | 'decline'>(null)
   const [error, setError] = useState<string | null>(null)
   const meta = STATUS_META[req.status]
+  // Matching and declining are academy:manage, an admin's alone.
+  const canWrite = useCan('academy:manage')
 
   const match = async () => {
     if (!coachId) return setError('Select a coach.')
@@ -138,7 +141,10 @@ function RequestRow({ req, coaches, suggested }: { req: CoachingRequest; coaches
         )}
       </div>
 
-      {req.status === 'pending' && (
+      {req.status === 'pending' && !canWrite && (
+        <AdminOnlyNote className="mt-3">An admin matches the request with a coach or declines it.</AdminOnlyNote>
+      )}
+      {req.status === 'pending' && canWrite && (
         <div className="mt-3 flex flex-wrap items-end gap-2">
           <label className="flex flex-col gap-1 text-[12px] font-semibold text-content-secondary">
             Coach

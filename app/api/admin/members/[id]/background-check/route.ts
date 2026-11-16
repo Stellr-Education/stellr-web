@@ -6,13 +6,30 @@ import { getBackgroundProvider } from '@/lib/background-provider'
 import { actorFromAuth, logActivity } from '@/lib/activity-log'
 import { requiresBackgroundCheck } from '@/lib/compliance'
 import { assertLiveCredentials, SandboxCredentialsError } from '@/lib/env-guards'
+import { withAudit } from '@/lib/audit/route'
+import { auditSubject, noteAuditSubject } from '@/lib/audit/route-subject'
+import { memberIdOf } from '@/lib/audit-route-helpers'
 
 // POST /api/admin/members/[id]/background-check
 // Admin orders a background check for an adult member via the hosted-invite flow
 // (the provider emails the candidate to complete their info + consent). Stellr is
 // billed per report; the member is NOT charged. "Payment occurs automatically
 // once ordered" (PRD) is satisfied by the provider's own per-report billing.
-export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
+type Ctx = { params: Promise<{ id: string }> }
+
+// Platform audit (docs/TENANCY-S5.md, C7). A failed order still records its error row,
+// answered as a 502, so that is recorded too, with the status.
+const orderAudit = ({ args: [req] }: { args: [Request, Ctx] }) => ({
+  action: 'compliance.background_check.order' as const,
+  actor: { session: true } as const,
+  tenant: { stellr: true } as const,
+  target: { table: 'members', id: memberIdOf(req) },
+  metadata: auditSubject(req, 'member_background_checks').metadata,
+})
+
+export const POST = withAudit(orderAudit, orderBackgroundCheck)
+
+async function orderBackgroundCheck(req: Request, { params }: Ctx) {
   const { sessionClaims } = await auth()
   if (!(await hasCapability('members:write'))) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
@@ -109,6 +126,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     console.error('[admin] background-check insert error:', error)
     return NextResponse.json({ error: 'Order placed but failed to record it' }, { status: 500 })
   }
+  noteAuditSubject(req, { detail: { check_id: row.id } })
 
   await logActivity(
     {

@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { Check, Plus, Trash2, Download, Loader2 } from 'lucide-react'
 import { Choice, Field, Input, Select, Textarea } from '@stellr/web-ui'
 import type { ProductType, StoreProductWithVariants, StoreVariant } from '@/lib/store/types'
+import { AdminOnlyBanner, ReadOnlyFieldset, useCan } from '@/components/admin/CapabilitiesContext'
 
 const TYPES: ProductType[] = ['apparel', 'merch', 'sticker', 'digital']
 const STATUSES = ['draft', 'active', 'archived'] as const
@@ -17,8 +18,12 @@ export function ProductForm(props: {
   product?: StoreProductWithVariants
   printfulEnabled?: boolean
 }) {
-  if (props.mode === 'create') return <CreateForm />
-  return <EditForm product={props.product!} printfulEnabled={!!props.printfulEnabled} />
+  // The catalogue is an admin's (store:write): Staff see a product, not the controls.
+  const canWrite = useCan('store:write')
+  if (props.mode === 'create') {
+    return canWrite ? <CreateForm /> : <AdminOnlyBanner>An admin adds products to the store.</AdminOnlyBanner>
+  }
+  return <EditForm product={props.product!} printfulEnabled={!!props.printfulEnabled} canWrite={canWrite} />
 }
 
 function CreateForm() {
@@ -80,7 +85,7 @@ interface PrintfulOption {
   variants: number
 }
 
-function EditForm({ product, printfulEnabled }: { product: StoreProductWithVariants; printfulEnabled: boolean }) {
+function EditForm({ product, printfulEnabled, canWrite }: { product: StoreProductWithVariants; printfulEnabled: boolean; canWrite: boolean }) {
   const router = useRouter()
   const [details, setDetails] = useState({
     name: product.name,
@@ -106,6 +111,8 @@ function EditForm({ product, printfulEnabled }: { product: StoreProductWithVaria
 
   return (
     <div className="space-y-6">
+      {!canWrite && <AdminOnlyBanner>An admin changes products, prices and variants. You can see them here.</AdminOnlyBanner>}
+      <ReadOnlyFieldset readOnly={!canWrite} className="space-y-6">
       {/* Details */}
       <section className="rounded-xl border border-brand-border bg-white p-5">
         <h2 className="mb-3 text-sm font-semibold text-brand-blue-dark">Details</h2>
@@ -153,19 +160,22 @@ function EditForm({ product, printfulEnabled }: { product: StoreProductWithVaria
             onChange={(e) => setDetails({ ...details, featured: e.target.checked })}
           />
         </div>
+        {canWrite && (
         <button
           onClick={saveDetails}
           className="mt-4 flex items-center gap-1 rounded-md bg-brand-blue px-4 py-2 text-sm text-white hover:bg-brand-blue-dark"
         >
           {savedFlash ? <Check className="h-4 w-4" /> : null} {savedFlash ? 'Saved' : 'Save details'}
         </button>
+        )}
       </section>
 
       {/* Variants */}
-      <VariantsSection productId={product.id} variants={variants} setVariants={setVariants} />
+      <VariantsSection productId={product.id} variants={variants} setVariants={setVariants} canWrite={canWrite} />
 
-      {/* Printful */}
-      <PrintfulSection productId={product.id} enabled={printfulEnabled} linkedId={product.pod_sync_product_id} />
+      {/* Printful: importing variants is a catalogue change. */}
+      {canWrite && <PrintfulSection productId={product.id} enabled={printfulEnabled} linkedId={product.pod_sync_product_id} />}
+      </ReadOnlyFieldset>
     </div>
   )
 }
@@ -174,10 +184,12 @@ function VariantsSection({
   productId,
   variants,
   setVariants,
+  canWrite,
 }: {
   productId: string
   variants: StoreVariant[]
   setVariants: (v: StoreVariant[]) => void
+  canWrite: boolean
 }) {
   const [newSku, setNewSku] = useState('')
   const [newLabel, setNewLabel] = useState('')
@@ -262,6 +274,7 @@ function VariantsSection({
               </div>
             </div>
             {v.pod_sync_variant_id && <span className="text-xs text-brand-blue">Printful</span>}
+            {canWrite && (<>
             <button
               onClick={() => saveVariant(v)}
               className="rounded-md border border-brand-border px-2 py-1 text-xs text-brand-muted hover:bg-brand-canvas"
@@ -271,11 +284,13 @@ function VariantsSection({
             <button onClick={() => removeVariant(v.id)} className="text-brand-muted-soft hover:text-red-600" aria-label="Delete variant">
               <Trash2 className="h-4 w-4" />
             </button>
+            </>)}
           </div>
         ))}
         {variants.length === 0 && <p className="text-sm text-brand-muted-soft">No variants yet.</p>}
       </div>
 
+      {canWrite && (
       <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-brand-hairline pt-4">
         <div className="w-40">
           <Input value={newSku} onChange={(e) => setNewSku(e.target.value)} placeholder="New SKU" aria-label="New variant SKU" />
@@ -297,6 +312,7 @@ function VariantsSection({
           <Plus className="h-3 w-3" /> Add variant
         </button>
       </div>
+      )}
     </section>
   )
 }

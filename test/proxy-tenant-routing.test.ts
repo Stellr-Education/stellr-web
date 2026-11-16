@@ -441,7 +441,6 @@ describe('on a tenant host (flag on)', () => {
     '/COMMUNITY/x.png',
     '/admin/x.html',
     '/events/nevada.html',
-    '/studio/a.js',
     '/x.pngfoo',
     '/images/a.png/b',
     '/%63ommunity/x.png',

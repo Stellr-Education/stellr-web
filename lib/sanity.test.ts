@@ -1,5 +1,25 @@
+import { execFileSync } from 'node:child_process'
+import { readFileSync } from 'node:fs'
 import { describe, it, expect } from 'vitest'
 import { flyerDownloadUrl, type EventFlyer } from './sanity'
+
+// deep review v2 .16: lib/sanity holds the Sanity client and its token, so no
+// client component may value-import it. `import 'server-only'` would enforce this
+// in the build too, but it is deferred (see the comment at the top of lib/sanity.ts).
+describe('lib/sanity stays out of client components', () => {
+  it('no client component imports a value from it', () => {
+    const files = execFileSync('git', ['grep', '-l', '-E', "from '@/lib/sanity'", '--', '*.ts', '*.tsx'], { encoding: 'utf8' })
+      .split('\n')
+      .filter((f) => f && !/\.test\.tsx?$/.test(f))
+    const offenders = files.filter((file) => {
+      const src = readFileSync(file, 'utf8')
+      if (!/^\s*['"]use client['"]/m.test(src)) return false
+      // A type-only import is erased; any other import from the module is a value import.
+      return [...src.matchAll(/^import\s+(type\s+)?[^;'"]*?from '@\/lib\/sanity'/gm)].some((m) => !m[1])
+    })
+    expect(offenders).toEqual([])
+  })
+})
 
 const CDN = 'https://cdn.sanity.io/files/proj/production/abc123.pdf'
 

@@ -9,6 +9,8 @@ import { getCurrentMember } from '@/lib/community'
 import { assertNotImpersonating } from '@/lib/impersonation'
 import { scholarshipReceivedEmail, scholarshipTeamInboxEmail } from '@/lib/scholarship-emails'
 import { auditMutation } from '@/lib/audit/route'
+import { checkSpamSignals } from '@/lib/spam-guard'
+import { scholarshipFields as f } from './schema'
 
 const CONTACT_EMAIL = process.env.CONTACT_EMAIL ?? 'hello@stellreducation.org'
 const APP_URL = process.env.NEXT_PUBLIC_AUTH_APP_URL ?? 'https://app.stellreducation.org'
@@ -16,13 +18,13 @@ const APP_URL = process.env.NEXT_PUBLIC_AUTH_APP_URL ?? 'https://app.stellreduca
 // Length caps keep a pasted essay (or a bot) from filling the table and the
 // staff inbox; they sit well above anything a real application has used.
 const schema = z.object({
-  firstName: z.string().trim().min(1).max(100),
-  lastName: z.string().trim().min(1).max(100),
-  email: z.string().trim().toLowerCase().email().max(254),
-  phone: z.string().trim().max(40).optional().or(z.literal('')),
-  activity: z.string().trim().min(1).max(200),
-  school: z.string().trim().max(200).optional().or(z.literal('')),
-  brief: z.string().trim().min(1).max(5000),
+  firstName: f.firstName,
+  lastName: f.lastName,
+  email: f.email,
+  phone: f.phone,
+  activity: f.activity,
+  school: f.school,
+  brief: f.brief,
 })
 
 /** The event the applicant picked, by its title; null for "Not sure yet". */
@@ -40,10 +42,14 @@ export async function POST(req: Request) {
   // as that member's application.
   const blocked = await assertNotImpersonating()
   if (blocked) return blocked
-  const parsed = schema.safeParse(await req.json().catch(() => null))
+  const body: unknown = await req.json().catch(() => null)
+  const parsed = schema.safeParse(body)
   if (!parsed.success) {
     return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
   }
+  // A tripped trap answers 200 and files, emails and audits nothing.
+  const spam = checkSpamSignals(body, req, 'scholarship')
+  if (spam) return spam
 
   const { response, applicationId } = await fileApplication(parsed.data)
 

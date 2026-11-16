@@ -44,7 +44,15 @@ vi.mock('@/lib/pending-consent', () => ({ childAwaitingConsentBlock: h.consentBl
 vi.mock('@/lib/sanity', () => ({ getEventBySlug: h.getEventBySlug }))
 vi.mock('@/lib/impersonation', () => ({ assertNotImpersonating: async () => null }))
 vi.mock('@/lib/rate-limit-async', () => ({ rateLimit: h.rateLimit }))
-vi.mock('@/lib/member-sync', () => ({ upsertMember: h.upsertMember }))
+// identify.ts calls upsertMemberOutcome; it reports through h.upsertMember, and a
+// row it returns counts as inserted by this request.
+vi.mock('@/lib/member-sync', () => ({
+  upsertMember: h.upsertMember,
+  upsertMemberOutcome: async (...a: Parameters<typeof h.upsertMember>) => {
+    const member = await h.upsertMember(...a)
+    return { member, inserted: member != null }
+  },
+}))
 vi.mock('@/lib/email', () => ({ sendEmail: h.sendEmail, groupMemberJoinedEmail: h.joinedEmail }))
 vi.mock('@/lib/individual-payment', () => ({ ensureIndividualPayments: h.payments }))
 vi.mock('@/lib/docusign-agreements', () => ({ dispatchAgreement: h.dispatch }))

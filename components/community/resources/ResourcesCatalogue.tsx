@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useMemo, useState, useEffect, useRef } from 'react'
 import Link from 'next/link'
 import {
   FileText,
@@ -140,6 +140,11 @@ function NameWithRename({
   const [editing, setEditing] = useState(false)
   const [value, setValue] = useState(name)
   const [saving, setSaving] = useState(false)
+  const renameInputRef = useRef<HTMLInputElement>(null)
+  // Focus the field when a click opens it (no autoFocus: jsx-a11y/no-autofocus).
+  useEffect(() => {
+    if (editing) renameInputRef.current?.focus()
+  }, [editing])
   const [err, setErr] = useState<string | null>(null)
 
   const save = async () => {
@@ -174,7 +179,7 @@ function NameWithRename({
           value={value}
           onChange={(e) => setValue(e.target.value)}
           maxLength={200}
-          autoFocus
+          ref={renameInputRef}
           className="min-w-0 flex-1 rounded border border-line-strong px-2 py-1 text-input mouse:text-sm focus:border-brand-blue-dark focus:outline-hidden"
         />
         <button
