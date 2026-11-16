@@ -6,7 +6,9 @@ import { getCurrentMember } from '@/lib/community'
 import { getAllCampaigns } from '@/lib/events/repo'
 import type { StellarEvent } from '@/lib/sanity'
 import { getMemberCampaignContext } from '@/lib/campaign-registrations'
-import { themeFromType, THEME_META, deadlineInfo, deadlinePhrase, seasonLabel } from '@/lib/campaigns'
+import { themeFromType, THEME_META, deadlineInfo, deadlinePhrase, qualifierWindowName, shortUsDate } from '@/lib/campaigns'
+import { cqUpgradeStage } from '@/lib/cq-upgrade-prompt'
+import { QualifierUpgradePrompt } from './QualifierUpgradePrompt'
 
 // Dashboard campaign block: registered campaigns with deadlines, the Educator
 // Commons card, a "register another" prompt, and a higher-tier-gated material
@@ -26,10 +28,22 @@ export async function DashboardCampaigns() {
   // Nothing to show and no campaigns to register for — hide the whole block.
   if (registered.length === 0 && !another) return null
 
+  // Phase 2: a contextual Catalyst prompt for a free-tier teacher, timed to
+  // their registration and the deadline (lib/cq-upgrade-prompt.ts).
+  const prompt = member.hasPaidTier
+    ? null
+    : registered
+        .map((c) => {
+          const reg = ctx.registrations.get(c.slug.current)
+          const stage = cqUpgradeStage({ registeredAt: reg?.registeredAt, deadline: c.deadline, submitted: reg?.submitted })
+          return stage ? { stage, deadlineLabel: shortUsDate(c.deadline) || null } : null
+        })
+        .find(Boolean) ?? null
+
   return (
     <section className="space-y-4">
       <h2 className="text-ds-eyebrow font-bold text-gold-ink">
-        Your campaigns
+        Your Classroom Qualifier
       </h2>
 
       {registered.map((c) => {
@@ -49,7 +63,7 @@ export async function DashboardCampaigns() {
             <div className="min-w-0 flex-1">
               <p className="truncate font-heading font-bold text-ink">{c.title}</p>
               <p className="text-xs text-content-muted">
-                ✦ {meta.label} Campaign · {seasonLabel(c.season, c.campaignYear)}
+                ✦ {meta.label} · {qualifierWindowName(c.season, c.campaignYear)}
               </p>
             </div>
             {dl && (
@@ -63,13 +77,13 @@ export async function DashboardCampaigns() {
         )
       })}
 
-      {/* Run another campaign */}
+      {/* Run another Qualifier */}
       {another && (
         <div className="flex flex-wrap items-center justify-between gap-4 rounded-panel border border-pathway-amber/30 bg-pathway-amber-bg p-5">
           <div>
-            <p className="font-heading font-bold text-ink">Run another campaign this year</p>
+            <p className="font-heading font-bold text-ink">Run another Classroom Qualifier this year</p>
             <p className="text-sm text-content-secondary">
-              {another.title} · {seasonLabel(another.season, another.campaignYear)}
+              {another.title} · {qualifierWindowName(another.season, another.campaignYear)}
             </p>
           </div>
           <Button href={`/register/${another.slug.current}/group`} variant="primary">
@@ -78,8 +92,10 @@ export async function DashboardCampaigns() {
         </div>
       )}
 
+      {prompt && <QualifierUpgradePrompt stage={prompt.stage} deadlineLabel={prompt.deadlineLabel} />}
+
       {/* Higher-tier-gated material — everyone SEES more material exists. */}
-      {!member.hasPaidTier && (
+      {!member.hasPaidTier && !prompt && (
         <div className="flex flex-wrap items-center justify-between gap-4 rounded-panel bg-ink p-5 text-white">
           <div className="flex items-start gap-3">
             <span className="mt-0.5 flex h-8 w-8 items-center justify-center rounded-control bg-white/10">
@@ -87,7 +103,7 @@ export async function DashboardCampaigns() {
             </span>
             <div>
               <div className="flex items-center gap-2">
-                <p className="font-heading font-bold">More campaign material</p>
+                <p className="font-heading font-bold">More Qualifier material</p>
                 <span className="rounded-pill bg-star-gold/20 px-2 py-0.5 text-xs font-semibold text-star-gold">
                   Catalyst tier
                 </span>
