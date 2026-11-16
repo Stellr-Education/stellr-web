@@ -177,6 +177,10 @@ Never connects to a database. The ledger is a local JSON export of
   select version, name from supabase_migrations.schema_migrations order by version;
 `
 
+/**
+ * @param {string[]} argv
+ * @param {{ cwd?: string, stdout?: { write(s: string): unknown }, stderr?: { write(s: string): unknown } }} [io]
+ */
 export function main(argv, { cwd = process.cwd(), stdout = process.stdout, stderr = process.stderr } = {}) {
   try {
     const args = parseArgs(argv)

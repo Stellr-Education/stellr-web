@@ -26,8 +26,8 @@ function run(argv: string[]) {
   let out = ''
   let err = ''
   const code = main(argv, {
-    stdout: { write: (s: string) => ((out += s), true) } as unknown as NodeJS.WriteStream,
-    stderr: { write: (s: string) => ((err += s), true) } as unknown as NodeJS.WriteStream,
+    stdout: { write: (s: string) => (out += s) },
+    stderr: { write: (s: string) => (err += s) },
   })
   return { code, out, err }
 }
