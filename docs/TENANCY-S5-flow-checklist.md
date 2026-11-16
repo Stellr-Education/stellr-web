@@ -110,7 +110,7 @@ A monthly cron shows one run in 30 days, so read that one run closely.
 
 ## Steps owed from waves 4 to 6
 
-Sign-off steps the waves named (`docs/TENANCY-S5.md`, "Docs owed after wave 4", "after wave 5" and "after wave 6"), and dev proofs that no list carried after the account move, added on 14 Nov 2026. None has evidence yet. On 14 Nov 2026 the backlog's batch 3 took the `dev` proofs Claude can run (the C16 payment-method calls, B19's public page, the A8 roster round, the A16 check-in path and the shared-cost Stripe drill), as runs on `dev` rather than a code slice; each result is written in its row here. Production reads are the owner's (tracker `s5-programme.34`); `dev` proofs are Claude's (`s5-programme.35`).
+Sign-off steps the waves named (`docs/TENANCY-S5.md`, "Docs owed after wave 4", "after wave 5" and "after wave 6"), and dev proofs that no list carried after the account move, added on 14 Nov 2026. None has evidence yet. On 14 Nov 2026 the backlog's batch 3 took the `dev` proofs Claude can run (the C16 payment-method calls, B19's public page, the A8 roster round, the A16 check-in path and the shared-cost Stripe drill), as runs on `dev` rather than a code slice. On 15 Nov 2026 they moved to batch 4, to run once batch 3's PRs are merged and deployed to `stellr-web-dev` (the shared-cost drill after #739, the check-in path after #737); each result is written in its row here. Production reads are the owner's (tracker `s5-programme.34`); `dev` proofs are Claude's (`s5-programme.35`).
 
 | Step | Where | Evidence source | Pass | What was seen (no personal data) | Owner sign-off |
 |---|---|---|---|---|---|

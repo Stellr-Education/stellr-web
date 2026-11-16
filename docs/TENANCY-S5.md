@@ -872,9 +872,9 @@ Batch 1 of the 14 Nov review's backlog opened these S5 PRs into `dev`; all merge
 
 The S0 database PRs (#687, #689, #690, #691) and the mutation runner (#692, `s5-programme.40`) are outside S5 but gate it: see the batch tracker.
 
-### Backlog batch 2 (14 Nov 2026): S5 PRs open
+### Backlog batch 2 (14 Nov 2026): S5 PRs merged into `dev`
 
-Batch 2 opened these S5 PRs into `dev`. None is merged, none adds a migration, and each keeps Stellr's behaviour with the switches at their defaults, as its PR body shows. The full batch, with the 11 non-S5 slices, is `docs/handovers/tracker/2026-11-14-backlog-batch2.md`.
+Batch 2 opened these S5 PRs into `dev`; all merged into `dev` on 15 Nov 2026 (with #731, which wraps #720's Staff-persona read handlers for #721), and none is promoted. None adds a migration, and each keeps Stellr's behaviour with the switches at their defaults, as its PR body shows. The full batch, with the 11 non-S5 slices, is `docs/handovers/tracker/2026-11-14-backlog-batch2.md`.
 
 | Slice | PR | What it does, and what is left |
 |---|---|---|
@@ -883,7 +883,21 @@ Batch 2 opened these S5 PRs into `dev`. None is merged, none adds a migration, a
 | C20a | #725 | Explicit `tenant_id` on the 6 remaining optional-event writers (17 of 17), the prerequisite of the derivation enforce flip; a training module tied to another tenant's event is refused (`s5-programme.53`, `PR725-1`). C20b follows REQ-EVT |
 | Roster consent marker and staff alerts | #728 | "Waiting for guardian consent" on the event roster; staff alerted when a guardian invitation is not sent and when a removal escalates (`s5-programme.23`, roster part; `.52`; `PR728-1`). The resend action and the desk marker are batch 3 |
 
-Batch 3 in S5, in order (`s5-programme.53`): A13a, then A8b; REQ-EVT, the event-owner check inside `requireEventAccess` (`s5-programme.28`); C20b, C19a and C8-PG's callers (`.50`); A11, A12 and the bounce-notices tenant link; the rest of B26, then K11; the consent resend and desk marker (`.23`). Excluded, as owner decisions or gates that have not run: M7 with B24 and B25 (`WD-1`, `WD-2`), the derivation enforce flip, A10c and F10, `.26`'s sweep change, and C21 to C25 with C18's leftovers (`s5-programme.55`). The dev proofs Claude can run are in `docs/TENANCY-S5-flow-checklist.md`, "Steps owed from waves 4 to 6" (`s5-programme.35`).
+Batch 2's record planned batch 3 in S5, in order (`s5-programme.53`): A13a, then A8b; REQ-EVT, the event-owner check inside `requireEventAccess` (`s5-programme.28`); C20b, C19a and C8-PG's callers (`.50`); A11, A12 and the bounce-notices tenant link; the rest of B26, then K11; the consent resend and desk marker (`.23`). Excluded, as owner decisions or gates that have not run: M7 with B24 and B25 (`WD-1`, `WD-2`), the derivation enforce flip, A10c and F10, `.26`'s sweep change, and C21 to C25 with C18's leftovers (`s5-programme.55`). The dev proofs Claude can run are in `docs/TENANCY-S5-flow-checklist.md`, "Steps owed from waves 4 to 6" (`s5-programme.35`).
+
+### Backlog batch 3 (15 Nov 2026): S5 PRs open
+
+Batch 3 opened these S5 PRs into `dev`. None is merged, none adds a migration, and each keeps Stellr's behaviour with the switches at their defaults, as its PR body shows. The full batch, with the non-S5 slices, is `docs/handovers/tracker/2026-11-15-backlog-batch3.md`.
+
+| Slice | PR | What it does, and what is left |
+|---|---|---|
+| REQ-EVT, with C20a and C8-PG follow-ups | #738 | One Stellr-only option, `stellrOnlyEvent` in `lib/tenancy/load-scoped.ts`, on the 10 Stellr-only event routes (`s5-programme.28`), beside `requireEventAccess` rather than inside it (`PR738-1`). The event-merch read fails loudly at registration (`PR738-2`); a training module's `event_ref` is checked on PATCH; C8-PG lower-cases the tenant id (`.50`). The guard test lists the 10 routes as pending C19a |
+| The rest of B26 | #743 | Two-tenant cron fixtures through the real driver in `tenant-db`, and a read-only cron ledger (dead runs, missed slots, failed runs from `cron_runs`). On `--env dev` it reports nearly every job as missed, because crons decline on `dev` except the two opted in. K11 follows in batch 4 |
+| The desk's consent marker (`T-23`, desk part) | #737 | A consent-pending participant is marked on the check-in desk and refused before any write (`s5-programme.23`); the same PR adds the check-in form's honeypot. A group with one pending member still gets the whole-group 409 (`s5-programme.24`). The resend action is batch 4 |
+| Audit metadata tidy | #736 | #721's routes: `school_linked` renamed so the sanitiser keeps it, snake_case keys, the chain from the slug that passed `requireEventAccess`, the copied helpers shared (`s5-programme.27`) |
+| Audit on the admin-only routes (`GATE-AUDIT`, remainder) | not pushed | 41 handlers; the unaudited baseline falls from 76 to 35. Held while #730, another session's PR, changes the same baseline (`B3-AUDIT-1`). Scholarships are left for C20b |
+
+Batch 4 in S5, in order (`s5-programme.53`): A13a, then A8b; C20b, C19a and C8-PG's callers and cron tenant loops (`.50`); A11, A12 and the bounce-notices tenant link; K11 after B26; the consent resend (`.23`). Each moved from batch 3 because a batch 3 slice owns a file it needs (the audit baseline, the Stripe webhook, `test/idor/**`, `ci.yml`), or because Lane C runs one PR at a time. The dev proofs Claude can run (`s5-programme.35`) run after batch 3 deploys to `stellr-web-dev`, each recorded in `docs/TENANCY-S5-flow-checklist.md`. The exclusions are unchanged from batch 2.
 
 ## PR amendments
 
