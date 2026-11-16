@@ -2,7 +2,7 @@ import type { Config } from 'tailwindcss'
 import plugin from 'tailwindcss/plugin'
 import { tokens } from './lib/tokens'
 
-/* Design System V2 (Claude Design) — generated tokens are the single source of
+/* Design System V2 — generated tokens are the single source of
  * truth (design/tokens.json → lib/tokens.ts via `npm run build:tokens`).
  * The `brand-*` aliases are intentionally remapped onto the new token values so
  * the existing component code re-skins to the new brand without per-file edits;

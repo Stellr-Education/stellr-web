@@ -4,6 +4,26 @@ Project: "Stellr Design System" (`projectId` in `config.json`). Shape: storybook
 (root `.storybook/`). Package: `@stellr/web-ui` (TS source, no dist — the
 converter bundles `packages/web-ui/src/index.ts` directly with esbuild).
 
+## Claude Design shutdown (standalone closes by 14 Dec 2026)
+Standalone Claude Design (claude.ai/design) closes by 14 Dec 2026 and moves into
+Claude. Once a project has moved, the sync tool refuses uploads to it, so the
+`projectId` in `config.json` stops being a sync target.
+
+- **No runtime impact.** The sites, the build and CI never call Claude Design.
+  Tokens (`design/tokens.json`), `@stellr/web-ui`, `@stellr/icons` and Storybook
+  are in the repo and remain the source of truth.
+- **No data loss from this project.** "Stellr Design System" is a copy built from
+  the repo; this folder can rebuild it.
+- **Before 14 Dec:** check where the project now lives in Claude and whether
+  syncs can still reach it (run `/design-sync`, which calls `get_project` and
+  shows any move `notice`). Record the result here and in tracker row
+  `claude-design-sync.4`.
+- **If syncing cannot continue:** mark this folder retired at the top of this
+  file and stop running `/design-sync`. Leave the folder in place as a record of
+  the converter fixes until someone decides to delete it.
+- **Design files that exist only in Claude Design** (handoffs, not this project)
+  are covered by tracker row `account-migration.3` and `claude-design-sync.7`.
+
 ## Setup (fresh clone)
 - Converter deps live in `.ds-sync/` (gitignored): stage the skill scripts, then
   `(cd .ds-sync && npm i esbuild ts-morph @types/react playwright && npx playwright install chromium)`.
