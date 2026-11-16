@@ -92,6 +92,59 @@ async function openRun(db: SupabaseClient, job: string, row: Record<string, unkn
 /** Distinct failures per run reported to app_errors; the rest stay in cron_runs. */
 export const REPORTED_FAILURES_PER_RUN = 5
 
+/** One recorded failure, as fail() stores it in cron_runs.errors. */
+export interface CronFailure {
+  where: string
+  message: string
+}
+
+/**
+ * The first `cap` distinct (where, message) pairs, in the order they were met.
+ * What a run reports to app_errors, and what the cron ledger (lib/cron-ledger.ts)
+ * shows for a failed run. Tolerates a stored `errors` value of the wrong shape,
+ * since the ledger reads rows written by older code.
+ */
+export function distinctFailures(errors: unknown, cap = REPORTED_FAILURES_PER_RUN): CronFailure[] {
+  if (!Array.isArray(errors)) return []
+  const seen = new Map<string, CronFailure>()
+  for (const e of errors) {
+    if (!e || typeof e !== 'object') continue
+    const where = String((e as Record<string, unknown>).where ?? '')
+    const message = String((e as Record<string, unknown>).message ?? '')
+    const key = `${where}\n${message}`
+    if (!seen.has(key)) seen.set(key, { where, message })
+  }
+  return [...seen.values()].slice(0, cap)
+}
+
+/** A cron_runs row as the ledger reads it. tenant_id and parent_id exist once migration cron_runs_tenant has run. */
+export interface CronRunRow {
+  id: string
+  job: string
+  started_at: string
+  finished_at: string | null
+  ok: boolean | null
+  result: Record<string, unknown> | null
+  errors: unknown
+  tenant_id?: string | null
+  parent_id?: string | null
+}
+
+export type CronRunState = 'ok' | 'failed' | 'running' | 'dead'
+
+/**
+ * Where one run stands at `now`. Finished: ok, or failed when ok is anything but
+ * true. Unfinished: running while younger than `limitMs`, dead after it. A run
+ * the platform kills at maxDuration never calls finish(), so dead is the only
+ * trace it leaves (the DocuSign crons in Sept 2026 were dead this way for weeks).
+ */
+export function cronRunState(row: Pick<CronRunRow, 'started_at' | 'finished_at' | 'ok'>, now: Date, limitMs: number): CronRunState {
+  if (row.finished_at) return row.ok === true ? 'ok' : 'failed'
+  const started = Date.parse(row.started_at)
+  if (Number.isNaN(started)) return 'dead'
+  return now.getTime() - started > limitMs ? 'dead' : 'running'
+}
+
 /**
  * S1 monitoring: a cron's recorded failures also go to app_errors (lib/app-errors
  * reportError), so they appear in the daily "Errors in the last day" email.
@@ -101,9 +154,9 @@ export const REPORTED_FAILURES_PER_RUN = 5
  * captureRequestError does, not the job's: app_errors is a platform table.
  * Imported lazily, because lib/app-errors imports this module. Never throws.
  */
-async function reportCronFailures(job: string, errors: { where: string; message: string }[]): Promise<void> {
+async function reportCronFailures(job: string, errors: CronFailure[]): Promise<void> {
   try {
-    const distinct = [...new Map(errors.map((e) => [`${e.where}\n${e.message}`, e])).values()].slice(0, REPORTED_FAILURES_PER_RUN)
+    const distinct = distinctFailures(errors)
     if (distinct.length === 0) return
     const { reportError } = await import('@/lib/app-errors')
     for (const e of distinct) {
@@ -115,7 +168,7 @@ async function reportCronFailures(job: string, errors: { where: string; message:
 }
 
 function ledgerHandle(db: SupabaseClient, job: string, id: string | null): CronRun {
-  const errors: { where: string; message: string }[] = []
+  const errors: CronFailure[] = []
   return {
     id,
     fail(where, err) {
