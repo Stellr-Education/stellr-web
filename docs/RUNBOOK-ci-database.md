@@ -22,12 +22,14 @@ and how, is in the [enforcement ledger](#enforcement-ledger) below.
 
 | Step | What happens |
 |---|---|
-| Scope | A PR that touches neither `supabase/` nor `ci.yml` cannot change the database, so the job ends green in seconds. Pushes to `dev`/`main` and manual runs always build. |
+| Scope | A PR that touches none of `supabase/`, `ci.yml` or `lib/database.generated.ts` cannot change the database, so the job ends green in seconds. Pushes to `dev`/`main` and manual runs always build. |
 | Start | `supabase db start` (CLI pinned in the job's `SUPABASE_CLI_VERSION`, which also pins the Postgres image). Postgres only, not the full stack. The CLI's own migration replay and seed are switched off for this step with `SUPABASE_DB_MIGRATIONS_ENABLED=false` and `SUPABASE_DB_SEED_ENABLED=false`, because `001`–`148` cannot rebuild the schema (see `docs/SCHEMA-BASELINE.md`). |
 | Baseline | `supabase/baseline.sql` is loaded the documented way (drop `entitlements` and `public`, load with `ON_ERROR_STOP=1`). Three kinds of line are removed first: `\restrict`/`\unrestrict`, and the `ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin` lines the `postgres` role cannot run. |
 | Migrations | Every timestamped file in `supabase/migrations/` (14-digit prefix), oldest first, each in its own transaction. The first failure names the file and stops the job. |
+| Database types | Right after the migrations: `supabase gen types typescript --local --schema public`, uploaded as the `database-types` artifact. |
 | pgTAP | `supabase test db supabase/tests/database`. |
 | Schema diff | Pushes to `dev`/`main` and manual runs only, never pull requests. Runs only when the `PROD_SCHEMA_DUMP` secret is set; otherwise it prints a notice. Publishes object names and counts, never SQL. Report-only. |
+| Types drift | Last step: the committed `lib/database.generated.ts` must equal the generated types. Fails with a diff when it does not. See "Regenerating database types". |
 
 Time: **not measured yet.** The estimate is 2–4 minutes, mostly image pulls
 (Postgres, plus the Auth and Storage images the CLI runs once to create their
@@ -95,6 +97,34 @@ npx supabase stop --no-backup
 
 Do not run `supabase start` or `supabase db reset` with the defaults: both
 replay `001`–`148`, which fails at `001`.
+
+## Regenerating database types
+
+`lib/database.generated.ts` is generated, never edited by hand. The `db` job
+builds it from the baseline plus every migration (`supabase gen types
+typescript --local --schema public`), uploads it as the `database-types`
+artifact, and its last step, "Database types drift check", fails if the
+committed file differs.
+
+When a PR adds or changes a migration, the drift check fails on that PR. To fix
+it, take the file CI generated (no local database is needed, and nothing is
+applied anywhere):
+
+```bash
+gh run list --branch <your-branch> --workflow CI --limit 1   # the run id
+gh run download <run-id> -n database-types -D lib            # writes lib/database.generated.ts
+git add lib/database.generated.ts && git commit -m "Regenerate database types"
+git push
+```
+
+With Docker you can also build the schema locally ("Running it locally" above)
+and run the same `supabase gen types` command into `lib/database.generated.ts`.
+Do not generate it from the dev or production project: the file must describe
+the repository's migrations, which is what CI checks.
+
+The hand-written `lib/database.types.ts` is unchanged and still used by the
+code; moving callers and the typed client onto the generated types is a later
+piece of work (deep-review-v2.8 adoption, batch 4).
 
 ## First run, then making it a required check
 
