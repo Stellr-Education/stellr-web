@@ -59,25 +59,33 @@ export function ProofStrip({
     }
   }, [open])
 
-  const onKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Escape') close()
-    else if (e.key === 'ArrowRight') step(1)
-    else if (e.key === 'ArrowLeft') step(-1)
-    else if (e.key === 'Tab') {
-      // Trap focus among the dialog's buttons.
-      const focusable = dialogRef.current?.querySelectorAll<HTMLElement>('button')
-      if (!focusable || focusable.length === 0) return
-      const first = focusable[0]
-      const last = focusable[focusable.length - 1]
-      if (e.shiftKey && document.activeElement === first) {
-        e.preventDefault()
-        last.focus()
-      } else if (!e.shiftKey && document.activeElement === last) {
-        e.preventDefault()
-        first.focus()
+  // Keys while focus is inside the lightbox. Attached to the dialog node, not
+  // as a JSX handler, because a dialog is not itself an interactive element.
+  useEffect(() => {
+    const node = dialogRef.current
+    if (!open || !node) return
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') close()
+      else if (e.key === 'ArrowRight') step(1)
+      else if (e.key === 'ArrowLeft') step(-1)
+      else if (e.key === 'Tab') {
+        // Trap focus among the dialog's buttons.
+        const focusable = node.querySelectorAll<HTMLElement>('button')
+        if (focusable.length === 0) return
+        const first = focusable[0]
+        const last = focusable[focusable.length - 1]
+        if (e.shiftKey && document.activeElement === first) {
+          e.preventDefault()
+          last.focus()
+        } else if (!e.shiftKey && document.activeElement === last) {
+          e.preventDefault()
+          first.focus()
+        }
       }
     }
-  }
+    node.addEventListener('keydown', onKeyDown)
+    return () => node.removeEventListener('keydown', onKeyDown)
+  }, [open, close, step])
 
   if (photos.length === 0) return null
   const active = photos[index]
@@ -130,12 +138,11 @@ export function ProofStrip({
           aria-modal="true"
           aria-label={active.alt}
           tabIndex={-1}
-          onKeyDown={onKeyDown}
-          onClick={(e) => {
-            if (e.target === e.currentTarget) close()
-          }}
           className="fixed inset-0 z-[100] flex flex-col items-center justify-center bg-midnight-deep/90 px-2 py-4 outline-hidden sm:p-4"
         >
+          {/* Backdrop: a click outside the photo closes the lightbox (the Close
+              button and Esc do the same for keyboard and screen readers). */}
+          <div aria-hidden="true" className="absolute inset-0" onClick={close} />
           <button
             type="button"
             onClick={close}
@@ -147,7 +154,7 @@ export function ProofStrip({
 
           {/* On a phone the arrows sit over the photo, so it can use the full
               width (beside it, they shrank photos to about 230px). */}
-          <div className="relative flex w-full max-w-5xl items-center gap-3" onClick={(e) => e.stopPropagation()}>
+          <div className="relative flex w-full max-w-5xl items-center gap-3">
             {photos.length > 1 && (
               <button
                 type="button"

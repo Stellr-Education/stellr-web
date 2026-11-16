@@ -118,7 +118,7 @@ export function WorkshopSpace(props: Props) {
           </div>
 
           {/* Tab bar */}
-          <nav role="tablist" className="mt-5 flex gap-6 overflow-x-auto border-b border-white/10 [scrollbar-width:none]">
+          <div role="tablist" aria-label="Workshop sections" className="mt-5 flex gap-6 overflow-x-auto border-b border-white/10 [scrollbar-width:none]">
             {TABS.map((t) => {
               const active = tab === t.key
               return (
@@ -135,7 +135,7 @@ export function WorkshopSpace(props: Props) {
                 </button>
               )
             })}
-          </nav>
+          </div>
         </div>
       </div>
 

@@ -73,6 +73,12 @@ function Editor(props: TemplateEditorProps) {
   const [pages, setPages] = useState<PageImage[]>([])
   const [selected, setSelected] = useState<number | null>(null)
   const [placing, setPlacing] = useState(false)
+  // One "place here" button per page while placing, so a keyboard user can
+  // place a field too (Enter puts it mid-page; arrow keys then move it).
+  const placeTargets = useRef<(HTMLButtonElement | null)[]>([])
+  useEffect(() => {
+    if (placing) placeTargets.current[0]?.focus({ preventScroll: true })
+  }, [placing])
   const [busy, setBusy] = useState(false)
   const [status, setStatus] = useState<{ text: string; error?: boolean; issues?: string[]; saved?: string; previewUrl?: string } | null>(null)
   const drag = useRef<{ index: number; startX: number; startY: number; fieldX: number; fieldY: number; scale: number; pageW: number; pageH: number } | null>(null)
@@ -128,13 +134,18 @@ function Editor(props: TemplateEditorProps) {
 
   const fieldMap = useMemo(() => ({ roles: roleOrder, fields }), [roleOrder, fields])
 
-  function onPageClick(e: React.MouseEvent<HTMLDivElement>, pageIndex: number) {
+  function onPageClick(e: React.MouseEvent<HTMLButtonElement>, pageIndex: number) {
     if (!placing) return
+    const page = pages[pageIndex]
     const rect = e.currentTarget.getBoundingClientRect()
-    const scale = rect.width / pages[pageIndex].width
+    const scale = rect.width / page.width
+    // A keyboard press has no pointer position (detail 0): place mid-page.
+    const keyboard = e.detail === 0
+    const x = keyboard ? page.width / 2 : (e.clientX - rect.left) / scale
+    const y = keyboard ? page.height / 2 : (e.clientY - rect.top) / scale
     const role = (fields.at(-1)?.role ?? roleOrder[0]?.role ?? 'adult') as Role
     const index = fields.length
-    setFields((list) => [...list, newField(index + 1, pageIndex + 1, (e.clientX - rect.left) / scale, (e.clientY - rect.top) / scale, role)])
+    setFields((list) => [...list, newField(index + 1, pageIndex + 1, x, y, role)])
     setSelected(index)
     setPlacing(false)
   }
@@ -257,10 +268,19 @@ function Editor(props: TemplateEditorProps) {
           {pdfPath && !pages.length && <p className="text-sm text-content-muted">Drawing the document…</p>}
           {pages.map((page, pi) => (
             <div key={pi} className="relative w-full max-w-[680px] border border-line bg-white shadow-xs"
-              style={{ aspectRatio: `${page.width} / ${page.height}`, cursor: placing ? 'crosshair' : 'default' }}
-              onClick={(e) => { if (e.target === e.currentTarget || (e.target as HTMLElement).tagName === 'IMG') onPageClick(e, pi) }}>
+              style={{ aspectRatio: `${page.width} / ${page.height}` }}>
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src={page.src} alt={`Page ${pi + 1}`} className="block h-full w-full select-none" draggable={false} />
+              {placing && (
+                <button
+                  ref={(el) => { placeTargets.current[pi] = el }}
+                  type="button"
+                  aria-label={`Place the field on page ${pi + 1}. Enter puts it mid-page; Escape cancels.`}
+                  className="absolute inset-0 cursor-crosshair focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary-deep"
+                  onClick={(e) => onPageClick(e, pi)}
+                  onKeyDown={(e) => { if (e.key === 'Escape') setPlacing(false) }}
+                />
+              )}
               {fields.map((fl, i) => {
                 if (fl.page !== pi + 1) return null
                 const [w, h] = sizeOf(fl)
