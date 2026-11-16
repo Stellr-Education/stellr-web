@@ -226,6 +226,12 @@ const ROUTES: Record<PerTenantCron, () => Promise<Route>> = {
   'group-invoice-sync': () => import('@/app/api/cron/group-invoice-sync/route'),
 }
 
+/** The route answered 200; otherwise the failure names what it answered. */
+async function expectOk(res: Response) {
+  const body = res.status === 200 ? '' : await res.text()
+  expect(res.status, `answered ${res.status}: ${body.slice(0, 500)}`).toBe(200)
+}
+
 /** Calls the route as Vercel's scheduler does (guardCron is stubbed open). */
 async function call(job: PerTenantCron): Promise<Response> {
   const { GET } = await ROUTES[job]()
@@ -287,7 +293,7 @@ const owner = (stellrId: string, canaryId: string) => (id: string) => (id === st
 describe('surveys', () => {
   it("processes each tenant's open survey in its own turn", async () => {
     const res = await call('surveys')
-    expect(res.status).toBe(200)
+    await expectOk(res)
     const parent = await parentRun('surveys')
     expectParent('surveys', parent, ['created', 'rescheduled', 'flagged', 'opened', 'closed', 'invited', 'reminded', 'deferred', 'failed', 'quotaHit', 'distributions', ...LEDGER_KEYS])
     await expectTwoTurns('surveys', parent)
@@ -303,7 +309,7 @@ describe('surveys', () => {
 describe('team-profiles', () => {
   it("creates each tenant's profile in its own turn, sends Stellr's and holds the canary's", async () => {
     const res = await call('team-profiles')
-    expect(res.status).toBe(200)
+    await expectOk(res)
     const parent = await parentRun('team-profiles')
     expectParent('team-profiles', parent, ['sent', 'failed', 'waiting', 'deferred', ...LEDGER_KEYS])
     await expectTwoTurns('team-profiles', parent)
@@ -329,7 +335,7 @@ describe('survey-retention', () => {
   it("purges each tenant's due subject in its own turn", async () => {
     vi.stubEnv('SURVEY_RETENTION_APPLY', 'true')
     const res = await call('survey-retention')
-    expect(res.status).toBe(200)
+    await expectOk(res)
     const parent = await parentRun('survey-retention')
     expectParent('survey-retention', parent, ['apply', 'due', 'dueList', 'waiting', 'inactiveWithoutDate', 'emailsHeld', 'deleted', ...LEDGER_KEYS])
     await expectTwoTurns('survey-retention', parent)
@@ -348,7 +354,7 @@ describe('event-emails', () => {
   it("sends and skips each tenant's scheduled emails in its own turn", async () => {
     vi.stubEnv('TENANT_EVENT_MAIL_ENABLED', 'true')
     const res = await call('event-emails')
-    expect(res.status).toBe(200)
+    await expectOk(res)
     const parent = await parentRun('event-emails')
     expectParent('event-emails', parent, ['due', 'sent', 'deferred', 'resumed', 'catchUpEmailed', 'catchUpDeferred', 'signingEmailsSent', 'signingEmailsWaiting', ...LEDGER_KEYS])
     await expectTwoTurns('event-emails', parent)
@@ -369,7 +375,7 @@ describe('docusign-reminders', () => {
   it("claims and chases each tenant's envelope in its own turn", async () => {
     vi.stubEnv('TENANT_EVENT_MAIL_ENABLED', 'true')
     const res = await call('docusign-reminders')
-    expect(res.status).toBe(200)
+    await expectOk(res)
     const parent = await parentRun('docusign-reminders')
     expectParent('docusign-reminders', parent, ['processed', 'eligible', 'skippedBounced', 'deferred', 'outbox', ...LEDGER_KEYS])
     await expectTwoTurns('docusign-reminders', parent)
@@ -384,7 +390,7 @@ describe('docusign-reminders', () => {
 describe('group-invoice-sync', () => {
   it("runs Stellr alone, and records the canary tenant's due row as held without touching it", async () => {
     const res = await call('group-invoice-sync')
-    expect(res.status).toBe(200)
+    await expectOk(res)
     const parent = await parentRun('group-invoice-sync')
     expectParent('group-invoice-sync', parent, ['updated', 'share_settled', 'share_not_due', 'share_refunds', 'share_refunds_failed', 'tenantHeld'])
     expect((parent.result as Row).tenantHeld).toBe(1)

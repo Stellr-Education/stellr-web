@@ -225,8 +225,15 @@ export async function writeCronFixtures(sql: postgres.Sql, plan: readonly Fixtur
     const conflict = row.tag === null ? ' ON CONFLICT DO NOTHING' : ''
     const returning = row.tag === null ? '' : ' RETURNING tenant_id::text AS tenant_id'
     // Fixed identifiers from this file; every value goes as a parameter.
+    // Each value goes as text and is cast to its column's type in SQL: postgres.js
+    // would otherwise serialise it by the column type, encoding JSON text twice.
+    const typed = await sql<{ name: string; type: string }[]>`
+      SELECT a.attname AS name, format_type(a.atttypid, a.atttypmod) AS type FROM pg_attribute a
+      WHERE a.attrelid = ${`public.${row.table}`}::regclass AND a.attnum > 0 AND NOT a.attisdropped`
+    const types = new Map(typed.map((t) => [t.name, t.type]))
     const text =
-      `INSERT INTO public.${row.table} (${cols.join(', ')}) VALUES (${cols.map((_, i) => `$${i + 1}`).join(', ')})${conflict}${returning}`
+      `INSERT INTO public.${row.table} (${cols.join(', ')}) ` +
+      `VALUES (${cols.map((c, i) => `CAST($${i + 1}::text AS ${types.get(c) ?? 'text'})`).join(', ')})${conflict}${returning}`
     let out: { tenant_id?: string }[]
     try {
       out = await sql.unsafe(text, cols.map((c) => (row.values[c] === null ? null : String(row.values[c]))) as never[])
@@ -245,7 +252,7 @@ export async function removeCronFixtures(sql: postgres.Sql, plan: readonly Fixtu
   const participants = plan.filter((r) => r.table === 'participants').map((r) => String(r.values.id))
   for (const table of CRON_WRITTEN) {
     await sql
-      .unsafe(`DELETE FROM public.${table} WHERE participant_id::text IN (SELECT jsonb_array_elements_text($1::jsonb))`, [JSON.stringify(participants)] as never[])
+      .unsafe(`DELETE FROM public.${table} WHERE participant_id::text IN (SELECT jsonb_array_elements_text($1::text::jsonb))`, [JSON.stringify(participants)] as never[])
       .catch(() => {})
   }
   // Children before parents: parent_id cascades, and tenant_id would otherwise hold the canary tenant.

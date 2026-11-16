@@ -172,9 +172,15 @@ class Params {
   list(values: unknown[], type: string): string {
     return `(SELECT x::${type} FROM jsonb_array_elements_text(${this.raw(JSON.stringify(values.map((v) => (v === null ? null : String(v)))))}::jsonb) AS t(x))`
   }
+  /**
+   * A text parameter. Typed text in the SQL, because postgres.js serialises a
+   * parameter by the type the server describes for it: a bare `$1::boolean`
+   * would send the string 'true' as false, and `$1::jsonb` would encode the
+   * JSON text a second time.
+   */
   raw(value: string | null): string {
     this.values.push(value)
-    return `$${this.values.length}`
+    return `$${this.values.length}::text`
   }
 }
 
