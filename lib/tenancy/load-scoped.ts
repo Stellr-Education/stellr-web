@@ -520,6 +520,27 @@ export async function refuseUnlessStellrEvent(db: SupabaseClient, slug: string, 
   return Response.json({ error: 'Not found' }, { status: 404 })
 }
 
+/**
+ * The Stellr-only option for an event route (REQ-EVT, tracker s5-programme.28): the one call a
+ * route makes, right after requireEventRoute or requireEventCrew has let the caller in, when
+ * what it does runs on Stellr's own accounts and records. It asks who is calling
+ * (refuseOutsideStellr: a tenant's staff get its 503) and then whose event it is
+ * (refuseUnlessStellrEvent: another tenant's event is a 404 for everyone, a failed owner read a
+ * retryable 503), in that order, so the reads and answers are the ones the routes made by hand.
+ * Stellr's own scope makes the one owner read; another tenant's scope makes none. Null for
+ * Stellr's caller on Stellr's event. Ask it before any read about a person, any email and any
+ * envelope: test/stellr-only-event-guard.test.ts holds the routes under events/[slug] to that.
+ *
+ * It lives here, beside the two checks it joins, and not inside lib/authz's requireEventRoute:
+ * route tests replace lib/authz wholesale, so a check made inside it would vanish under those
+ * mocks, and the routes' own 404 and 503 tests would stop proving anything.
+ */
+export async function stellrOnlyEvent(scope: ScopeContext, db: SupabaseClient, slug: string, label: string): Promise<Response | null> {
+  const refused = refuseOutsideStellr(scope)
+  if (refused) return refused
+  return refuseUnlessStellrEvent(db, slug, label)
+}
+
 export type LoadedRecord<T> = { ok: true; row: T } | { ok: false; response: Response }
 
 /**

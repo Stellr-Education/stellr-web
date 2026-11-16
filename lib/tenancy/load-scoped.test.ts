@@ -14,6 +14,7 @@ import {
   planScope,
   refuseUnlessStellrEvent,
   registryKey,
+  stellrOnlyEvent,
   scopedQuery,
   stripScopeEmbed,
   SCOPE_EMBED_ALIAS,
@@ -22,7 +23,7 @@ import {
   type ScopedFilterBuilder,
   type ShadowMismatch,
 } from './load-scoped'
-import { makeScope, stellrScope, isStellrScope, isEventScoped, type ScopeContext } from './scope-context'
+import { makeScope, stellrScope, isStellrScope, isEventScoped, tenantWideScope, type ScopeContext } from './scope-context'
 import { STELLR_TENANT_ID } from './constants'
 import { TABLE_REGISTRY } from './registry'
 import { TenantContextError } from './tenant-id'
@@ -969,5 +970,43 @@ describe('refuseUnlessStellrEvent', () => {
     } finally {
       err.mockRestore()
     }
+  })
+
+  // REQ-EVT: the Stellr-only option joins refuseOutsideStellr and this check, in that order.
+  describe('stellrOnlyEvent', () => {
+    it("is null for Stellr's scope on Stellr's event, after the one owner read", async () => {
+      for (const data of [{ tenant_id: STELLR_TENANT_ID }, { tenant_id: null }, null]) {
+        const { db, reads } = eventsDb(async () => ({ data, error: null }))
+        expect(await stellrOnlyEvent(tenantWideScope(STELLR_TENANT_ID, 'tenant_admin'), db, 'nevada', 'test')).toBeNull()
+        expect(reads).toEqual([['events', 'slug', 'nevada']])
+      }
+    })
+
+    it("answers another tenant's event as a missing one, for Stellr's own admin", async () => {
+      const { db } = eventsDb(async () => ({ data: { tenant_id: OTHER }, error: null }))
+      const res = await stellrOnlyEvent(tenantWideScope(STELLR_TENANT_ID, 'tenant_admin'), db, 'nevada', 'test')
+      expect(res?.status).toBe(404)
+      expect(await res?.json()).toEqual({ error: 'Not found' })
+    })
+
+    it("refuses a tenant's staff with refuseOutsideStellr's 503 before any owner read", async () => {
+      const { db, reads } = eventsDb(async () => ({ data: { tenant_id: OTHER }, error: null }))
+      const res = await stellrOnlyEvent(tenantWideScope(OTHER, 'tenant_admin'), db, 'nevada', 'test')
+      expect(res?.status).toBe(503)
+      expect(await res?.json()).toEqual({ error: "This isn't available for your organisation yet." })
+      expect(reads).toEqual([])
+    })
+
+    it('fails closed with a retryable 503 when the owner read fails', async () => {
+      const err = vi.spyOn(console, 'error').mockImplementation(() => {})
+      try {
+        const res = await stellrOnlyEvent(tenantWideScope(STELLR_TENANT_ID, 'tenant_admin'), eventsDb(async () => ({ data: null, error: { message: 'down' } })).db, 'nevada', 'test')
+        expect(res?.status).toBe(503)
+        expect(res?.headers.get('Retry-After')).toBe('5')
+        expect(res?.headers.get('Cache-Control')).toBe('no-store')
+      } finally {
+        err.mockRestore()
+      }
+    })
   })
 })

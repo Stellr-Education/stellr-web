@@ -3,7 +3,7 @@ import { stripeClient } from '@/lib/stripe'
 import { GUARANTEE_DAYS, daysSincePayment, guaranteeRefundOptions, type RefundOptions } from './policy'
 import { stripeRefundState, isFullyRefunded, remainingCents } from './stripe-state'
 import { resolveRefundBasis } from './payment-basis'
-import { loadRecord, refuseUnlessStellrEvent } from '@/lib/tenancy/load-scoped'
+import { loadRecord, stellrOnlyEvent } from '@/lib/tenancy/load-scoped'
 import { isStellrScope, type ScopeContext } from '@/lib/tenancy/scope-context'
 
 export interface RefundPreview {
@@ -44,7 +44,7 @@ export async function previewRefund(participantId: string, scope?: ScopeContext)
 /**
  * previewRefund for the admin delete dialog, which reads Stellr's Stripe account. After the
  * participant load, the event their place is on must be Stellr's: another tenant's event gets
- * refuseUnlessStellrEvent's 404, and a failed read of the event's owner its retryable 503, both
+ * stellrOnlyEvent's 404, and a failed read of the event's owner its retryable 503, both
  * before anything reads the payment. A participant out of reach, or whose registration cannot
  * be read, is the empty preview, as in previewRefund. Another tenant's own scope is empty
  * before this check, so only Stellr's scope makes the two extra reads.
@@ -60,7 +60,7 @@ export async function previewRefundOnStellrEvent(participantId: string, scope: S
     label,
   })
   if (!reg.ok) return EMPTY_REFUND_PREVIEW
-  const foreign = await refuseUnlessStellrEvent(db, reg.row.event_slug, label)
+  const foreign = await stellrOnlyEvent(scope, db, reg.row.event_slug, label)
   if (foreign) return foreign
   return previewFor(db, participantId, p)
 }

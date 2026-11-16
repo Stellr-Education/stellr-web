@@ -14,6 +14,7 @@ const OTHER_TENANT = '00000000-0000-4000-8000-0000000000aa'
 const h = vi.hoisted(() => ({
   stellrAdmin: true,
   inserts: [] as { table: string; row: Record<string, unknown> }[],
+  updates: [] as { table: string; row: Record<string, unknown> }[],
   eventReads: [] as unknown[],
   eventOwner: null as string | null,
   eventError: null as { message: string } | null,
@@ -26,6 +27,12 @@ function from(table: string) {
     h.inserts.push({ table, row })
     return q
   }
+  q.update = (row: Record<string, unknown>) => {
+    h.updates.push({ table, row })
+    return q
+  }
+  // The update's awaited chain: .update(patch).eq('id', id).
+  q.then = (resolve: (v: unknown) => unknown) => Promise.resolve({ data: null, error: null }).then(resolve)
   q.select = () => q
   q.eq = (_c: string, v: unknown) => {
     if (table === 'events') h.eventReads.push(v)
@@ -46,7 +53,7 @@ vi.mock('@/lib/supabase', () => ({ supabaseServer: () => ({ from }) }))
 vi.mock('@/lib/community', () => ({ getSignedInMember: async () => ({ id: 'member-admin' }) }))
 vi.mock('@/lib/container-sync', () => ({ ensureTrainingContainer: h.ensureTrainingContainer }))
 
-import { POST } from './route'
+import { PATCH, POST } from './route'
 
 const post = (body: unknown) =>
   POST(new Request('http://localhost/api/admin/community/training/modules', { method: 'POST', body: JSON.stringify(body) }))
@@ -55,6 +62,7 @@ const moduleInsert = () => h.inserts.find((i) => i.table === 'training_modules')
 beforeEach(() => {
   h.stellrAdmin = true
   h.inserts = []
+  h.updates = []
   h.eventReads = []
   h.eventOwner = null
   h.eventError = null
@@ -115,5 +123,67 @@ describe('POST /api/admin/community/training/modules: explicit tenant_id (S5 C20
     expect((await post({ title: 'x', eventRef: 'stellr-comp' })).status).toBe(403)
     expect(h.eventReads).toEqual([])
     expect(h.inserts).toEqual([])
+  })
+})
+
+// backlog-batch2.12 follow-up: PATCH could re-tie a module to another tenant's event, which
+// POST refuses. It now refuses it the same way, before the write.
+describe('PATCH /api/admin/community/training/modules: event_ref (S5 C20a follow-up)', () => {
+  const patch = (body: unknown) =>
+    PATCH(new Request('http://localhost/api/admin/community/training/modules', { method: 'PATCH', body: JSON.stringify(body) }))
+  const moduleUpdate = () => h.updates.find((u) => u.table === 'training_modules')
+
+  it('reads no event for a patch that names none, and answers as before', async () => {
+    const res = await patch({ id: 'module-1', isPublished: true })
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({ ok: true })
+    expect(h.eventReads).toEqual([])
+    expect(moduleUpdate()?.row).toMatchObject({ is_published: true })
+  })
+
+  it("re-ties a module to Stellr's event after one events read", async () => {
+    h.eventOwner = STELLR_TENANT_ID
+    const res = await patch({ id: 'module-1', eventRef: 'stellr-comp' })
+    expect(res.status).toBe(200)
+    expect(h.eventReads).toEqual(['stellr-comp'])
+    expect(moduleUpdate()?.row).toMatchObject({ event_ref: 'stellr-comp' })
+  })
+
+  it("treats an event the mirror does not know as Stellr's", async () => {
+    const res = await patch({ id: 'module-1', eventRef: 'not-mirrored' })
+    expect(res.status).toBe(200)
+    expect(moduleUpdate()?.row).toMatchObject({ event_ref: 'not-mirrored' })
+  })
+
+  it("refuses another tenant's event with POST's 404, before any write", async () => {
+    h.eventOwner = OTHER_TENANT
+    const res = await patch({ id: 'module-1', eventRef: 'tenant-comp' })
+    expect(res.status).toBe(404)
+    expect(await res.json()).toEqual({ error: 'Not found' })
+    expect(h.updates).toEqual([])
+  })
+
+  it('answers a failed owner read with a retryable 503, and writes nothing', async () => {
+    h.eventError = { message: 'boom' }
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const res = await patch({ id: 'module-1', eventRef: 'stellr-comp' })
+    err.mockRestore()
+    expect(res.status).toBe(503)
+    expect(res.headers.get('Retry-After')).toBe('5')
+    expect(h.updates).toEqual([])
+  })
+
+  it('clears the event without reading one', async () => {
+    const res = await patch({ id: 'module-1', eventRef: null })
+    expect(res.status).toBe(200)
+    expect(h.eventReads).toEqual([])
+    expect(moduleUpdate()?.row).toMatchObject({ event_ref: null })
+  })
+
+  it('refuses a non-admin before reading the event', async () => {
+    h.stellrAdmin = false
+    expect((await patch({ id: 'module-1', eventRef: 'tenant-comp' })).status).toBe(403)
+    expect(h.eventReads).toEqual([])
+    expect(h.updates).toEqual([])
   })
 })
