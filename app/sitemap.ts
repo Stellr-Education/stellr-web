@@ -1,5 +1,6 @@
 import type { MetadataRoute } from 'next'
-import { getAllEvents, getAllCampaigns } from '@/lib/events/repo'
+import { getAllEvents } from '@/lib/events/repo'
+import { getTeacherStories } from '@/lib/teacher-stories'
 import { getAllNewsPosts } from '@/lib/sanity'
 import { INDEXABLE_LANDING_PAGE_SLUGS } from '@/content/lp'
 
@@ -21,6 +22,10 @@ const staticPaths: { path: string; changeFrequency: MetadataRoute.Sitemap[number
   { path: '/competitions', changeFrequency: 'monthly', priority: 0.9 },
   { path: '/competitions/mission', changeFrequency: 'monthly', priority: 0.8 },
   { path: '/curriculum', changeFrequency: 'weekly', priority: 0.8 },
+  { path: '/classroom-qualifier', changeFrequency: 'weekly', priority: 0.9 },
+  { path: '/classroom-qualifier/2026-27', changeFrequency: 'weekly', priority: 0.8 },
+  { path: '/classroom-qualifier/spring-2027', changeFrequency: 'weekly', priority: 0.8 },
+  { path: '/classroom-qualifier/resources', changeFrequency: 'weekly', priority: 0.8 },
   { path: '/academy', changeFrequency: 'monthly', priority: 0.8 },
   { path: '/membership', changeFrequency: 'monthly', priority: 0.8 },
 
@@ -70,6 +75,8 @@ const staticPaths: { path: string; changeFrequency: MetadataRoute.Sitemap[number
 export const STATIC_ROUTE_EXCLUSIONS = [
   '/store/cart', '/store/success', '/sign', '/sign/copy', '/privacy/request', '/privacy/request/confirm',
   '/check-in',
+  // 404s until a teacher story is cleared in Sanity; the stories themselves are listed below.
+  '/classroom-qualifier/stories',
 ]
 
 export const STATIC_SITEMAP_PATHS = staticPaths.map((r) => r.path)
@@ -125,9 +132,9 @@ function editedAt(doc: { _updatedAt?: string }): Date | undefined {
 }
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
-  const [events, campaigns, newsPosts] = await Promise.all([
+  const [events, stories, newsPosts] = await Promise.all([
     getAllEvents().catch(() => null),
-    getAllCampaigns().catch(() => null),
+    getTeacherStories(),
     getAllNewsPosts().catch(() => null),
   ])
 
@@ -142,16 +149,14 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     })
   )
 
-  // Campaigns are also served at /events/[slug] (the detail page renders the
-  // campaign view for activityType === 'campaign').
-  const campaignRoutes: MetadataRoute.Sitemap = (campaigns ?? []).map(
-    (c: { slug: { current: string }; _updatedAt?: string }) => ({
-      url: `${BASE_URL}/events/${c.slug.current}`,
-      lastModified: editedAt(c),
-      changeFrequency: 'weekly' as const,
-      priority: 0.7,
-    })
-  )
+  // Classroom Qualifier windows replaced the per-theme campaign pages, which
+  // now 301 to them (next.config.mjs), so no /events/<campaign> URL is listed.
+  // Teacher stories appear once cleared in Sanity.
+  const storyRoutes: MetadataRoute.Sitemap = stories.map((s) => ({
+    url: `${BASE_URL}/classroom-qualifier/stories/${s.slug}`,
+    changeFrequency: 'monthly' as const,
+    priority: 0.6,
+  }))
 
   const newsRoutes: MetadataRoute.Sitemap = (newsPosts ?? []).map(
     (p: { slug: { current: string }; _updatedAt?: string }) => ({
@@ -162,5 +167,5 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     })
   )
 
-  return [...staticRoutes, ...landingPageRoutes, ...storeProductRoutes, ...eventRoutes, ...campaignRoutes, ...newsRoutes]
+  return [...staticRoutes, ...landingPageRoutes, ...storeProductRoutes, ...eventRoutes, ...storyRoutes, ...newsRoutes]
 }

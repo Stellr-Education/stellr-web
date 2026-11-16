@@ -12,12 +12,14 @@ function Arrow({ size = 16 }: { size?: number }) {
 }
 
 /* ── StepCard ─────────────────────────────────────────────────────────────── */
-export function StepCard({ n, title, body }: { n: number; title: string; body: string }) {
+/** `action` (optional) sits under the body: a download button on a step, say. */
+export function StepCard({ n, title, body, action }: { n: number; title: string; body: string; action?: React.ReactNode }) {
   return (
     <div className="bg-white border border-line rounded-ds-card p-5">
       <div className="w-9 h-9 rounded-lg bg-primary-soft text-primary font-bold flex items-center justify-center mb-3">{n}</div>
       <p className="font-bold text-sm text-ink mb-1">{title}</p>
       <p className="text-sm text-content-secondary leading-relaxed">{body}</p>
+      {action && <div className="mt-3">{action}</div>}
     </div>
   )
 }

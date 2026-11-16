@@ -3,7 +3,7 @@ import { z } from 'zod'
 import { CQ_LP_AUDIENCE, CQ_PROGRAM_INTEREST, HS, LEAD_SOURCE_LIFECYCLE } from '@/lib/hubspot-fields'
 import { captureLead, logLine, readHubspotCookie } from '@/lib/hubspot'
 import { HOUR_MS, rateLimitGuard } from '@/lib/rate-limit'
-import { getCurriculumLandingPage } from '@/content/lp'
+import { getCqFormSource } from '@/content/cq/form-sources'
 import { checkSpamSignals } from '@/lib/spam-guard'
 import { cqLeadFields as f } from './schema'
 
@@ -58,7 +58,7 @@ export async function POST(req: Request) {
     const data = parsed.data
 
     // Only slugs we publish, so lp_source_page stays a clean reporting key.
-    const config = getCurriculumLandingPage(data.pageSlug)
+    const config = getCqFormSource(data.pageSlug)
     if (!config) {
       return NextResponse.json({ error: 'Unknown page' }, { status: 400 })
     }
@@ -98,12 +98,12 @@ export async function POST(req: Request) {
       source: 'classroom_qualifier',
       properties,
       lifecycleStage: LEAD_SOURCE_LIFECYCLE.classroom_qualifier,
-      activity: `Classroom Qualifier curriculum request — /lp/${config.slug} (${detail}).`,
+      activity: `Classroom Qualifier curriculum request — ${config.path} (${detail}).`,
       logEntry: logLine('classroom_qualifier', detail),
       context: {
         hutk: readHubspotCookie(req),
-        pageUri: `${SITE_URL}/lp/${config.slug}`,
-        pageName: config.seo.title,
+        pageUri: `${SITE_URL}${config.path}`,
+        pageName: config.pageName,
       },
     })
 
