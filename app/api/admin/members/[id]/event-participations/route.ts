@@ -1,6 +1,7 @@
 import { auth } from '@clerk/nextjs/server'
 import { hasCapability } from '@/lib/authz'
 import { NextResponse } from 'next/server'
+import { STELLR_TENANT_ID } from '@/lib/tenancy/constants'
 import { supabaseServer } from '@/lib/supabase'
 import { applyGrantTrigger } from '@/lib/membership-grants'
 import { withAudit } from '@/lib/audit/route'
@@ -36,6 +37,9 @@ async function createParticipation(req: Request, { params }: Ctx) {
     .from('event_participations')
     .insert({
       member_id: memberId,
+      // S5 A8b: a record with no event, so the trigger can't derive a tenant (enforce
+      // would refuse it). Event history is Stellr's (decision B8), as is this audit's chain.
+      tenant_id: STELLR_TENANT_ID,
       event_year: event_year || null,
       event_location: event_location || null,
       team_name: team_name || null,

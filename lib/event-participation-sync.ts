@@ -80,6 +80,10 @@ async function insertParticipationRow(
   const { error } = await db.from('event_participations').insert({
     member_id: p.memberId,
     event_slug: p.eventSlug,
+    // S5 A8b: event participation is Stellr's alone (decision B8; the callers,
+    // lib/community/event-hooks and recordEventParticipationForRegistration, skip
+    // another tenant's registration), so the row is Stellr's whatever the mirror holds.
+    tenant_id: STELLR_TENANT_ID,
     event_title: p.eventTitle || null,
     // No year given: the school year registration falls in, which rolls over in
     // August (schoolYearFor). The calendar year filed an autumn event under the
