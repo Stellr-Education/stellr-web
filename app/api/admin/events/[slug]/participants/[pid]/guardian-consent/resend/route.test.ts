@@ -17,7 +17,11 @@ const CONSENT = '55555555-5555-4555-8555-555555555555'
 const h = vi.hoisted(() => ({
   crew: { ok: true } as Record<string, unknown>,
   participant: null as unknown,
-  envelope: { envelope_id: 'native-x', provider: 'native' } as unknown,
+  envelope: { envelope_id: 'native-x', provider: 'native', status: 'sent' } as unknown,
+  mailOn: true,
+  sender: { from: 'Organiser via Stellr <events@example.test>', replyTo: 'organiser@example.test' } as unknown,
+  // Signers after the reminder: by default the guardian, stamped by this send.
+  recipients: vi.fn(async (..._a: unknown[]): Promise<unknown[]> => [{ status: 'sent', invite_sent_at: new Date().toISOString() }]),
   loadCalls: [] as Array<{ table: string; id: string }>,
   consent: vi.fn(async (..._a: unknown[]): Promise<unknown> => null),
   invite: vi.fn(async (..._a: unknown[]): Promise<unknown> => ({ ok: true, result: { sent: 1, deferred: 0, failed: 0 } })),
@@ -45,6 +49,12 @@ vi.mock('@/lib/tenancy/load-scoped', () => ({
 }))
 vi.mock('@/lib/rate-limit-async', () => ({ limit: h.limit }))
 vi.mock('@/lib/esign/operations', () => ({ remindEnvelopeRow: h.remind }))
+vi.mock('@/lib/esign/native/flow', () => ({ loadRecipients: h.recipients }))
+vi.mock('@/lib/event-emails/tenant-mail', async (orig) => ({
+  ...(await orig<typeof import('@/lib/event-emails/tenant-mail')>()),
+  tenantEventMailEnabled: () => h.mailOn,
+  loadTenantSender: async () => h.sender,
+}))
 vi.mock('@/lib/event-emails/tenant-signing', () => ({
   sendTenantSigningInvitation: h.invite,
   TENANT_SIGNING_FAILED: 'signing failed text',
@@ -72,7 +82,9 @@ beforeEach(() => {
   h.loadCalls = []
   h.crew = { ok: true, userId: 'user_crew', tenantId: TENANT, scope: { tenantId: TENANT }, isAdmin: false }
   h.participant = { id: PID, registration_id: REG, registrations: { event_slug: 'ev' } }
-  h.envelope = { envelope_id: 'native-x', provider: 'native' }
+  h.envelope = { envelope_id: 'native-x', provider: 'native', status: 'sent' }
+  h.mailOn = true
+  h.sender = { from: 'Organiser via Stellr <events@example.test>', replyTo: 'organiser@example.test' }
   h.consent.mockResolvedValue(pendingRow)
 })
 
@@ -154,6 +166,35 @@ describe('guardian consent resend', () => {
     expect(body).toEqual({ ok: true, outcome: 'reminded' })
     expect(h.loadCalls).toContainEqual({ table: 'agreements', id: AGR })
     expect(h.remind).toHaveBeenCalledWith({ tag: 'db' }, { envelope_id: 'native-x', provider: 'native' })
+    expect(h.recipients).toHaveBeenCalledWith({ tag: 'db' }, AGR)
+  })
+
+  it('a reminder the outbox holds answers deferred, never reminded', async () => {
+    h.invite.mockResolvedValue({ ok: true, result: { sent: 0, deferred: 0, failed: 0 } })
+    // Held for the day's allowance: the outbox clears the stamp, or leaves the old one.
+    for (const stamp of [null, '2026-11-01T00:00:00.000Z']) {
+      h.recipients.mockResolvedValueOnce([{ status: 'sent', invite_sent_at: stamp }])
+      const { status, body } = await call()
+      expect(status).toBe(200)
+      expect(body).toEqual({ ok: true, outcome: 'deferred', reminder: true })
+    }
+  })
+
+  it.each([
+    ['the form is no longer out', () => { h.envelope = { envelope_id: 'native-x', provider: 'native', status: 'completed' } }, 409, 'not_out_for_signature'],
+    ["the organiser's mail is off", () => { h.mailOn = false }, 409, 'tenant_mail_off'],
+    ['the organiser has no usable sender', () => { h.sender = null }, 409, 'no_sender'],
+    ['the envelope is not found', () => { h.envelope = null }, 404, 'no_pending_consent'],
+    ["the consent claims Stellr's tenant", () => { h.consent.mockResolvedValue({ ...pendingRow, tenant_id: null }) }, 404, 'no_pending_consent'],
+  ])('refused before any cap is spent when %s', async (_why, arrange, status, code) => {
+    arrange()
+    const res = await call()
+    expect(res.status).toBe(status)
+    expect(res.body.code).toBe(code)
+    expect(h.limit).not.toHaveBeenCalled()
+    expect(h.invite).not.toHaveBeenCalled()
+    expect(h.remind).not.toHaveBeenCalled()
+    expect(h.audits).toEqual([])
   })
 
   it('a reminder with nobody left to chase is not out for signing', async () => {

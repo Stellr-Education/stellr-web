@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, within, fireEvent, waitFor } from '@testing-library/react'
 import { RecordLinksProvider } from '@/components/admin/RecordLinks'
 import EventRoster from './EventRoster'
+import { ResendGuardianConsentButton } from './ResendGuardianConsentButton'
 import type { RosterOptOut } from '@/lib/roster-optouts'
 import type { EventRosterData, RosterGroup, RosterParticipant } from '@/lib/event-admin'
 
@@ -202,6 +203,26 @@ describe('EventRoster: pending guardian consent marker (T-23)', () => {
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit]
     expect(url).toMatch(/\/participants\/p-1\/guardian-consent\/resend$/)
     expect(init).toEqual({ method: 'POST' })
+    vi.unstubAllGlobals()
+  })
+
+  it('the URL is built from the slug and id, escaped', async () => {
+    const fetchMock = vi.fn(async (..._a: unknown[]) => new Response(JSON.stringify({ ok: true, outcome: 'sent' }), { status: 200 }))
+    vi.stubGlobal('fetch', fetchMock)
+    render(<ResendGuardianConsentButton eventSlug="a b/c?d" participantId="p-1" />)
+    fireEvent.click(screen.getByRole('button', { name: 'Resend consent form' }))
+    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('Consent form sent to the guardian.'))
+    const [url] = fetchMock.mock.calls[0] as [string]
+    expect(url).toBe('/api/admin/events/a%20b%2Fc%3Fd/participants/p-1/guardian-consent/resend')
+    vi.unstubAllGlobals()
+  })
+
+  it('a reminder the outbox holds says it is queued, not sent', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ ok: true, outcome: 'deferred', reminder: true }), { status: 200 })))
+    render(<ResendGuardianConsentButton eventSlug="demo" participantId="p-1" />)
+    fireEvent.click(screen.getByRole('button', { name: 'Resend consent form' }))
+    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent("Reminder queued. It goes to the guardian once today's sending allowance frees up."))
+    expect(screen.getByRole('status')).not.toHaveTextContent('Reminder sent')
     vi.unstubAllGlobals()
   })
 

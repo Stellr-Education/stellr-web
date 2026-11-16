@@ -7,8 +7,15 @@ import { loadRecord } from '@/lib/tenancy/load-scoped'
 import { HOUR_MS } from '@/lib/rate-limit'
 import { limit as limitRequests } from '@/lib/rate-limit-async'
 import { remindEnvelopeRow } from '@/lib/esign/operations'
+import { loadRecipients } from '@/lib/esign/native/flow'
 import { sendTenantSigningInvitation, TENANT_SIGNING_FAILED } from '@/lib/event-emails/tenant-signing'
-import { TENANT_SENDER_REQUIRED, TenantSenderRequiredError } from '@/lib/event-emails/tenant-mail'
+import {
+  isTenantRow,
+  loadTenantSender,
+  tenantEventMailEnabled,
+  TENANT_SENDER_REQUIRED,
+  TenantSenderRequiredError,
+} from '@/lib/event-emails/tenant-mail'
 import {
   GUARDIAN_INVITES_PER_TENANT_PER_HOUR,
   pendingConsentForParticipant,
@@ -34,6 +41,13 @@ import {
 // Capped per consent and per organiser before anything is sent: the checked call's
 // contract asks for both, and the per-organiser cap is the one the register route's
 // invitations already count against, so a resend never adds to the hour's budget.
+// What would refuse the send (the form no longer out, the organiser's mail off, no
+// usable sender) is checked first, so a refused attempt spends neither cap and never
+// locks the consent for the day. Only a race past those checks, or a failed send,
+// spends a token without mail going.
+//
+// A reminder the signing outbox holds for its daily allowance answers `deferred`
+// (with `reminder: true`), not `reminded`: it goes when the outbox next drains.
 
 const ROUTE = '/api/admin/events/[slug]/participants/[pid]/guardian-consent/resend'
 
@@ -57,7 +71,9 @@ type Participant = {
   registrations: { event_slug: string } | { event_slug: string }[]
 }
 
-type Envelope = { envelope_id: string; provider: string | null }
+type Envelope = { envelope_id: string; provider: string | null; status: string }
+
+const LIVE = new Set(['sent', 'delivered'])
 
 export const POST = withAudit(
   ({ args: [req] }: { args: [Request, Ctx] }) => ({ action: 'registration.guardian_consent.resend', ...auditSubject(req, 'participants') }),
@@ -96,6 +112,21 @@ async function resendGuardianConsent(req: Request, { params }: Ctx) {
   if (!consent || consent.registration_id !== p.registration_id) return json(404, { code: 'no_pending_consent', error: RESEND_MESSAGES.none })
   if (!consent.agreement_id) return json(409, { code: 'consent_not_issued', error: RESEND_MESSAGES.unissued })
   noteAuditSubject(req, { detail: { consent_id: consent.id, event_tenant_id: consent.tenant_id } })
+  const none = () => json(404, { code: 'no_pending_consent', error: RESEND_MESSAGES.none })
+  // Stellr's own consent rows do not exist; one that claimed Stellr's tenant is not this organiser's form.
+  if (!isTenantRow(consent.tenant_id)) return none()
+
+  // What would refuse the send, before any cap is spent.
+  const envelope = await loadRecord<Envelope>(crew.scope, 'agreements', consent.agreement_id, {
+    db,
+    select: 'envelope_id, provider, status',
+    notFound: none,
+    label: ROUTE,
+  })
+  if (!envelope.ok) return envelope.response
+  if (!LIVE.has(envelope.row.status)) return json(409, { code: 'not_out_for_signature', error: RESEND_MESSAGES.closed })
+  if (!tenantEventMailEnabled()) return json(409, { code: 'tenant_mail_off', error: RESEND_MESSAGES.mailOff })
+  if (!(await loadTenantSender(db, consent.tenant_id))) return json(409, { code: 'no_sender', error: TENANT_SENDER_REQUIRED })
 
   const busy = (retryAfterSeconds: number) =>
     NextResponse.json(
@@ -129,7 +160,7 @@ async function resendGuardianConsent(req: Request, { params }: Ctx) {
         return json(502, { error: TENANT_SIGNING_FAILED })
       default:
         // 'stellr' or 'not_found': the envelope is not this organiser's live consent form.
-        return json(404, { code: 'no_pending_consent', error: RESEND_MESSAGES.none })
+        return none()
     }
   }
   const { sent, deferred, failed } = invite.result
@@ -138,20 +169,22 @@ async function resendGuardianConsent(req: Request, { params }: Ctx) {
   if (deferred > 0) return json(200, { ok: true, outcome: 'deferred' })
 
   // Already invited: chase the guardian on the same envelope.
-  const envelope = await loadRecord<Envelope>(crew.scope, 'agreements', consent.agreement_id, {
-    db,
-    select: 'envelope_id, provider',
-    notFound: () => json(404, { code: 'no_pending_consent', error: RESEND_MESSAGES.none }),
-    label: ROUTE,
-  })
-  if (!envelope.ok) return envelope.response
+  const startedAt = Date.now()
+  let sentNow: number
   try {
-    const reminded = await remindEnvelopeRow(db, envelope.row)
+    const reminded = await remindEnvelopeRow(db, { envelope_id: envelope.row.envelope_id, provider: envelope.row.provider })
     if (reminded === 0) return json(409, { code: 'not_out_for_signature', error: RESEND_MESSAGES.closed })
+    // The outbox stamps invite_sent_at on each signer it emailed. One it held for the
+    // day's allowance, or could not reach yet, keeps no new stamp and stays in the
+    // outbox for the next drain.
+    sentNow = (await loadRecipients(db, consent.agreement_id)).filter(
+      (r) => LIVE.has(r.status) && r.invite_sent_at !== null && Date.parse(r.invite_sent_at) >= startedAt,
+    ).length
   } catch (err) {
     if (err instanceof TenantSenderRequiredError) return json(409, { code: 'no_sender', error: TENANT_SENDER_REQUIRED })
     console.error(`[admin/guardian-consent] reminder for consent ${consent.id} failed:`, err instanceof Error ? err.message : err)
     return json(502, { error: TENANT_SIGNING_FAILED })
   }
+  if (sentNow === 0) return json(200, { ok: true, outcome: 'deferred', reminder: true })
   return json(200, { ok: true, outcome: 'reminded' })
 }

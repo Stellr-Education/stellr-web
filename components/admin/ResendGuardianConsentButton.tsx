@@ -14,6 +14,9 @@ const OUTCOME_TEXT: Record<string, string> = {
   reminded: 'Reminder sent to the guardian.',
 }
 
+const REMINDER_QUEUED = "Reminder queued. It goes to the guardian once today's sending allowance frees up."
+
+
 export function ResendGuardianConsentButton({
   eventSlug,
   participantId,
@@ -30,9 +33,10 @@ export function ResendGuardianConsentButton({
     setBusy(true)
     setResult(null)
     try {
-      const res = await fetch(`/api/admin/events/${eventSlug}/participants/${participantId}/guardian-consent/resend`, { method: 'POST' })
-      const data = (await res.json().catch(() => null)) as { outcome?: string; error?: string } | null
+      const res = await fetch(`/api/admin/events/${encodeURIComponent(eventSlug)}/participants/${encodeURIComponent(participantId)}/guardian-consent/resend`, { method: 'POST' })
+      const data = (await res.json().catch(() => null)) as { outcome?: string; reminder?: boolean; error?: string } | null
       if (!res.ok) setResult({ ok: false, text: data?.error ?? 'The consent form could not be resent.' })
+      else if (data?.outcome === 'deferred' && data.reminder) setResult({ ok: true, text: REMINDER_QUEUED })
       else setResult({ ok: true, text: OUTCOME_TEXT[data?.outcome ?? ''] ?? 'Done.' })
     } catch {
       setResult({ ok: false, text: 'The consent form could not be resent.' })
