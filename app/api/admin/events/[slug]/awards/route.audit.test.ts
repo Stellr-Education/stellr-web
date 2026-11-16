@@ -1,6 +1,7 @@
 // @vitest-environment node
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { fakeSupabase, type FakeDb } from '@/test/fake-supabase'
+import { sanitizeMetadata } from '@/lib/audit/platform'
 
 // The event routes a Stellr Staff member or an event manager writes through
 // requireEventAccess (Staff role P3/P4, GATE-AUDIT): judging, badge and certificate
@@ -11,6 +12,8 @@ import { fakeSupabase, type FakeDb } from '@/test/fake-supabase'
 
 const SLUG = 'tenant-event-2027'
 const OWNER = '11111111-1111-4111-8111-111111111111'
+/** The tenant the mirror gives any slug other than SLUG: where a row would wrongly land. */
+const DECOY = '77777777-7777-4777-8777-777777777777'
 const STUDENT = '22222222-2222-4222-8222-222222222222'
 const TEMPLATE = '66666666-6666-4666-8666-666666666666'
 const CALLER = 'user_managerplaceholder'
@@ -35,13 +38,18 @@ vi.mock('@/lib/audit/platform', async (orig) => ({
     return { ok: true, id: h.audits.length, chainSeq: h.audits.length }
   },
 }))
-vi.mock('@/lib/events/mirror', () => ({ getMirroredEvent: async (slug: string) => ({ slug, tenant_id: OWNER }) }))
+vi.mock('@/lib/events/mirror', () => ({
+  getMirroredEvent: async (slug: string) => ({ slug, tenant_id: slug === 'tenant-event-2027' ? '11111111-1111-4111-8111-111111111111' : '77777777-7777-4777-8777-777777777777' }),
+}))
 vi.mock('@clerk/nextjs/server', () => ({ auth: async () => ({ userId: 'user_someoneelse' }) }))
 vi.mock('@/lib/event-access', () => ({ requireEventAccess: async () => h.access }))
 vi.mock('@/lib/supabase', () => ({ supabaseServer: () => h.db.client }))
 vi.mock('@/lib/events/repo', () => ({ getEventBySlug: async () => ({ title: 'Tenant Event', type: 'space', setting: 'in_person' }) }))
 vi.mock('@/lib/campaigns', () => ({ themeFromType: () => 'space' }))
-vi.mock('@/lib/event-award-issue', () => ({ pendingAwardChanges: async () => 0 }))
+vi.mock('@/lib/event-award-issue', () => ({
+  pendingAwardChanges: async () => 0,
+  issueAwards: async () => ({ issued: 1, students: 1, reinstated: 0, revoked: 0, unchanged: 0, emailed: 1, skipped: 0, skips: [], failures: [] }),
+}))
 vi.mock('@/lib/event-certificates', () => ({
   attendees: <T,>(rows: T[]) => rows,
   fullName: (p: { first_name: string; last_name: string }) => `${p.first_name} ${p.last_name}`,
@@ -75,6 +83,7 @@ vi.mock('@/lib/credentials', () => ({
 vi.mock('@/lib/credentials-notify', () => ({ sendCredentialIssuedEmail: async () => true }))
 
 const awards = await import('./route')
+const issue = await import('./issue/route')
 const badges = await import('../badge-templates/route')
 const certificates = await import('../certificate-templates/route')
 const credentials = await import('../credentials/route')
@@ -122,7 +131,7 @@ describe('judging', () => {
         ...common,
         action: 'event.awards.assign',
         target: { table: 'event_award_assignments', id: null },
-        metadata: { event_slug: SLUG, award_action: 'remove', award_type: 'norm_chaffee', participantId: STUDENT, status: 200 },
+        metadata: { event_slug: SLUG, award_action: 'remove', award_type: 'norm_chaffee', participant_id: STUDENT, status: 200 },
       },
     ])
     expect(JSON.stringify(h.audits)).not.toMatch(/Sam|Student/)
@@ -167,7 +176,7 @@ describe('participation credentials', () => {
         ...common,
         action: 'event.credentials.issue',
         target: { table: 'credentials', id: null },
-        metadata: { event_slug: SLUG, audience: 'students', mode: 'checked_in', considered: 1, created: 1, existing: 0, emailed: 1, skipped: 0, failed: 0, status: 200 },
+        metadata: { event_slug: SLUG, audience: 'students', mode: 'checked_in', considered: 1, created: 1, existing: 0, notified: 1, skipped: 0, failed: 0, status: 200 },
       },
     ])
     expect(JSON.stringify(h.audits)).not.toMatch(/Free text|Sam|example\.test/)
@@ -198,4 +207,114 @@ describe('the check-in desk', () => {
     await flush()
     expect(h.audits).toEqual([])
   })
+})
+
+// audit() is mocked above, so the metadata it receives is unsanitised. The live write runs
+// it through sanitizeMetadata, which drops any key naming (or containing a fragment of)
+// personal data: 'emailed' contains 'email' and would be lost. Every key each event route
+// records must survive the real sanitiser unchanged.
+describe('every event route’s metadata survives the real sanitiser', () => {
+  const survives = () => {
+    expect(h.audits.length).toBeGreaterThan(0)
+    for (const a of h.audits) {
+      const metadata = a.metadata as Record<string, unknown>
+      expect(sanitizeMetadata(metadata), String(a.action)).toEqual(metadata)
+    }
+  }
+
+  it('the sanitiser drops a key containing email, which is why the runs record notified', () => {
+    expect(sanitizeMetadata({ emailed: 1, notified: 1 })).toEqual({ notified: 1 })
+  })
+
+  it('judging: a change', async () => {
+    expect((await awards.PUT(send('PUT', 'awards', { action: 'remove', awardType: 'norm_chaffee', participantId: STUDENT }), ctx)).status).toBe(200)
+    await flush()
+    survives()
+  })
+
+  it('judging: issuing the awards records the emailed count as notified', async () => {
+    expect((await issue.POST(send('POST', 'awards/issue'), ctx)).status).toBe(200)
+    await flush()
+    survives()
+    expect(h.audits[0].metadata).toEqual({ event_slug: SLUG, issued: 1, students: 1, reinstated: 0, revoked: 0, unchanged: 0, notified: 1, skipped: 0, failed: 0, status: 200 })
+  })
+
+  it('badge and certificate artwork: save and delete', async () => {
+    expect((await badges.PUT(send('PUT', 'badge-templates', { format: 'avery_5392', audience: 'everyone' }), ctx)).status).toBe(200)
+    expect((await badges.DELETE(send('DELETE', `badge-templates?id=${TEMPLATE}`), ctx)).status).toBe(200)
+    expect((await certificates.PUT(send('PUT', 'certificate-templates', { awardType: 'participation' }), ctx)).status).toBe(200)
+    expect((await certificates.DELETE(send('DELETE', 'certificate-templates?awardType=participation'), ctx)).status).toBe(200)
+    await flush()
+    survives()
+  })
+
+  it('participation credentials: configure, and the students and mentors runs', async () => {
+    expect((await credentials.PATCH(send('PATCH', 'credentials', { credential_title: 'Free text title', audience: 'students' }), ctx)).status).toBe(200)
+    expect((await credentials.POST(send('POST', 'credentials', { mode: 'checked_in' }), ctx)).status).toBe(200)
+    expect((await credentials.POST(send('POST', 'credentials', { audience: 'mentors' }), ctx)).status).toBe(200)
+    await flush()
+    survives()
+    const runs = h.audits.filter((a) => a.action === 'event.credentials.issue').map((a) => a.metadata as Record<string, unknown>)
+    expect(runs.map((m) => [m.audience, 'notified' in m])).toEqual([['students', true], ['mentors', true]])
+  })
+
+  it('the check-in desk: a manual check-in and a regenerated code', async () => {
+    expect((await desk.POST(send('POST', 'check-in', { action: 'manual', participantId: STUDENT }), ctx)).status).toBe(200)
+    expect((await desk.POST(send('POST', 'check-in', { action: 'regenerate' }), ctx)).status).toBe(200)
+    await flush()
+    survives()
+  })
+})
+
+// The chain is the owner of the event requireEventAccess verified (the slug the handler
+// passed it and noted), never the raw slug in the URL. Here the URL names the event in
+// another case, or by an old slug, while the slug the check verified is SLUG: the mirror
+// gives any slug but SLUG to DECOY, so a row built from the URL would land on DECOY's chain.
+describe('the chain follows the slug requireEventAccess verified, not the URL', () => {
+  const at = (urlSlug: string) => (method: string, path: string, body?: unknown) =>
+    new Request(`https://app.test/api/admin/events/${urlSlug}/${path}`, { method, ...(body === undefined ? {} : { body: JSON.stringify(body) }) })
+  const chains = () => h.audits.map((a) => ({ action: a.action, tenantId: a.tenantId, event_slug: (a.metadata as Record<string, unknown>).event_slug }))
+  const verified = (action: string) => ({ action, tenantId: OWNER, event_slug: SLUG })
+
+  for (const [label, urlSlug] of [
+    ['a URL slug in another case', 'TENANT-EVENT-2027'],
+    ['an old slug the check resolved', 'old-tenant-event'],
+  ] as const) {
+    describe(label, () => {
+      const req = at(urlSlug)
+
+      it('judging: a change', async () => {
+        expect((await awards.PUT(req('PUT', 'awards', { action: 'remove', awardType: 'norm_chaffee', participantId: STUDENT }), ctx)).status).toBe(200)
+        await flush()
+        expect(chains()).toEqual([verified('event.awards.assign')])
+      })
+
+      it('judging: issuing the awards', async () => {
+        expect((await issue.POST(req('POST', 'awards/issue'), ctx)).status).toBe(200)
+        await flush()
+        expect(chains()).toEqual([verified('event.awards.issue')])
+      })
+
+      it('badge artwork: save and delete', async () => {
+        expect((await badges.PUT(req('PUT', 'badge-templates', { format: 'avery_5392', audience: 'everyone' }), ctx)).status).toBe(200)
+        expect((await badges.DELETE(req('DELETE', `badge-templates?id=${TEMPLATE}`), ctx)).status).toBe(200)
+        await flush()
+        expect(chains()).toEqual([verified('event.badge_template.save'), verified('event.badge_template.delete')])
+      })
+
+      it('certificate artwork: save and delete', async () => {
+        expect((await certificates.PUT(req('PUT', 'certificate-templates', { awardType: 'participation' }), ctx)).status).toBe(200)
+        expect((await certificates.DELETE(req('DELETE', 'certificate-templates?awardType=participation'), ctx)).status).toBe(200)
+        await flush()
+        expect(chains()).toEqual([verified('event.certificate_template.save'), verified('event.certificate_template.delete')])
+      })
+
+      it('participation credentials: configure and issue', async () => {
+        expect((await credentials.PATCH(req('PATCH', 'credentials', { credential_title: 'Free text title', audience: 'students' }), ctx)).status).toBe(200)
+        expect((await credentials.POST(req('POST', 'credentials', { mode: 'checked_in' }), ctx)).status).toBe(200)
+        await flush()
+        expect(chains()).toEqual([verified('event.credentials.configure'), verified('event.credentials.issue')])
+      })
+    })
+  }
 })

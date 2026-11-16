@@ -5,6 +5,7 @@ import { supabaseServer } from '@/lib/supabase'
 import { actorFromAuth, logActivity } from '@/lib/activity-log'
 import { withAudit } from '@/lib/audit/route'
 import { auditSubject, noteAuditSubject } from '@/lib/audit/route-subject'
+import { memberIdOf } from '@/lib/audit-route-helpers'
 
 // PATCH  /api/admin/members/[id]/memberships/[membershipId] — edit one membership
 //        (expiry, status, complimentary flag).
@@ -48,13 +49,6 @@ function tierName(row: Joined | null): string {
 }
 
 type Ctx = { params: Promise<{ id: string; membershipId: string }> }
-
-/** The member in the URL, /api/admin/members/<id>/…: the event's target. */
-function memberIdOf(req: Request): string | null {
-  const parts = new URL(req.url).pathname.split('/')
-  const at = parts.indexOf('members')
-  return at < 0 ? null : (parts[at + 1] ?? null)
-}
 
 /** The membership in the URL, …/memberships/<membershipId>. */
 const membershipIdOf = (req: Request) => new URL(req.url).pathname.split('/').at(-1) ?? null

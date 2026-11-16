@@ -97,7 +97,7 @@ describe('POST /api/admin/events/[slug]/awards/issue', () => {
         tenantId: OWNER,
         actor: CALLER,
         target: { table: 'credentials', id: null },
-        metadata: { event_slug: SLUG, issued: 3, students: 2, reinstated: 1, revoked: 1, unchanged: 4, emailed: 2, skipped: 1, failed: 0, status: 200 },
+        metadata: { event_slug: SLUG, issued: 3, students: 2, reinstated: 1, revoked: 1, unchanged: 4, notified: 2, skipped: 1, failed: 0, status: 200 },
       },
     ])
     expect(JSON.stringify(h.audits)).not.toContain('A Student')

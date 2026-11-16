@@ -9,6 +9,7 @@ import {
   isLicenseDocumentType,
 } from '@/lib/teacher-license'
 import { withAudit } from '@/lib/audit/route'
+import { memberIdOf } from '@/lib/audit-route-helpers'
 
 export const dynamic = 'force-dynamic'
 
@@ -54,13 +55,6 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
 }
 
 type Ctx = { params: Promise<{ id: string }> }
-
-/** The member in the URL, /api/admin/members/<id>/…: the event's target. */
-function memberIdOf(req: Request): string | null {
-  const parts = new URL(req.url).pathname.split('/')
-  const at = parts.indexOf('members')
-  return at < 0 ? null : (parts[at + 1] ?? null)
-}
 
 // Platform audit (docs/TENANCY-S5.md, C7): the member is the target. Not the path.
 const attachAudit = ({ args: [req] }: { args: [Request, Ctx] }) => ({
