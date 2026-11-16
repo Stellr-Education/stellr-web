@@ -7,6 +7,7 @@ import { supabaseServer } from '@/lib/supabase'
 import { actorFromAuth } from '@/lib/activity-log'
 import { storableId, withAudit } from '@/lib/audit/route'
 import { auditSubject, noteAuditSubject } from '@/lib/audit/route-subject'
+import { memberIdOf } from '@/lib/audit-route-helpers'
 
 // POST /api/admin/members/[id]/memberships — admin assigns a tier to a member.
 //
@@ -21,13 +22,6 @@ import { auditSubject, noteAuditSubject } from '@/lib/audit/route-subject'
 // replaces-free behaviour and activity logging of every other grant path.
 
 type Ctx = { params: Promise<{ id: string }> }
-
-/** The member in the URL, /api/admin/members/<id>/…: the event's target. */
-function memberIdOf(req: Request): string | null {
-  const parts = new URL(req.url).pathname.split('/')
-  const at = parts.indexOf('members')
-  return at < 0 ? null : (parts[at + 1] ?? null)
-}
 
 // Platform audit (docs/TENANCY-S5.md, C7): the member is the target, the tier's id in
 // the metadata.

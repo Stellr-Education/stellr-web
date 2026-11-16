@@ -4,8 +4,9 @@ import { requireEventAccess } from '@/lib/event-access'
 import { getEventBySlug } from '@/lib/events/repo'
 import { themeFromType } from '@/lib/campaigns'
 import { issueAwards } from '@/lib/event-award-issue'
-import { withAudit, type AuditMutation } from '@/lib/audit/route'
-import { auditSubject, noteAuditSubject } from '@/lib/audit/route-subject'
+import { withAudit } from '@/lib/audit/route'
+import { noteAuditSubject } from '@/lib/audit/route-subject'
+import { verifiedEventAudit } from '@/lib/audit-route-helpers'
 
 export const dynamic = 'force-dynamic'
 
@@ -15,19 +16,11 @@ export const dynamic = 'force-dynamic'
 type Ctx = { params: Promise<{ slug: string }> }
 
 // Platform audit (docs/TENANCY-S5.md, C7). The handler notes who passed requireEventAccess;
-// the event goes on the chain of the event's owner, read from the mirror by its slug.
-/** The event in the URL, /api/admin/events/<slug>/…: only looked up, never stored from here. */
-function eventSlugOf(req: Request): string {
-  const parts = new URL(req.url).pathname.split('/')
-  const at = parts.indexOf('events')
-  return at < 0 ? '' : (parts[at + 1] ?? '')
-}
-function eventAudit(req: Request, table: string): Omit<AuditMutation, 'action'> {
-  return { ...auditSubject(req, table), tenant: { eventSlug: eventSlugOf(req) } }
-}
+// the event goes on the chain of the owner of the event that check verified (the slug it
+// noted), read from the mirror, never from the raw slug in the URL (lib/audit-route-helpers).
 
 // The counts of the run are the metadata: no student's name or award reaches the event.
-const issueAudit = ({ args: [req] }: { args: [Request, Ctx] }) => ({ action: 'event.awards.issue' as const, ...eventAudit(req, 'credentials') })
+const issueAudit = ({ args: [req] }: { args: [Request, Ctx] }) => ({ action: 'event.awards.issue' as const, ...verifiedEventAudit(req, 'credentials') })
 
 export const POST = withAudit(issueAudit, issueEventAwards)
 

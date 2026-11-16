@@ -6,6 +6,7 @@ import { actorFromAuth, logActivity } from '@/lib/activity-log'
 import { dispatchVolunteerAgreement, VOLUNTEER_PROGRAM_TITLE, VOLUNTEER_MEMBER_COLUMNS } from '@/lib/volunteer'
 import { withAudit } from '@/lib/audit/route'
 import { auditSubject, noteAuditSubject } from '@/lib/audit/route-subject'
+import { memberIdOf } from '@/lib/audit-route-helpers'
 
 // Admin (re-)issue of the Volunteer Agreement (PRD §15: "issue the Volunteer
 // DocuSign to new Volunteers"). Signup normally dispatches it automatically;
@@ -15,13 +16,6 @@ import { auditSubject, noteAuditSubject } from '@/lib/audit/route-subject'
 // duplicate envelope.
 
 type Ctx = { params: Promise<{ id: string }> }
-
-/** The member in the URL, /api/admin/members/<id>/…: the event's target. */
-function memberIdOf(req: Request): string | null {
-  const parts = new URL(req.url).pathname.split('/')
-  const at = parts.indexOf('members')
-  return at < 0 ? null : (parts[at + 1] ?? null)
-}
 
 // Platform audit (docs/TENANCY-S5.md, C7): the member is the target, and the outcome
 // (issued, on_file, failed) goes in the metadata. A failed send is a 502, so it is recorded.

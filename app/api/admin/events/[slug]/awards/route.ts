@@ -18,27 +18,20 @@ import {
   type AssignmentRow,
 } from '@/lib/event-certificates'
 import { pendingAwardChanges } from '@/lib/event-award-issue'
-import { bodyIds, withAudit, type AuditMutation } from '@/lib/audit/route'
-import { auditSubject, noteAuditSubject } from '@/lib/audit/route-subject'
+import { bodyIds, withAudit } from '@/lib/audit/route'
+import { noteAuditSubject } from '@/lib/audit/route-subject'
+import { verifiedEventAudit } from '@/lib/audit-route-helpers'
 
 export const dynamic = 'force-dynamic'
 
 // Platform audit (docs/TENANCY-S5.md, C7). The handler notes who passed requireEventAccess;
-// the event goes on the chain of the event's owner, read from the mirror by its slug.
-/** The event in the URL, /api/admin/events/<slug>/…: only looked up, never stored from here. */
-function eventSlugOf(req: Request): string {
-  const parts = new URL(req.url).pathname.split('/')
-  const at = parts.indexOf('events')
-  return at < 0 ? '' : (parts[at + 1] ?? '')
-}
-function eventAudit(req: Request, table: string): Omit<AuditMutation, 'action'> {
-  return { ...auditSubject(req, table), tenant: { eventSlug: eventSlugOf(req) } }
-}
+// the event goes on the chain of the owner of the event that check verified (the slug it
+// noted), read from the mirror, never from the raw slug in the URL (lib/audit-route-helpers).
 
 // Which change (an enum), the award type and the ids it named are the metadata.
 const assignAudit = ({ args: [req] }: { args: [Request, { params: Promise<{ slug: string }> }] }) => ({
   action: 'event.awards.assign' as const,
-  ...eventAudit(req, 'event_award_assignments'),
+  ...verifiedEventAudit(req, 'event_award_assignments'),
 })
 const AWARD_ACTIONS = ['set_champion', 'add', 'remove', 'set_specialist'] as const
 
@@ -106,7 +99,7 @@ async function changeAssignment(req: Request, { params }: { params: Promise<{ sl
     detail: {
       ...((AWARD_ACTIONS as readonly unknown[]).includes(body.action) ? { award_action: body.action } : {}),
       ...(isAssignedAwardType(body.awardType) ? { award_type: body.awardType } : {}),
-      ...bodyIds(body, ['participantId', 'companyId']),
+      ...bodyIds({ participant_id: body.participantId, company_id: body.companyId }, ['participant_id', 'company_id']),
     },
   })
   const db = supabaseServer()
