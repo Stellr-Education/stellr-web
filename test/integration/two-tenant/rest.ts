@@ -139,12 +139,15 @@ class Catalog {
       this.procs.set(
         name,
         this.run(async (sql) => {
-          const rows = await sql<{ names: string[] | null; types: string[] }[]>`
-            SELECT p.proargnames AS names, p.proargtypes::regtype[]::text[] AS types
-            FROM pg_proc p WHERE p.proname = ${name} AND p.pronamespace = 'public'::regnamespace`
-          if (rows.length !== 1) throw new Error(`rest: ${rows.length} functions named ${name}`)
-          const { names, types } = rows[0]
-          return types.map((type, i) => ({ name: names?.[i] ?? `$${i + 1}`, type }))
+          const [{ n }] = await sql<{ n: number }[]>`
+            SELECT count(*)::int AS n FROM pg_proc p WHERE p.proname = ${name} AND p.pronamespace = 'public'::regnamespace`
+          if (n !== 1) throw new Error(`rest: ${n} functions named ${name}`)
+          // One row per input argument, as plain text: no array columns to decode.
+          return sql<{ name: string; type: string }[]>`
+            SELECT a.name::text AS name, format_type(a.oid, NULL) AS type
+            FROM pg_proc p, unnest(p.proargnames[1:p.pronargs], p.proargtypes::oid[]) WITH ORDINALITY AS a(name, oid, i)
+            WHERE p.proname = ${name} AND p.pronamespace = 'public'::regnamespace
+            ORDER BY a.i`
         }),
       )
     }
