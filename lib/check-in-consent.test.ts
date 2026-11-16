@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import {
+  CONSENT_NOT_HELD,
   CONSENT_PENDING_CODE,
   consentPendingParticipants,
   isConsentPending,
@@ -9,18 +10,26 @@ import {
 
 type Row = { participant_id: string; registration_id: string; status: string }
 
-/** Just enough of a client: one table, `.in()` and `.neq()`, recording what was asked. */
+/** PostgREST's `in` list, `(a,b)`, as the values it names. */
+const inList = (list: string) => list.replace(/^\(|\)$/g, '').split(',')
+
+/** Just enough of a client: one table, `.in()` and `.not(col, 'in', list)`, recording what was asked. */
 function fakeDb(rows: Row[], fail: 'error' | 'throw' | null = null) {
-  const asked: { table: string; column: string; ids: string[]; neq: [string, string] }[] = []
+  const asked: { table: string; column: string; ids: string[]; not: [string, string, string] }[] = []
   const db = {
     from: (table: string) => ({
       select: () => ({
         in: (column: keyof Row, ids: string[]) => ({
-          neq: async (col: keyof Row, value: string) => {
-            asked.push({ table, column, ids, neq: [col, value] })
+          not: async (col: keyof Row, op: string, list: string) => {
+            asked.push({ table, column, ids, not: [col, op, list] })
             if (fail === 'throw') throw new Error('network')
             if (fail === 'error') return { data: null, error: { message: 'boom' } }
-            return { data: rows.filter((r) => ids.includes(r[column]) && r[col] !== value).map((r) => ({ participant_id: r.participant_id })), error: null }
+            if (op !== 'in') throw new Error(`fake supports not.in only, got not.${op}`)
+            const excluded = inList(list)
+            return {
+              data: rows.filter((r) => ids.includes(r[column]) && !excluded.includes(r[col])).map((r) => ({ participant_id: r.participant_id })),
+              error: null,
+            }
           },
         }),
       }),
@@ -34,16 +43,25 @@ const ROWS: Row[] = [
   { participant_id: 'p-signed', registration_id: 'r1', status: 'signed' },
   { participant_id: 'p-declined', registration_id: 'r2', status: 'declined' },
   { participant_id: 'p-expired', registration_id: 'r2', status: 'expired' },
+  { participant_id: 'p-settled', registration_id: 'r1', status: 'settled' },
 ]
 
 describe('consentPendingParticipants', () => {
-  it('by participant: every unsigned state counts, as the trigger counts it; signed and no row do not', async () => {
+  it('by participant: every held state counts, as the trigger counts it; signed, settled and no row do not', async () => {
     const { db, asked } = fakeDb(ROWS)
-    const got = await consentPendingParticipants(db, { participantIds: ['p-pending', 'p-signed', 'p-declined', 'p-expired', 'p-stellr'] })
+    const ids = ['p-pending', 'p-signed', 'p-declined', 'p-expired', 'p-settled', 'p-stellr']
+    const got = await consentPendingParticipants(db, { participantIds: ids })
     expect([...got!].sort()).toEqual(['p-declined', 'p-expired', 'p-pending'])
-    expect(asked).toEqual([
-      { table: 'tenant_guardian_consents', column: 'participant_id', ids: ['p-pending', 'p-signed', 'p-declined', 'p-expired', 'p-stellr'], neq: ['status', 'signed'] },
-    ])
+    expect(asked).toEqual([{ table: 'tenant_guardian_consents', column: 'participant_id', ids, not: ['status', 'in', '(signed,settled)'] }])
+  })
+
+  it('a settled consent (lifted by a date-of-birth correction to 18 or over) does not hold, as the trigger since 20261114072142', async () => {
+    const { db } = fakeDb(ROWS)
+    expect((await consentPendingParticipants(db, { participantIds: ['p-settled'] }))!.size).toBe(0)
+  })
+
+  it("the statuses that don't hold are exactly the trigger's NOT IN list", () => {
+    expect([...CONSENT_NOT_HELD]).toEqual(['signed', 'settled'])
   })
 
   it('by registration: the desk poll', async () => {

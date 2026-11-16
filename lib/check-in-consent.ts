@@ -24,16 +24,23 @@ export function isConsentPendingRefusal(error: { code?: string | null; message?:
 
 // ── The desk (S5 CONSENT (c), wave 8 slice 8; defaults WD-6, BF-66) ───────────
 //
-// The desk asks before it writes: a participant whose consent is not signed is a
+// The desk asks before it writes: a participant whose consent still holds them is a
 // failed scan, answered with the same refusal the trigger's would get, and nothing
 // is written. The trigger stays the backstop for a read that fails or a consent
 // that lands between the read and the write. The desk list and the group sheet
 // mark such a participant with CONSENT_PENDING_MARKER.
 //
-// "Not signed" is the trigger's own test (status <> 'signed'): a declined or
-// expired row is refused too, until the sweep removes its registration. Only a
-// tenant event has consent rows (tenant_guardian_consents_not_stellr), so for a
-// Stellr event every read below comes back empty and the desk is unchanged.
+// "Held" is the trigger's own test (status NOT IN ('signed', 'settled'), as
+// 20261114072142 redefined participants_refuse_unconsented_check_in): pending,
+// declined and expired are refused, until the sweep removes the registration. A
+// settled row is a consent a date-of-birth correction lifted (the participant is
+// 18 or over), so it does not hold. Any status added later is held, as the
+// trigger holds it. Only a tenant event has consent rows
+// (tenant_guardian_consents_not_stellr), so for a Stellr event every read below
+// comes back empty and the desk is unchanged.
+
+/** The consent statuses that do not hold a participant at check-in: the trigger's NOT IN list. */
+export const CONSENT_NOT_HELD = ['signed', 'settled'] as const
 
 /** The desk's marker for a participant waiting on consent (WD-6). A proposal for the owner. */
 export const CONSENT_PENDING_MARKER = 'Waiting for guardian consent'
@@ -47,7 +54,7 @@ export interface DeskConsentMarker {
 }
 
 /**
- * The participants, among those named, whose guardian consent is not signed. By
+ * The participants, among those named, whose guardian consent holds them. By
  * participant id (a desk write) or by registration id (the desk's poll). Null when
  * the read failed: the caller carries on and the trigger decides. Never throws.
  */
@@ -59,7 +66,11 @@ export async function consentPendingParticipants(
     'participantIds' in by ? (['participant_id', by.participantIds] as const) : (['registration_id', by.registrationIds] as const)
   if (ids.length === 0) return new Set()
   try {
-    const { data, error } = await db.from('tenant_guardian_consents').select('participant_id').in(column, ids).neq('status', 'signed')
+    const { data, error } = await db
+      .from('tenant_guardian_consents')
+      .select('participant_id')
+      .in(column, ids)
+      .not('status', 'in', `(${CONSENT_NOT_HELD.join(',')})`)
     if (error || !Array.isArray(data)) return null
     return new Set(
       (data as { participant_id?: unknown }[]).map((r) => r.participant_id).filter((id): id is string => typeof id === 'string')

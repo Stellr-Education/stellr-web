@@ -15,7 +15,7 @@ interface Call {
   values?: Record<string, unknown>
   filters: Filter[]
 }
-type ConsentRow = { participant_id: string; registration_id: string; status: 'pending' | 'signed' | 'declined' | 'expired' }
+type ConsentRow = { participant_id: string; registration_id: string; status: 'pending' | 'signed' | 'declined' | 'expired' | 'settled' }
 
 const OWNER = '33333333-3333-4333-8333-333333333333'
 
@@ -75,8 +75,11 @@ function respond(call: Call, single: boolean): { data: unknown; error: unknown }
   if (call.table === 'tenant_guardian_consents') {
     if (h.consentReadFails) return { data: null, error: { message: 'timeout' } }
     const [, column, ids] = call.filters.find((f) => f[0] === 'in') ?? []
-    const notStatus = filter('neq', 'status')
-    const rows = h.consents.filter((r) => (ids as string[]).includes(r[column as keyof ConsentRow]) && r.status !== notStatus)
+    // `.not('status', 'in', '(a,b)')` is recorded as PostgREST sends it: `in.(a,b)`.
+    const notStatus = filter('not', 'status') as string | undefined
+    if (notStatus !== undefined && !notStatus.startsWith('in.(')) throw new Error(`mock supports not.in only, got not.${notStatus}`)
+    const excluded = notStatus ? notStatus.slice('in.('.length, -1).split(',') : []
+    const rows = h.consents.filter((r) => (ids as string[]).includes(r[column as keyof ConsentRow]) && !excluded.includes(r.status))
     return { data: rows.map((r) => ({ participant_id: r.participant_id })), error: null }
   }
   if (call.table === 'participants') {
@@ -108,7 +111,10 @@ vi.mock('@/lib/supabase', () => ({
         neq: add('neq'),
         in: add('in'),
         is: add('is'),
-        not: add('not'),
+        not: (column: string, op: string, value: unknown) => {
+          call.filters.push(['not', column, `${op}.${value === null ? 'null' : String(value)}`])
+          return chain
+        },
         upsert: async () => ({ error: null }),
         maybeSingle: async () => {
           h.calls.push(call)
@@ -187,8 +193,8 @@ describe('every desk path × every consent state', () => {
       expect(updates()).toHaveLength(0)
     })
 
-    it(`${path}: consent signed checks in as before`, async () => {
-      h.consents = [{ participant_id: MINOR, registration_id: REG, status: 'signed' }]
+    it.each(['signed', 'settled'] as const)(`${path}: consent %s checks in as before`, async (status) => {
+      h.consents = [{ participant_id: MINOR, registration_id: REG, status }]
       const res = await post(body())
       expect(res.status).toBe(200)
       expect(updates()).toHaveLength(1)
@@ -231,12 +237,19 @@ describe('every desk path × every consent state', () => {
     expect(h.calls.filter((c) => c.table === 'tenant_guardian_consents')).toHaveLength(0)
   })
 
-  it('the consent read asks by participant, for unsigned rows only', async () => {
+  it('group: a settled member (a date-of-birth correction to 18 or over) does not refuse the group', async () => {
+    h.consents = [{ participant_id: MINOR, registration_id: REG, status: 'settled' }]
+    const res = await post({ action: 'group_check_in', participantIds: [PEER, MINOR] })
+    expect(res.status).toBe(200)
+    expect(updates()).toHaveLength(1)
+  })
+
+  it("the consent read asks by participant, for rows that hold only (the trigger's NOT IN list)", async () => {
     await post({ action: 'manual', participantId: MINOR })
     const read = h.calls.find((c) => c.table === 'tenant_guardian_consents')!
     expect(read.filters).toEqual([
       ['in', 'participant_id', [MINOR]],
-      ['neq', 'status', 'signed'],
+      ['not', 'status', 'in.(signed,settled)'],
     ])
   })
 })
@@ -270,8 +283,18 @@ describe('the poll: the desk marker (WD-6)', () => {
     const read = h.calls.find((c) => c.table === 'tenant_guardian_consents')!
     expect(read.filters).toEqual([
       ['in', 'registration_id', [REG]],
-      ['neq', 'status', 'signed'],
+      ['not', 'status', 'in.(signed,settled)'],
     ])
+  })
+
+  it('a settled consent gets no marker', async () => {
+    h.regs = [registration]
+    h.consents = [
+      { participant_id: MINOR, registration_id: REG, status: 'settled' },
+      { participant_id: PEER, registration_id: REG, status: 'signed' },
+    ]
+    const body = await (await get()).json()
+    for (const p of body.participants as Array<Record<string, unknown>>) expect('consentPending' in p).toBe(false)
   })
 
   it('a Stellr event (no consent rows): the poll is byte-identical to the pre-consent shape', async () => {
