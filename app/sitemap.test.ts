@@ -9,6 +9,8 @@ vi.mock('@/lib/sanity', () => ({
   ],
   getAllCampaigns: async () => [{ slug: { current: 'unedited-campaign' } }],
   getAllNewsPosts: async () => [],
+  client: null,
+  PUBLISHED_CACHE: {},
 }))
 
 /**
@@ -100,7 +102,14 @@ describe('sitemap lastModified', () => {
     expect(entries.find((e) => e.url.endsWith('/events/live-event'))?.lastModified).toEqual(
       new Date('2026-01-02T00:00:00Z')
     )
-    expect(entries.find((e) => e.url.endsWith('/events/unedited-campaign'))?.lastModified).toBeUndefined()
+  })
+
+  it('lists the Classroom Qualifier pages, never the old campaign event URLs they replaced', async () => {
+    const urls = (await sitemap()).map((e) => new URL(e.url).pathname)
+    for (const p of ['/classroom-qualifier', '/classroom-qualifier/2026-27', '/classroom-qualifier/spring-2027', '/classroom-qualifier/resources']) {
+      expect(urls).toContain(p)
+    }
+    expect(urls.some((u) => u.includes('campaign'))).toBe(false)
   })
 
   it('indexes only the chosen store product page, never the cart', async () => {

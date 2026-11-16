@@ -5,7 +5,9 @@ import { Button } from '@stellr/web-ui'
 import { getCurrentMember } from '@/lib/community'
 import { getEventBySlug } from '@/lib/events/repo'
 import { getMemberCampaignRegistration } from '@/lib/campaign-registrations'
-import { themeFromType, THEME_META, deadlineInfo, deadlinePhrase } from '@/lib/campaigns'
+import { themeFromType, THEME_META, deadlineInfo, deadlinePhrase, shortUsDate } from '@/lib/campaigns'
+import { cqUpgradeStage } from '@/lib/cq-upgrade-prompt'
+import { QualifierUpgradePrompt } from '@/components/campaigns/QualifierUpgradePrompt'
 
 interface PageProps {
   params: Promise<{ slug: string }>
@@ -30,6 +32,10 @@ export default async function RegisteredCampaignPage({ params }: PageProps) {
   const meta = THEME_META[theme]
   const dl = deadlineInfo(campaign.deadline)
   const submitted = !!reg.proposal_submitted_at
+  // Phase 2: the contextual Catalyst prompt, for free-tier teachers only.
+  const upgradeStage = member.hasPaidTier
+    ? null
+    : cqUpgradeStage({ registeredAt: reg.created_at, deadline: campaign.deadline, submitted })
   const groupLine = [
     reg.group_name,
     reg.student_count != null ? `${reg.student_count} students` : null,
@@ -47,7 +53,7 @@ export default async function RegisteredCampaignPage({ params }: PageProps) {
       <section className="overflow-hidden rounded-panel border border-line border-t-4 border-t-pathway-amber bg-white p-6 shadow-card-lift">
         <div className="flex flex-wrap gap-2">
           <span className="inline-flex items-center rounded-pill bg-pathway-amber-bg px-3 py-1 text-xs font-bold uppercase tracking-[0.05em] text-gold-ink">
-            ✦ Campaign · Async
+            ✦ Classroom Qualifier
           </span>
           <span className={`inline-flex items-center gap-1 rounded-pill px-3 py-1 text-xs font-bold uppercase tracking-[0.05em] ${meta.chip}`}>
             ✦ {meta.label}
@@ -80,6 +86,10 @@ export default async function RegisteredCampaignPage({ params }: PageProps) {
           )}
         </div>
       </section>
+
+      {upgradeStage && (
+        <QualifierUpgradePrompt stage={upgradeStage} deadlineLabel={shortUsDate(campaign.deadline) || null} />
+      )}
 
       <div className="grid gap-6 lg:grid-cols-[1.4fr_1fr]">
         {/* Materials & workspace */}

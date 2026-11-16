@@ -11,7 +11,7 @@ import { useUtm } from '@/components/lp/useUtm'
 import { useSpamGuard } from '@/components/forms/useSpamGuard'
 import { SpamGuardFields } from '@/components/forms/SpamGuardFields'
 import { cqLeadFields } from '@/app/api/cq-lead/schema'
-import type { CurriculumLandingPageConfig } from '@/content/lp/cq-types'
+import type { CqFormSource } from '@/content/cq/form-sources'
 
 /**
  * The curriculum request form (Classroom Qualifier pages).
@@ -34,7 +34,7 @@ type FormData = z.infer<typeof schema>
 
 const AUTH_URL = process.env.NEXT_PUBLIC_AUTH_APP_URL ?? 'https://app.stellreducation.org'
 
-export function CurriculumLeadForm({ config }: { config: CurriculumLandingPageConfig }) {
+export function CurriculumLeadForm({ config }: { config: Pick<CqFormSource, 'slug' | 'form'> }) {
   const { form, slug } = config
   const utm = useUtm()
   const spam = useSpamGuard()
