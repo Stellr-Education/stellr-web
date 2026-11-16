@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { supabaseServer } from '@/lib/supabase'
 import { SHEET_SYNC_COLUMNS, syncParticipantsFromSheet } from '@/lib/sheet-participant-sync'
 import { safeStrEqual } from '@/lib/secret-compare'
+import { auditMutation } from '@/lib/audit/route'
 
 // A roster change waits out the group invoice quiet period after responding
 // (lib/group-billing.ts), and that wait has to fit inside the function.
@@ -73,6 +74,7 @@ export async function POST(req: NextRequest) {
     return new NextResponse(null, { status: 200 })
   }
 
+  let syncFailed = false
   try {
     // Same upsert + DocuSign dispatch + individual-payment notices as the manual
     // "Sync From Sheet" button. S5 A8: the registration's tenant decides whose rules
@@ -80,8 +82,25 @@ export async function POST(req: NextRequest) {
     const { created, updated, paymentLinksSent } = await syncParticipantsFromSheet(db, registration)
     console.log(`[webhook/google-sheets] Synced registration ${registration.id} (${created} created, ${updated} updated, ${paymentLinksSent} payment notices sent)`)
   } catch (err) {
+    syncFailed = true
     console.error('[webhook/google-sheets] Sync error:', err)
   }
+
+  // S5 A13a: one audit event per sync, by webhook:google-sheets, on the chain of the
+  // registration's stored tenant (lib/audit/webhook.ts). Here, not withAudit: the
+  // answers above for an unknown channel or a wrong token are 200s too, and a prober
+  // must not be able to add rows to an append-only table. Off unless
+  // PLATFORM_AUDIT_ENABLED is on.
+  await auditMutation(
+    {
+      action: 'webhook.event.process',
+      actor: { webhook: 'google-sheets' },
+      tenant: { owner: { rowTenantId: registration.tenant_id ?? null } },
+      target: { table: 'registrations', id: registration.id },
+      metadata: { verified: true, sync_failed: syncFailed },
+    },
+    { afterResponse: true },
+  )
 
   return new NextResponse(null, { status: 200 })
 }

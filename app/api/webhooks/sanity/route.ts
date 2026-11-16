@@ -1,6 +1,8 @@
 import { NextResponse, type NextRequest } from 'next/server'
 import { revalidateTag } from 'next/cache'
 import { parseBody } from 'next-sanity/webhook'
+import { withAudit } from '@/lib/audit/route'
+import { noteWebhook, webhookEvent } from '@/lib/audit/webhook'
 
 // POST /api/webhooks/sanity — Sanity's publish webhook. The public pages are
 // cached for up to 6 hours, and every Sanity read carries the 'sanity' tag
@@ -12,7 +14,14 @@ import { parseBody } from 'next-sanity/webhook'
 // SANITY_REVALIDATE_SECRET. Without the variable the route refuses every call,
 // and the pages still refresh every 6 hours.
 
-export async function POST(req: NextRequest) {
+// S5 A13a: one audit event per delivery, by webhook:sanity, on Stellr's chain.
+// Off unless PLATFORM_AUDIT_ENABLED is on (lib/audit/webhook.ts).
+export const POST = withAudit(
+  ({ args: [req] }: { args: [NextRequest] }) => ({ action: 'webhook.event.process', ...webhookEvent('sanity', req) }),
+  handlePublish,
+)
+
+async function handlePublish(req: NextRequest) {
   const secret = process.env.SANITY_REVALIDATE_SECRET
   if (!secret) {
     console.error('[webhooks/sanity] SANITY_REVALIDATE_SECRET not set')
@@ -29,6 +38,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Unreadable body' }, { status: 400 })
   }
   if (!isValidSignature) return NextResponse.json({ error: 'Invalid signature' }, { status: 401 })
+  noteWebhook(req, { metadata: { document_type: body?._type ?? null } })
 
   // Expire now rather than serve one more stale copy: whoever published is
   // usually the next person to look.

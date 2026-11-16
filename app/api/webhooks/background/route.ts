@@ -3,6 +3,8 @@ import { NextResponse } from 'next/server'
 import { supabaseServer } from '@/lib/supabase'
 import { getBackgroundProvider } from '@/lib/background-provider'
 import { applyCheckOutcome, type CheckOutcome } from '@/lib/background-sync'
+import { withAudit } from '@/lib/audit/route'
+import { noteWebhook, webhookEvent } from '@/lib/audit/webhook'
 
 // Background-check provider webhook (currently Checkr). Configure the endpoint
 // URL in the provider's developer settings. The provider adapter owns signature
@@ -15,7 +17,14 @@ export async function GET() {
   return NextResponse.json({ ok: true })
 }
 
-export async function POST(req: Request) {
+// S5 A13a: one audit event per delivery, by webhook:background, on Stellr's chain.
+// Off unless PLATFORM_AUDIT_ENABLED is on (lib/audit/webhook.ts).
+export const POST = withAudit(
+  ({ args: [req] }: { args: [Request] }) => ({ action: 'webhook.event.process', ...webhookEvent('background', req) }),
+  handleCheckEvent,
+)
+
+async function handleCheckEvent(req: Request) {
   const rawBody = await req.text()
   const provider = getBackgroundProvider()
   const headerList = await headers()
@@ -24,6 +33,7 @@ export async function POST(req: Request) {
     console.error('[background-webhook] Invalid signature')
     return NextResponse.json({ error: 'Invalid signature' }, { status: 401 })
   }
+  noteWebhook(req)
 
   const parsed = provider.parseWebhook(rawBody)
   if (!parsed || !parsed.status) return NextResponse.json({ received: true, skipped: 'no actionable event' })
@@ -75,6 +85,7 @@ export async function POST(req: Request) {
     console.warn('[background-webhook] No row for', parsed.invitationRef ?? parsed.reportRef ?? parsed.candidateRef)
     return NextResponse.json({ received: true })
   }
+  noteWebhook(req, { target: { table: 'member_background_checks', id: row.id } })
 
   await applyCheckOutcome(db, row as { id: string; member_id: string; status: string }, parsed as CheckOutcome, 'webhook')
 

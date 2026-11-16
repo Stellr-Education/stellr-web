@@ -10,6 +10,8 @@ import { mayLinkLogin } from '@/lib/guardian-consent'
 import { logActivity } from '@/lib/activity-log'
 import { isUnder13On, isValidDob } from '@/lib/age'
 import { purgeCrewCheckIns } from '@/lib/deletion/crew-check-ins'
+import { withAudit } from '@/lib/audit/route'
+import { noteWebhook, webhookEvent } from '@/lib/audit/webhook'
 
 // Clerk sends user.created / user.updated / user.deleted events here.
 // This keeps the members table in sync with Clerk identity records. A new
@@ -38,7 +40,14 @@ interface ClerkEvent {
   data: ClerkUserPayload
 }
 
-export async function POST(req: Request) {
+// S5 A13a: one audit event per delivery, by webhook:clerk, on Stellr's chain.
+// Off unless PLATFORM_AUDIT_ENABLED is on (lib/audit/webhook.ts).
+export const POST = withAudit(
+  ({ args: [req] }: { args: [Request] }) => ({ action: 'webhook.event.process', ...webhookEvent('clerk', req) }),
+  handleClerkEvent,
+)
+
+async function handleClerkEvent(req: Request) {
   const secret = process.env.CLERK_WEBHOOK_SECRET
   if (!secret) {
     console.error('CLERK_WEBHOOK_SECRET not set')
@@ -70,6 +79,7 @@ export async function POST(req: Request) {
   } catch {
     return NextResponse.json({ error: 'Invalid signature' }, { status: 400 })
   }
+  noteWebhook(req, { metadata: { event_type: event.type } })
 
   const db = supabaseServer()
   const { type, data } = event

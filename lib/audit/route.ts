@@ -34,6 +34,7 @@
 import { runAfterResponse } from '@/lib/after-response'
 import { STELLR_TENANT_ID } from '@/lib/tenancy/constants'
 import type { AuditAction } from './actions'
+import type { OwnerRef } from './webhook'
 import { audit, AUDIT_TIMEOUT_MS, auditClient, auditEnabled, recordAuditFailure, type AuditInput, type AuditOptions, type AuditResult } from './platform'
 
 /** Who did it. */
@@ -57,6 +58,12 @@ export type AuditTenant =
    * hold, or a read that fails, goes on the platform chain with tenant_unresolved.
    */
   | { eventSlug: string }
+  /**
+   * A provider's event, owned by the stored row it names (lib/audit/webhook.ts, S5
+   * A13a). Until the owner decides BF-4, a tenant's event goes on Stellr's chain with
+   * the owning tenant in the metadata; a row that cannot be read is unresolved.
+   */
+  | { owner: OwnerRef }
 
 export interface AuditMutation {
   action: AuditAction
@@ -152,6 +159,10 @@ export async function resolveTenant(t: AuditTenant, opts: { db?: AuditOptions['d
   try {
     if ('stellr' in t) return { tenantId: STELLR_TENANT_ID, metadata: {} }
     if ('tenantId' in t) return { tenantId: t.tenantId, metadata: {} }
+    if ('owner' in t) {
+      const { ownerChain } = await import('./webhook')
+      return await ownerChain(t.owner, opts.db ?? auditClient())
+    }
     const { getMirroredEvent } = await import('@/lib/events/mirror')
     const event = await getMirroredEvent(t.eventSlug, { db: opts.db ?? auditClient() })
     return event ? { tenantId: event.tenant_id, metadata: {} } : TENANT_UNRESOLVED

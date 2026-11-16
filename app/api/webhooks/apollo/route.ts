@@ -16,6 +16,8 @@ import {
   type Engagement,
 } from '@/lib/hubspot-deals'
 import { associateDefault, ensureCompany } from '@/lib/hubspot-companies'
+import { withAudit } from '@/lib/audit/route'
+import { noteWebhook, webhookEvent } from '@/lib/audit/webhook'
 
 /**
  * Apollo outbound engagement → HubSpot Participant Pipeline deal.
@@ -243,7 +245,14 @@ async function handleEvent(
   }
 }
 
-export async function POST(req: Request) {
+// S5 A13a: one audit event per delivery, by webhook:apollo, on Stellr's chain.
+// Off unless PLATFORM_AUDIT_ENABLED is on (lib/audit/webhook.ts).
+export const POST = withAudit(
+  ({ args: [req] }: { args: [Request] }) => ({ action: 'webhook.event.process', ...webhookEvent('apollo', req) }),
+  handleApolloEvents,
+)
+
+async function handleApolloEvents(req: Request) {
   if (!SECRET) {
     console.error('[apollo-webhook] APOLLO_WEBHOOK_SECRET is not set — refusing to write')
     return NextResponse.json({ error: 'Not configured' }, { status: 503 })
@@ -255,6 +264,7 @@ export async function POST(req: Request) {
   if (!authorised(raw, req)) {
     return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
   }
+  noteWebhook(req)
 
   let payload: unknown
   try {

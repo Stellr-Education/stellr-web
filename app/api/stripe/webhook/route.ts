@@ -21,6 +21,8 @@ import { notifyCommunityAdmins } from '@/lib/notify'
 import { PRICE_CHANGE_EVENTS, revalidatePriceCaches } from '@/lib/price-cache'
 import { checkInCodeLink } from '@/lib/check-in-codes'
 import { reportError } from '@/lib/app-errors'
+import { withAudit } from '@/lib/audit/route'
+import { noteWebhook, stripeEventNote, webhookEvent } from '@/lib/audit/webhook'
 
 // Formats a Stripe minor-unit amount as " ($60.00)" for activity-log summaries.
 function fmtMoney(amount: number | null | undefined, currency: string | null | undefined): string {
@@ -716,7 +718,15 @@ async function fulfilCheckoutSession(session: Stripe.Checkout.Session, stripe: S
 // so a slow fan-out cannot be cut off before the payment side effects complete.
 export const maxDuration = 60
 
-export async function POST(req: NextRequest) {
+// S5 A13a: one audit event per delivery, by webhook:stripe, on the chain of the
+// registration or row the event's work lands on (lib/audit/webhook.ts; BF-4's
+// default puts a tenant's on Stellr's). Off unless PLATFORM_AUDIT_ENABLED is on.
+export const POST = withAudit(
+  ({ args: [req] }: { args: [NextRequest] }) => ({ action: 'webhook.event.process', ...webhookEvent('stripe', req) }),
+  handleStripeEvent,
+)
+
+async function handleStripeEvent(req: NextRequest) {
   const rawBody = await req.text()
   const sig = req.headers.get('stripe-signature')
   const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET
@@ -734,6 +744,7 @@ export async function POST(req: NextRequest) {
     console.error('[stripe/webhook] Signature verification failed:', err)
     return NextResponse.json({ error: 'Invalid signature' }, { status: 400 })
   }
+  noteWebhook(req, stripeEventNote(event))
 
   // ── Idempotency guard ─────────────────────────────────────────────────────
   // Stripe delivers at-least-once. Skip any event we've already fully processed
@@ -750,7 +761,10 @@ export async function POST(req: NextRequest) {
       .select('id')
       .eq('id', event.id)
       .maybeSingle()
-    if (seen) return NextResponse.json({ ok: true, duplicate: true })
+    if (seen) {
+      noteWebhook(req, { metadata: { duplicate: true } })
+      return NextResponse.json({ ok: true, duplicate: true })
+    }
   }
 
   try {
