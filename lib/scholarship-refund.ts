@@ -75,6 +75,11 @@ async function feePaidFromCheckout(stripe: Stripe, paymentIntentId: string, pric
   }
 }
 
+/** The quote for a registration that cannot be found (or, C20b, is not one of Stellr's). */
+export function registrationNotFoundQuote(): ScholarshipRefundQuote {
+  return { refundCents: 0, feeCents: null, feePaidCents: null, targetCents: null, currency: 'usd', status: 'manual', detail: 'Registration not found' }
+}
+
 export async function quoteScholarshipRefund(
   db: SupabaseClient,
   stripe: Stripe | null,
@@ -83,7 +88,7 @@ export async function quoteScholarshipRefund(
 ): Promise<ScholarshipRefundQuote> {
   const base = { refundCents: 0, feeCents: null, feePaidCents: null, targetCents: null, currency: 'usd' }
   const reg = await loadRegistration(db, registrationId)
-  if (!reg) return { ...base, status: 'manual', detail: 'Registration not found' }
+  if (!reg) return registrationNotFoundQuote()
   if (reg.status !== 'confirmed') {
     return { ...base, status: 'not_paid', detail: 'Not paid yet — the scholarship comes off at checkout' }
   }

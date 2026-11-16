@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import type Stripe from 'stripe'
+import { STELLR_TENANT_ID as STELLR } from '@/lib/tenancy/constants'
 
 // Fixture-driven tests for the Stripe webhook's money paths (deep review PAY-13).
 // Covers the three fixes in this PR:
@@ -723,5 +724,71 @@ describe('duplicate-payment refunds survive a late retry (legacy-12.4)', () => {
     expect(h.confirmRegistration).not.toHaveBeenCalled()
     expect(await readRow('registrations', 'r1')).toMatchObject({ stripe_payment_intent_id: 'pi_1' })
     vi.mocked(console.warn).mockRestore()
+  })
+})
+
+// S5 A13a: one audit event per delivery, by webhook:stripe. The tenant comes from the
+// stored registration, and BF-4's default keeps a tenant's event on Stellr's chain.
+describe('platform audit (S5 A13a)', () => {
+  const REG = 'cccccccc-0000-4000-8000-00000000000c'
+  const TENANT_B = 'bbbbbbbb-0000-4000-8000-00000000000b'
+  const paid = (id: string) => ({
+    id: `evt_${id}`, type: 'checkout.session.completed',
+    data: { object: {
+      id: `cs_${id}`, payment_status: 'paid', payment_intent: `pi_${id}`,
+      metadata: { registrationId: REG }, client_reference_id: REG,
+      amount_total: 7500, currency: 'usd', customer: null, customer_details: null,
+    } },
+  }) as unknown as Stripe.Event
+  const withRpc = (tenant: string) => {
+    current = makeDb({
+      registrations: [{ id: REG, status: 'pending', stripe_payment_intent_id: null, tenant_id: tenant }],
+      participants: [],
+      stripe_webhook_events: [],
+    })
+    const rpc = vi.fn(async (_fn: string, _args: Record<string, unknown>) => ({ data: { id: 1, chain_seq: 1 }, error: null }))
+    ;(current.db as unknown as { rpc: typeof rpc }).rpc = rpc
+    return rpc
+  }
+  afterEach(() => {
+    vi.unstubAllEnvs()
+  })
+
+  it('off, nothing is written to the audit chain and the answer is the same', async () => {
+    const rpc = withRpc(STELLR)
+    const res = await post(paid('off'))
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({ ok: true })
+    await new Promise((r) => setTimeout(r, 0))
+    expect(rpc).not.toHaveBeenCalled()
+  })
+
+  it("on, a tenant's registration payment is recorded on Stellr's chain with its owner, and the answer is the same", async () => {
+    vi.stubEnv('PLATFORM_AUDIT_ENABLED', 'true')
+    const rpc = withRpc(TENANT_B)
+    const res = await post(paid('on'))
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({ ok: true })
+    await vi.waitFor(() => expect(rpc).toHaveBeenCalledTimes(1))
+    expect(rpc.mock.calls[0][0]).toBe('platform_audit_append')
+    expect(rpc.mock.calls[0][1]).toMatchObject({
+      p_tenant: STELLR,
+      p_actor: 'webhook:stripe',
+      p_actor_kind: 'webhook',
+      p_action: 'webhook.event.process',
+      p_target_table: 'stripe_webhook_events',
+      p_target_id: 'evt_on',
+      p_metadata: { event_type: 'checkout.session.completed', owner_tenant_id: TENANT_B, verified: true, status: 200 },
+    })
+  })
+
+  it('on, a redelivery is recorded as a duplicate', async () => {
+    vi.stubEnv('PLATFORM_AUDIT_ENABLED', 'true')
+    const rpc = withRpc(STELLR)
+    current.db.from('stripe_webhook_events').insert({ id: 'evt_dup', type: 'checkout.session.completed' })
+    const res = await post(paid('dup'))
+    expect(await res.json()).toEqual({ ok: true, duplicate: true })
+    await vi.waitFor(() => expect(rpc).toHaveBeenCalledTimes(1))
+    expect(rpc.mock.calls[0][1]).toMatchObject({ p_tenant: STELLR, p_metadata: { duplicate: true, verified: true } })
   })
 })

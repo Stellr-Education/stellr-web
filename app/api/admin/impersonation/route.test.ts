@@ -25,13 +25,14 @@ const h = vi.hoisted(() => ({
   encoded: [] as unknown[],
   actor: { actorType: 'admin', actorMemberId: 'admin1' } as Record<string, unknown>,
   auditOn: false,
+  userId: 'admin-clerk' as string | null,
 }))
 const logActivityOrThrow = vi.fn()
 const platformAudit = vi.fn()
 const getUser = vi.fn()
 
 vi.mock('@clerk/nextjs/server', () => ({
-  auth: async () => ({ userId: 'admin-clerk', sessionClaims: { metadata: { role: h.isAdmin ? 'admin' : undefined } } }),
+  auth: async () => ({ userId: h.userId, sessionClaims: { metadata: { role: h.isAdmin ? 'admin' : undefined } } }),
   clerkClient: async () => ({ users: { getUser } }),
 }))
 vi.mock('next/headers', () => ({
@@ -84,6 +85,7 @@ beforeEach(() => {
   h.encoded = []
   h.actor = { actorType: 'admin', actorMemberId: 'admin1' }
   h.auditOn = false
+  h.userId = 'admin-clerk'
   platformAudit.mockReset()
   platformAudit.mockResolvedValue({ ok: true, id: 1, seq: 1 })
 })
@@ -410,6 +412,53 @@ describe('platform audit (PLATFORM_AUDIT_ENABLED)', () => {
       action: 'support.impersonate.stop',
       metadata: { adminMemberId: 'admin1', reason: 'exited' },
     })
+  })
+
+  // GATE-AUDIT: DELETE records on every path that answers 200. With no live session,
+  // nothing was running: the row says only that the cookie was cleared, with no target.
+  it('records a DELETE with no live ticket as no_session, with no target', async () => {
+    h.auditOn = true
+    h.cookieValue = 'expired-or-forged'
+    h.decoded = null
+    const res = await DELETE()
+    expect(res.status).toBe(200)
+    expect(logActivityOrThrow).not.toHaveBeenCalled()
+    expect(platformAudit.mock.calls.map((c) => c[0])).toEqual([
+      { tenantId: STELLR, actor: 'admin-clerk', action: 'support.impersonate.stop', target: null, metadata: { reason: 'no_session' } },
+    ])
+  })
+
+  // Review of GATE-AUDIT: DELETE is not admin-gated and not rate-limited by proxy.ts, so an
+  // anonymous caller must not be able to append to Stellr's chain at all, and a signed-in
+  // caller only a capped number of times an hour.
+  it('writes no row for an anonymous DELETE, cookie or not', async () => {
+    h.auditOn = true
+    h.userId = null
+    h.decoded = null
+    h.cookieValue = undefined
+    expect((await DELETE()).status).toBe(200)
+    h.cookieValue = 'expired-or-forged'
+    expect((await DELETE()).status).toBe(200)
+    expect(platformAudit).not.toHaveBeenCalled()
+  })
+
+  it('caps no_session rows per caller, and the response is the same past the cap', async () => {
+    h.auditOn = true
+    h.userId = 'rate-limited-clerk'
+    h.cookieValue = 'expired-or-forged'
+    h.decoded = null
+    for (let i = 0; i < 25; i++) expect((await DELETE()).status).toBe(200)
+    expect(platformAudit).toHaveBeenCalledTimes(20)
+    expect(platformAudit.mock.calls.every((c) => c[0].actor === 'rate-limited-clerk' && c[0].target === null)).toBe(true)
+  })
+
+  it('records nothing for a DELETE whose end could not be logged (503)', async () => {
+    h.auditOn = true
+    h.cookieValue = 'ticket-abc'
+    h.decoded = { memberId: M1, adminMemberId: 'admin1', issuedAt: Date.now() }
+    logActivityOrThrow.mockRejectedValue(new Error('insert failed'))
+    expect((await DELETE()).status).toBe(503)
+    expect(platformAudit).not.toHaveBeenCalled()
   })
 
   it('a failed platform audit write changes nothing for the caller', async () => {
