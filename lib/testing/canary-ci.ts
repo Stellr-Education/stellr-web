@@ -23,7 +23,7 @@
 // No Clerk user is created or changed from CI. A persona Clerk does not have gets
 // a placeholder id in the local stack's role rows (so K3's readiness holds) and no
 // session (so its scenarios are skipped, and the summary says so).
-import type { ProbeVerdict, RunMode, ScenarioId, ScenarioStatus } from './canary-flow-scenarios'
+import { CANARY_SCENARIOS, type ProbeVerdict, type RunMode, type ScenarioId, type ScenarioStatus } from './canary-flow-scenarios'
 import {
   assertCanaryFlowTarget,
   CANARY_FLOW_EVENT,
@@ -194,17 +194,43 @@ export function sanityStubDocs(plan: CanaryFlowPlan): SanityStubDoc[] {
 }
 
 /**
+ * Whether a GROQ query asks for one document: a `[0]` slice at the top level (not
+ * inside a projection, a filter or a function call), as in `*[...][0] {...}` or
+ * `*[...] | order(date) [0]`. A range (`[0...3]`) is a list.
+ */
+export function isSingleDocumentQuery(query: string): boolean {
+  let depth = 0
+  let quote: string | null = null
+  for (let i = 0; i < query.length; i++) {
+    const c = query[i]
+    if (quote) {
+      if (c === '\\') i++
+      else if (c === quote) quote = null
+      continue
+    }
+    if (c === '"' || c === "'") quote = c
+    else if (c === '[' && depth === 0 && /^\[\s*0\s*\]/.test(query.slice(i))) return true
+    else if (c === '[' || c === '{' || c === '(') depth++
+    else if (c === ']' || c === '}' || c === ')') depth = Math.max(0, depth - 1)
+  }
+  return false
+}
+
+/**
  * What the stand-in answers a GROQ query with. An event looked up by $slug gets
- * its document when it is one of the two, and null otherwise; every other query
- * gets null, which is what lib/sanity.ts returns when Sanity is not configured,
- * so every page already handles it. It never evaluates GROQ.
+ * its document when it is one of the two, and null otherwise. Every other query
+ * gets what lib/sanity.ts returns when Sanity is not configured, so every caller
+ * already handles it: null for a single-document query (a top-level `[0]`), and
+ * [] for a list (getEventsBySlugs and getEventsByIds return [], and their callers
+ * map over the answer). It never evaluates GROQ.
  */
 export function answerSanityQuery(query: string, params: Record<string, unknown>, docs: readonly SanityStubDoc[]): unknown {
   const slug = params.slug
   if (typeof slug === 'string' && /_type\s*==\s*"event"/.test(query) && /slug\.current\s*==\s*\$slug/.test(query)) {
-    return docs.find((d) => d.slug.current === slug) ?? null
+    if (isSingleDocumentQuery(query)) return docs.find((d) => d.slug.current === slug) ?? null
+    return docs.filter((d) => d.slug.current === slug)
   }
-  return null
+  return isSingleDocumentQuery(query) ? null : []
 }
 
 /** The query and its $params from a GET query string or a POST body, as @sanity/client sends them. */
@@ -253,7 +279,9 @@ export function parseRunReport(raw: unknown): CanaryRunReport {
  * Red or green, and why. Every scenario that needs no persona must pass. With every
  * persona present the run is strict: a skip is never green (as K8 says). While some
  * are missing (before K7a), a scenario or probe skipped for want of one of them is
- * a warning, named in the summary; anything that ran and differed is still red.
+ * a warning, named in the summary: a scenario only when CANARY_SCENARIOS says it
+ * needs one of the missing personas. Any other skip, and anything that ran and
+ * differed, is red.
  */
 export function judgeCiRun(report: CanaryRunReport, missingPersonas: readonly CanaryPersonaHandle[]): { ok: boolean; lines: string[]; warnings: string[] } {
   const lines: string[] = []
@@ -286,8 +314,16 @@ export function judgeCiRun(report: CanaryRunReport, missingPersonas: readonly Ca
       continue
     }
     if (r.status === 'skipped' && !needsNoPersona && !strict) {
-      warnings.push(`${r.id}: skipped, for a persona the dev Clerk instance does not have yet (K7a)`)
-      lines.push(`  WARN  ${r.id}: skipped (missing persona)`)
+      // Only a skip explained by a missing persona is a warning: the scenario must
+      // need one of the personas that are missing. Any other skip is red.
+      const wanted = CANARY_SCENARIOS.find((s) => s.id === r.id)?.personas ?? []
+      const missing = wanted.filter((h) => missingPersonas.includes(h))
+      if (missing.length) {
+        warnings.push(`${r.id}: skipped, for a persona the dev Clerk instance does not have yet (${missing.join(', ')}; K7a)`)
+        lines.push(`  WARN  ${r.id}: skipped (missing persona)`)
+        continue
+      }
+      fail(`${r.id}: skipped, and none of its personas is missing`)
       continue
     }
     fail(`${r.id}: ${r.status}`)

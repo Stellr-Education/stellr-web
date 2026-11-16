@@ -6,6 +6,7 @@ import {
   CANARY_CI_STELLR_EVENT,
   canaryCiSwitches,
   canaryCiZone,
+  isSingleDocumentQuery,
   isPlaceholderClerkId,
   judgeCiRun,
   parseRunReport,
@@ -110,11 +111,34 @@ describe('the Sanity stand-in', () => {
     expect(docs.some((d) => d.slug.current === CANARY_CI_STELLR_EVENT.slug)).toBe(true)
   })
 
-  it('answers an event lookup by slug, and null for anything else', () => {
+  it('answers an event lookup by slug, null for any other single document, and [] for any other list', () => {
     expect(answerSanityQuery(bySlug, { slug: CANARY_FLOW_EVENT.slug }, docs)).toMatchObject({ _id: CANARY_FLOW_EVENT.sanity_id })
     expect(answerSanityQuery(bySlug, { slug: 'unknown' }, docs)).toBeNull()
-    expect(answerSanityQuery('*[_type == "event"] | order(date asc)', {}, docs)).toBeNull()
+    expect(answerSanityQuery('*[_type == "event"] | order(date asc)', {}, docs)).toEqual([])
     expect(answerSanityQuery('*[_type == "post" && slug.current == $slug][0]', { slug: CANARY_FLOW_EVENT.slug }, docs)).toBeNull()
+  })
+
+  it('answers [] to the list lookups lib/sanity.ts returns [] for unconfigured, so callers can map over it', () => {
+    // getEventsBySlugs and getEventsByIds (lib/sanity.ts); check-in-banner, event-portal,
+    // admin-digest and training-admin call .map on the answer.
+    const bySlugs = answerSanityQuery('*[_type == "event" && slug.current in $slugs]{ _id, title, slug, activityType, date, endDate, setting }', { slugs: ['a'] }, docs)
+    const byIds = answerSanityQuery('*[_type == "event" && _id in $ids]{ _id, title, slug, activityType, date }', { ids: ['a'] }, docs)
+    expect(bySlugs).toEqual([])
+    expect(byIds).toEqual([])
+    expect(() => (bySlugs as unknown[]).map((x) => x)).not.toThrow()
+    // A list query keyed on $slug still answers a list.
+    expect(answerSanityQuery('*[_type == "event" && slug.current == $slug]{ _id }', { slug: CANARY_FLOW_EVENT.slug }, docs)).toEqual([
+      expect.objectContaining({ _id: CANARY_FLOW_EVENT.sanity_id }),
+    ])
+  })
+
+  it('tells a single-document query from a list by a top-level [0] only', () => {
+    expect(isSingleDocumentQuery(bySlug)).toBe(true)
+    expect(isSingleDocumentQuery('*[_type == "siteSettings"] | order(_updatedAt desc) [0] { title }')).toBe(true)
+    expect(isSingleDocumentQuery('*[_type == "event"] | order(date asc) [0...3] { title }')).toBe(false)
+    expect(isSingleDocumentQuery('*[_type == "newsPost"] { title, "image": images[0].asset->url }')).toBe(false)
+    expect(isSingleDocumentQuery('*[_type == "event" && title == "[0]"] { title }')).toBe(false)
+    expect(isSingleDocumentQuery('*[_type == "event" && defined(tags[0])] { title }')).toBe(false)
   })
 
   it('reads the query and $params from a GET or a POST', () => {
@@ -173,6 +197,24 @@ describe('judgeCiRun', () => {
     r.probes[0] = { id: 'P1', verdict: 'skipped', persona: 'anonymous' }
     expect(judgeCiRun(r, ALL_MISSING).ok).toBe(false)
     expect(judgeCiRun(report(), ['canary-manager']).ok).toBe(false)
+  })
+
+  it('warns on a skipped scenario only when it needs a persona that is missing', () => {
+    // S3 needs canary-manager (CANARY_SCENARIOS). With canary-manager missing, its skip is a warning.
+    const noProbeSkips = report({ probes: [{ id: 'P1', verdict: 'pass', persona: 'anonymous' }] })
+    const warned = judgeCiRun(noProbeSkips, ['canary-manager'])
+    expect(warned.ok).toBe(true)
+    expect(warned.warnings.join('\n')).toMatch(/S3: skipped.*canary-manager/)
+    // With only an unrelated persona missing, the skip is unexplained: red.
+    const red = judgeCiRun(noProbeSkips, ['canary-admin'])
+    expect(red.ok).toBe(false)
+    expect(red.lines.join('\n')).toMatch(/FAIL\s+S3: skipped, and none of its personas is missing/)
+  })
+
+  it('is red when a scenario that needs no persona is skipped, whatever is missing', () => {
+    const r = report()
+    r.results[1] = { id: 'S2', status: 'skipped' }
+    expect(judgeCiRun(r, ALL_MISSING).ok).toBe(false)
   })
 
   it('is strict once every persona exists: a skip is never green', () => {

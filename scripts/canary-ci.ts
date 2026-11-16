@@ -20,8 +20,9 @@
  *   npx tsx scripts/canary-ci.ts sanity-stub --docs <file> --cert <file> --key <file> [--port 443]
  *       The Sanity stand-in, on 127.0.0.1 over HTTPS, for k11stub.api.sanity.io
  *       (the job points that name at this machine in /etc/hosts). It serves the two
- *       documents by slug and answers every other query with null, as an
- *       unconfigured client would. Logs nothing from a query.
+ *       documents by slug and answers every other query as lib/sanity.ts does
+ *       unconfigured: null for a single document (a top-level [0]), [] for a
+ *       list. Logs nothing from a query.
  *
  *   npx tsx scripts/canary-ci.ts run --zone <zone> [--port 3000] [--break S1]
  *       Creates a short-lived Clerk session for each persona the dev instance has
