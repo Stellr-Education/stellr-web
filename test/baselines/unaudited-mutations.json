@@ -3,19 +3,13 @@
   "measuredBy": 2,
   "totals": {
     "mutatingHandlers": 291,
-    "unauditedMutations": 35,
+    "unauditedMutations": 29,
     "cronHandlers": 24,
     "unauditedCrons": 0,
     "getMutations": 20,
     "unauditedGetMutations": 4
   },
   "mutations": [
-    "app/api/admin/scholarships/[id]/cancel/route.ts#POST",
-    "app/api/admin/scholarships/[id]/not-offered/route.ts#POST",
-    "app/api/admin/scholarships/[id]/offer/route.ts#POST",
-    "app/api/admin/scholarships/[id]/refund/route.ts#POST",
-    "app/api/admin/scholarships/[id]/resend/route.ts#POST",
-    "app/api/admin/scholarships/[id]/route.ts#PATCH",
     "app/api/asset-request/route.ts#POST",
     "app/api/contact/route.ts#POST",
     "app/api/cq-lead/route.ts#POST",

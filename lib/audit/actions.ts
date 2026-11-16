@@ -306,6 +306,14 @@ export const AUDIT_ACTIONS = [
   'event.check_in.self_check_in',
   'event.check_in.self_forget',
 
+  // Scholarships admin, Stellr-only in release 1 (C20b): app/api/admin/scholarships/[id]/**
+  'scholarship.notes.update',
+  'scholarship.offer.create',
+  'scholarship.offer.decline',
+  'scholarship.offer.cancel',
+  'scholarship.offer_email.resend',
+  'scholarship.refund.issue',
+  'scholarship.refund_quote.read',
   // The admin-only routes (GATE-AUDIT remainder, critique item 2). Stellr's own chain,
   // unless the route acts on an event, which goes on its owner's.
   // The access model: app/api/admin/access/**
