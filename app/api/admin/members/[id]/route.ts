@@ -7,7 +7,9 @@ import { isAdminClaims } from '@/lib/admin-auth'
 import { startRetentionClock } from '@/lib/esign/retention'
 import { resolveEmailPair } from '@/lib/member-email'
 import { shadowSyncFields } from '@/lib/field-crypto-shadow'
-import { parseGraduationYear } from '@/lib/graduation-year'
+import { graduationYearRange } from '@/lib/graduation-year'
+import { storableId, withAudit } from '@/lib/audit/route'
+import { adminAuditSubject, noteAuditSubject } from '@/lib/audit/route-subject'
 
 function humanizeFields(keys: string[]): string {
   return keys.map((k) => k.replace(/^ec_/, 'emergency ').replace(/_/g, ' ')).join(', ')
@@ -77,20 +79,52 @@ function describeMemberUpdateError(error: DbError, sent: string[]): { status: nu
   }
 }
 
+/** The earliest graduation year an admin may record. */
+const EARLIEST_GRADUATION_YEAR = 1950
+
+/**
+ * Graduation year as an admin enters it (alumni.mentor-upgrade, backlog-batch2.10). The
+ * far end is onboarding's (this school year to eight on), but a past year is allowed: a
+ * former student's year is behind them, and that is the record the July-1 Alumni upgrade
+ * reads. Blank is null.
+ */
+function parseAdminGraduationYear(raw: unknown): { ok: true; value: number | null } | { ok: false; error: string } {
+  if (raw === undefined || raw === null) return { ok: true, value: null }
+  const text = typeof raw === 'number' ? String(raw) : typeof raw === 'string' ? raw.trim() : null
+  if (text === '') return { ok: true, value: null }
+  const { max } = graduationYearRange()
+  const error = `Graduation year must be a year from ${EARLIEST_GRADUATION_YEAR} to ${max}.`
+  if (text === null || !/^\d{4}$/.test(text)) return { ok: false, error }
+  const year = Number(text)
+  if (year < EARLIEST_GRADUATION_YEAR || year > max) return { ok: false, error }
+  return { ok: true, value: year }
+}
+
 function sameSet(a: string[], b: string[]): boolean {
   if (a.length !== b.length) return false
   const sa = new Set(a)
   return b.every((x) => sa.has(x))
 }
 
-export async function PATCH(
-  req: Request,
-  { params }: { params: Promise<{ id: string }> }
-) {
+type Ctx = { params: Promise<{ id: string }> }
+
+// Platform audit (docs/TENANCY-S5.md, C7): the member is the target. An update records
+// which fields changed (names, never values); a deactivation records nothing more.
+export const PATCH = withAudit(
+  ({ args: [req] }: { args: [Request, Ctx] }) => ({ action: 'member.record.update', ...adminAuditSubject(req, 'members') }),
+  updateMember,
+)
+export const DELETE = withAudit(
+  ({ args: [req] }: { args: [Request, Ctx] }) => ({ action: 'member.record.deactivate', ...adminAuditSubject(req, 'members') }),
+  deactivateMember,
+)
+
+async function updateMember(req: Request, { params }: Ctx) {
   const { sessionClaims } = await auth()
   if (!(await hasCapability('members:write'))) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
   const { id } = await params
+  noteAuditSubject(req, { id: storableId(id) })
   const body = await req.json()
   const db = supabaseServer()
 
@@ -127,19 +161,13 @@ export async function PATCH(
     db.from('member_allergies').select('allergy_option_id').eq('member_id', id),
   ])
 
-  // Graduation year (alumni.mentor-upgrade): the onboarding range, this school
-  // year to eight on. Checked only when it changes: the form sends every field
-  // on each save, and a graduate's year on file is in the past, which must not
-  // block an unrelated edit.
+  // Graduation year (alumni.mentor-upgrade): checked whenever the form sends it,
+  // changed or not, so a bad value on file cannot ride through an unrelated edit.
+  // A past year is allowed (a former student); see parseAdminGraduationYear.
   if (updates.graduation_year !== undefined && updates.graduation_year !== null) {
-    const onFile = (before as Record<string, unknown> | null)?.graduation_year
-    if (norm(onFile) === norm(updates.graduation_year)) {
-      updates.graduation_year = onFile
-    } else {
-      const parsed = parseGraduationYear(updates.graduation_year)
-      if (!parsed.ok) return NextResponse.json({ error: parsed.error }, { status: 400 })
-      updates.graduation_year = parsed.value
-    }
+    const parsed = parseAdminGraduationYear(updates.graduation_year)
+    if (!parsed.ok) return NextResponse.json({ error: parsed.error }, { status: 400 })
+    updates.graduation_year = parsed.value
   }
 
   const { data, error } = await db
@@ -195,6 +223,7 @@ export async function PATCH(
   if ('allergy_ids' in body && Array.isArray(body.allergy_ids) && !sameSet(beforeAllergyIds, body.allergy_ids)) {
     changed.push('dietary')
   }
+  noteAuditSubject(req, { detail: { fields: changed } })
   if (changed.length > 0) {
     const actor = await actorFromAuth()
     await logActivity({
@@ -211,14 +240,12 @@ export async function PATCH(
 }
 
 // Soft-delete
-export async function DELETE(
-  _req: Request,
-  { params }: { params: Promise<{ id: string }> }
-) {
+async function deactivateMember(req: Request, { params }: Ctx) {
   const { sessionClaims } = await auth()
   if (!isAdminClaims(sessionClaims)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
   const { id } = await params
+  noteAuditSubject(req, { id: storableId(id) })
   const db = supabaseServer()
 
   const { error } = await db

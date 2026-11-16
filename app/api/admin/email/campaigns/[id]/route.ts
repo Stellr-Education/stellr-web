@@ -3,6 +3,8 @@ import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import { supabaseServer } from '@/lib/supabase'
 import { isAdminClaims } from '@/lib/admin-auth'
+import { storableId, withAudit } from '@/lib/audit/route'
+import { adminAuditSubject, noteAuditSubject } from '@/lib/audit/route-subject'
 
 const audienceSchema = z.object({
   activeOnly: z.boolean().optional(),
@@ -25,7 +27,20 @@ const EDITABLE = new Set(['draft', 'scheduled', 'paused'])
 //   activate: draft|paused → scheduled (goes live; cron/event engine picks it up)
 //   pause:    scheduled     → paused
 //   archive:  any           → archived (hidden, template freed)
-export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
+type Ctx = { params: Promise<{ id: string }> }
+
+// Platform audit (docs/TENANCY-S5.md, C7): the campaign is the target; which fields were
+// edited (names, never values), the action and the resulting status the metadata.
+export const PATCH = withAudit(
+  ({ args: [req] }: { args: [Request, Ctx] }) => ({ action: 'email.campaign.update', ...adminAuditSubject(req, 'email_campaigns') }),
+  updateCampaign,
+)
+export const DELETE = withAudit(
+  ({ args: [req] }: { args: [Request, Ctx] }) => ({ action: 'email.campaign.archive', ...adminAuditSubject(req, 'email_campaigns') }),
+  archiveCampaign,
+)
+
+async function updateCampaign(req: Request, { params }: Ctx) {
   const { sessionClaims } = await auth()
   if (!isAdminClaims(sessionClaims)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   const { id } = await params
@@ -69,16 +84,25 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     update.status = 'archived'
   }
 
+  noteAuditSubject(req, {
+    id: storableId(id),
+    detail: {
+      fields: Object.keys(update).filter((k) => k !== 'updated_at' && k !== 'status'),
+      ...(action ? { campaign_action: action } : {}),
+      campaign_status: (update.status ?? campaign.status) as string,
+    },
+  })
   const { error } = await db.from('email_campaigns').update(update).eq('id', id)
   if (error) return NextResponse.json({ error: 'Failed to update campaign' }, { status: 500 })
   return NextResponse.json({ ok: true, status: update.status ?? campaign.status })
 }
 
 // DELETE /api/admin/email/campaigns/[id] — archive (soft). Keeps the send ledger.
-export async function DELETE(_req: Request, { params }: { params: Promise<{ id: string }> }) {
+async function archiveCampaign(req: Request, { params }: Ctx) {
   const { sessionClaims } = await auth()
   if (!isAdminClaims(sessionClaims)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   const { id } = await params
+  noteAuditSubject(req, { id: storableId(id) })
 
   const db = supabaseServer()
   const { error } = await db.from('email_campaigns').update({ status: 'archived' }).eq('id', id)

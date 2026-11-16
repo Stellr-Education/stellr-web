@@ -4,6 +4,8 @@ import { loadTemplateFile, TemplateAdminError } from '@/lib/esign/native/templat
 import { parseFieldMap } from '@/lib/esign/native/template'
 import { labelSample, renderSample } from '@/lib/esign/native/template-sample'
 import { adminName, failure, forbidden, noStore } from '../guard'
+import { withAudit } from '@/lib/audit/route'
+import { adminAuditSubject } from '@/lib/audit/route-subject'
 
 // POST /api/admin/esign/templates/preview — the document with each field's
 // label printed where the editor currently has it: { pdfPath, fieldMap }.
@@ -11,7 +13,14 @@ import { adminName, failure, forbidden, noStore } from '../guard'
 
 export const maxDuration = 30
 
-export async function POST(req: Request) {
+// Platform audit (docs/TENANCY-S5.md, C7): it saves nothing, but every mutating handler
+// records an event, so this one names who rendered a preview, and nothing else.
+export const POST = withAudit(
+  ({ args: [req] }: { args: [Request] }) => ({ action: 'esign.template.preview', ...adminAuditSubject(req, 'esign_templates') }),
+  preview,
+)
+
+async function preview(req: Request) {
   if (!(await adminName())) return forbidden()
   const body = (await req.json().catch(() => null)) as { pdfPath?: unknown; fieldMap?: unknown } | null
   if (!body || typeof body.pdfPath !== 'string') return NextResponse.json({ error: 'Invalid request' }, { status: 400, headers: noStore })

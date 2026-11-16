@@ -5,6 +5,8 @@ import { supabaseServer } from '@/lib/supabase'
 import { isAdminClaims } from '@/lib/admin-auth'
 import { startCronRun } from '@/lib/cron-runs'
 import { ALL_STEPS, runEsignMaintenance, type MaintenanceStep } from '@/lib/esign/maintenance'
+import { withAudit } from '@/lib/audit/route'
+import { adminAuditSubject, noteAuditSubject } from '@/lib/audit/route-subject'
 
 // POST /api/admin/esign/maintenance — run the daily signed-record housekeeping
 // now: sync DocuSign's allowance figures, archive signed PDFs not yet stored
@@ -28,12 +30,20 @@ const bodySchema = z.object({
   steps: z.array(z.enum(ALL_STEPS as [MaintenanceStep, ...MaintenanceStep[]])).optional(),
 }).strict()
 
-export async function POST(req: NextRequest) {
+// Platform audit (docs/TENANCY-S5.md, C7): who ran it, whether it was a dry run, and
+// which steps. What each step did stays in the cron run ledger.
+export const POST = withAudit(
+  ({ args: [req] }: { args: [NextRequest] }) => ({ action: 'esign.maintenance.run', ...adminAuditSubject(req, 'cron_runs') }),
+  runMaintenance,
+)
+
+async function runMaintenance(req: NextRequest) {
   const { userId, sessionClaims } = await auth()
   if (!userId || !isAdminClaims(sessionClaims)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
   const parsed = bodySchema.safeParse(await req.json().catch(() => ({})))
   if (!parsed.success) return NextResponse.json({ error: 'Invalid request' }, { status: 400 })
+  noteAuditSubject(req, { userId, detail: { dry_run: Boolean(parsed.data.dryRun), steps: parsed.data.steps ?? ['all'] } })
 
   const deadline = Date.now() + COPY_BUDGET_MS
   const db = supabaseServer()
