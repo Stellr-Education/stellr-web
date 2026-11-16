@@ -2,6 +2,7 @@ import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import { Users, User, Calendar, MapPin } from 'lucide-react'
 import { getEventBySlug } from '@/lib/events/repo'
+import { requireStellrEvent } from '@/lib/events/stellr-owner'
 import { formatDate, formatDateRange, eventLastDay, registrationStatus } from '@/lib/utils'
 import { getCurrentMember } from '@/lib/community'
 import { RegistrationAuthBanner } from '@/components/registration/RegistrationAuthBanner'
@@ -18,6 +19,8 @@ export default async function RegisterTypePage({ params }: PageProps) {
   const { slug } = await params
   const event = await getEventBySlug(slug).catch(() => null)
   if (!event) notFound()
+  // Another tenant's event answers as one nobody has (S5 K11 probe P4).
+  await requireStellrEvent(slug)
 
   const member = await getCurrentMember().catch(() => null)
   const returnUrl = `${WWW}/register/${slug}`
