@@ -70,4 +70,24 @@ describe('POST /api/stripe/membership-checkout (PAY-15)', () => {
     expect(h.assertLiveCredentials).toHaveBeenCalledWith('stripe')
     expect(h.sessionsCreate).toHaveBeenCalledTimes(1)
   })
+
+  // Nov 2026: the MNCOSE26 booth code. Checkout offers a promotion-code field
+  // unless account credit is applied (Stripe refuses both on one session), and
+  // asks for a card only when something is due today.
+  type SessionParams = { allow_promotion_codes?: boolean; discounts?: unknown; payment_method_collection?: string }
+  const params = () => (h.sessionsCreate.mock.calls[0] as unknown as [SessionParams])[0]
+
+  it('offers a promotion-code field when no credit applies', async () => {
+    await post({ tierName: 'Catalyst', billingInterval: 'annual' })
+    expect(params().allow_promotion_codes).toBe(true)
+    expect(params().discounts).toBeUndefined()
+    expect(params().payment_method_collection).toBe('if_required')
+  })
+
+  it('uses account credit instead of the code field when credit applies', async () => {
+    h.buildCreditDiscount.mockResolvedValueOnce({ couponId: 'co_credit', reservationId: 'r1', allocations: [] } as never)
+    await post({ tierName: 'Catalyst', billingInterval: 'annual' })
+    expect(params().discounts).toEqual([{ coupon: 'co_credit' }])
+    expect(params().allow_promotion_codes).toBeUndefined()
+  })
 })
