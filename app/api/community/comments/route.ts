@@ -173,20 +173,30 @@ async function createComment(req: Request) {
   const mentionIds = extractMentionIds(bodyJson)
   if (mentionIds.length) {
     runAfterResponse('community', async () => {
-      const { data: ctx } = await db
+      // #727 follow-up: recipients are checked against the post's own space,
+      // read with the post. If that space cannot be read, nobody is notified:
+      // falling back to another space (the old 'general') would let every
+      // member who can open that one through.
+      const { data: ctx, error: ctxError } = await db
         .from('community_posts')
-        .select('author_member_id, community_spaces(slug)')
+        .select('author_member_id, space_id, community_spaces(slug)')
         .eq('id', postId)
         .maybeSingle()
-      const rel = ctx?.community_spaces as { slug: string } | { slug: string }[] | null
+      const rel = ctx?.community_spaces as { slug: string } | { slug: string }[] | null | undefined
       const slug = Array.isArray(rel) ? rel[0]?.slug : rel?.slug
+      const spaceId = ctx?.space_id as string | null | undefined
+      if (ctxError || !spaceId || !slug) {
+        console.error('[community] comment mentions skipped: the post\'s space could not be read (fail-closed)', { postId, commentId: comment.id })
+        return
+      }
       await notifyMentions({
         mentionIds,
         actorMemberId: member.id,
         actorName: [member.first_name, member.last_name].filter(Boolean).join(' ') || 'A member',
         context: 'comment',
         postId,
-        spaceSlug: slug ?? 'general',
+        spaceSlug: slug,
+        spaceId,
         excludeIds: ctx?.author_member_id ? [ctx.author_member_id] : [],
       })
     })
