@@ -4,12 +4,17 @@ import forge from 'node-forge'
 import { PDFDocument } from 'pdf-lib'
 import { fakeSupabase, type FakeDb } from '@/test/fake-supabase'
 import { sha256Hex, SIGNED_BUCKET } from '@/lib/esign/storage'
-import { applyCertificateSeal, sealPending } from './certificate-seal'
+import { applyCertificateSeal, sealPending, timestampFailureCode } from './certificate-seal'
 import { purgeExpired } from '@/lib/esign/retention'
+import { resetErrorCaptureState } from '@/lib/app-errors'
+import { tsaClient } from './seal'
+import { makeTestTsa, readRequest, tsaResponse, type TestTsa } from './fixtures/tsa-builder'
 
 let p12: string
+let tsa: TestTsa
 
 beforeAll(() => {
+  tsa = makeTestTsa()
   const keys = forge.pki.rsa.generateKeyPair({ bits: 1024, e: 0x10001 })
   const cert = forge.pki.createCertificate()
   cert.publicKey = keys.publicKey
@@ -89,5 +94,79 @@ describe('sealPending and the purge', () => {
     const purge = await purgeExpired(db.client, { limit: 5, now: new Date('2026-10-03T00:00:00Z') })
     expect(purge.purged).toBe(1)
     expect([...db.objects.keys()].filter((k) => k.includes('agr-1'))).toEqual([])
+  })
+})
+
+// A timestamp service answering with a token from `signer`.
+function tsaService(signer: TestTsa) {
+  return vi.fn(async (_url: unknown, init?: RequestInit) => {
+    const body = Buffer.from(init?.body as Buffer)
+    return new Response(Buffer.from(tsaResponse(signer, { ...readRequest(body), genTime: new Date() }), 'binary'), { status: 200 })
+  })
+}
+
+describe('the timestamp outcome in the sealed audit event (#726 follow-up)', () => {
+  beforeEach(() => resetErrorCaptureState())
+
+  function recordAppErrors(db: FakeDb) {
+    const rows: { p_route: string; p_message: string; p_count: number }[] = []
+    db.rpcs.record_app_error = (a) => { rows.push(a as never); return null }
+    return rows
+  }
+
+  it('a verified timestamp seals pades-t with no timestamp_error and no app error', async () => {
+    const { db } = await setup()
+    const appErrors = recordAppErrors(db)
+    const client = tsaClient('https://tsa.test', tsaService(tsa) as never, { trustAnchors: tsa.anchors })
+    expect(await applyCertificateSeal(db.client, 'agr-1', new Date(), { tsa: client })).toMatchObject({ sealed: true, kind: 'pades-t' })
+
+    const detail = db.table('esign_audit_events')[0].detail as Record<string, unknown>
+    expect(detail).toMatchObject({ sealKind: 'pades-t', previousPath: 'native/2026/agr-1/signed.pdf' })
+    expect(detail.timestampedAt).toEqual(expect.any(String))
+    expect(detail).not.toHaveProperty('timestamp_error')
+    expect(appErrors).toEqual([])
+  }, 60_000)
+
+  it('a token that fails verification seals pades, records the failed check, and logs one app error', async () => {
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const { db, original } = await setup()
+    const appErrors = recordAppErrors(db)
+    const stranger = makeTestTsa({ name: 'Stranger (placeholder)' })
+    const client = tsaClient('https://tsa.test', tsaService(stranger) as never, { trustAnchors: tsa.anchors })
+    expect(await applyCertificateSeal(db.client, 'agr-1', new Date(), { tsa: client })).toMatchObject({ sealed: true, kind: 'pades' })
+
+    const detail = db.table('esign_audit_events')[0].detail as Record<string, unknown>
+    // The existing keys stay (retention finds the original by previousPath).
+    expect(detail).toMatchObject({
+      sealKind: 'pades',
+      previousPath: 'native/2026/agr-1/signed.pdf',
+      previousSha256: sha256Hex(original),
+      timestampedAt: null,
+      timestamp_error: 'chain',
+    })
+    expect(appErrors).toHaveLength(1)
+    expect(appErrors[0]).toMatchObject({ p_route: 'esign certificate seal', p_count: 1 })
+    expect(appErrors[0].p_message).toMatch(/timestamp verification failed \(chain\)/)
+    // Nothing about the agreement or the certificates in the app error.
+    expect(appErrors[0].p_message).not.toMatch(/agr-1|Stranger|BEGIN/)
+    err.mockRestore()
+  }, 60_000)
+
+  it('an unreachable service or no timestamp asked for adds no timestamp_error', async () => {
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const { db } = await setup()
+    const appErrors = recordAppErrors(db)
+    const down = tsaClient('https://tsa.test', (async () => new Response('', { status: 503 })) as never)
+    expect(await applyCertificateSeal(db.client, 'agr-1', new Date(), { tsa: down })).toMatchObject({ sealed: true, kind: 'pades' })
+    expect(db.table('esign_audit_events')[0].detail).not.toHaveProperty('timestamp_error')
+    expect(appErrors).toEqual([])
+    err.mockRestore()
+  }, 60_000)
+
+  it('timestampFailureCode passes only a known check name', () => {
+    expect(timestampFailureCode('verification failed (signature): Timestamp signature does not verify')).toBe('signature')
+    expect(timestampFailureCode('verification failed (bogus): x')).toBeNull()
+    expect(timestampFailureCode('unavailable: HTTP 503')).toBeNull()
+    expect(timestampFailureCode(null)).toBeNull()
   })
 })

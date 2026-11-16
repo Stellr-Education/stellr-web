@@ -205,6 +205,36 @@ describe('notifyMentions — recipients must be able to open the space (MEM-11)'
   })
 })
 
+// #727 follow-up: a caller that read the post's own space passes its id, and
+// the check runs against that space, never one looked up by slug.
+describe('notifyMentions — the post’s own space id', () => {
+  function mentionIn(mentionIds: string[], actorMemberId: string, spaceId: string, spaceSlug = 'general') {
+    return notifyMentions({ mentionIds, actorMemberId, actorName: 'Actor', context: 'comment', postId: 'p1', spaceSlug, spaceId })
+  }
+
+  it('checks a private-space post against that space, not the slug', async () => {
+    adults(['in-1', 'out-2'])
+    state.canAccess = new Set(['in-1'])
+    await mentionIn(['in-1', 'out-2'], 'actor-space-1', 'space-private', 'general')
+    expect(state.accessCalls.map((c) => c.spaceId)).toEqual(['space-private', 'space-private'])
+    expect(state.notified).toEqual(['in-1'])
+  })
+
+  it('checks a general-space post against the general space by id', async () => {
+    adults(['a-1'])
+    await mentionIn(['a-1'], 'actor-space-2', 'space-general')
+    expect(state.accessCalls.map((c) => c.spaceId)).toEqual(['space-general'])
+    expect(state.notified).toEqual(['a-1'])
+  })
+
+  it('notifies nobody when the space by id lets nobody in (missing or archived)', async () => {
+    adults(['a-1'])
+    state.canAccess = new Set()
+    await mentionIn(['a-1'], 'actor-space-3', 'space-gone', 'gone')
+    expect(state.notified).toEqual([])
+  })
+})
+
 describe('notifyMentions — per-actor hourly limit (MEM-11)', () => {
   it('stops one actor after the limit, across posts, and leaves another actor unaffected', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
