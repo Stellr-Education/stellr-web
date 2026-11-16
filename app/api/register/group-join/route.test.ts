@@ -67,8 +67,9 @@ vi.mock('@/lib/supabase', () => ({
             : { data: { id: 'p-1' }, error: null },
         insert: (p: unknown) => { if (table === 'participants') h.partInsert(p); return chain },
         upsert: () => chain, update: () => chain,
+        // A members write is the login link, which changes the one new row.
         then: (onF: (v: unknown) => unknown) =>
-          Promise.resolve({ data: null, error: table === 'participants' ? h.countError : null, count: 0 }).then(onF),
+          Promise.resolve({ data: null, error: table === 'participants' ? h.countError : null, count: table === 'members' ? 1 : 0 }).then(onF),
       }
       return chain
     },

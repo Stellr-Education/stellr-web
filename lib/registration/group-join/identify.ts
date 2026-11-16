@@ -192,7 +192,18 @@ export async function identifyNewParticipant(
     // member row new this request); otherwise linking would bind a
     // caller-created login to an existing member (deep review C-1).
     if (signInToken) {
-      await db.from('members').update({ clerk_user_id: provisioned.clerkUserId }).eq('id', memberId).is('clerk_user_id', null)
+      const { count, error } = await db
+        .from('members')
+        .update({ clerk_user_id: provisioned.clerkUserId }, { count: 'exact' })
+        .eq('id', memberId)
+        .is('clerk_user_id', null)
+      // The guarded link was refused (the row has a login by now) or failed:
+      // the ticket was minted before that was known, so it does not go out,
+      // and it is revoked. They sign in through the normal flow instead.
+      if (error || count === 0) {
+        signInToken = null
+        await provisioned.withdraw?.()
+      }
     }
   } catch (clerkErr) {
     console.error('Clerk provisioning for group-join (non-fatal):', clerkErr)
