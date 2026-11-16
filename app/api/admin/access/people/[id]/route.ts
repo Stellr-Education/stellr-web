@@ -3,10 +3,12 @@ import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import { supabaseServer } from '@/lib/supabase'
 import { getMemberAccessSummary } from '@/lib/member-access'
-import { addGlobalRole, getGlobalRoleNames, ROLES_BY_BRACKET, type MemberRole } from '@/lib/member-roles'
+import { addGlobalRole, getGlobalRoleNames, ROLE_LABELS, ROLES_BY_BRACKET, type MemberRole } from '@/lib/member-roles'
 import { TIERS_BY_BRACKET, type AgeBracket } from '@/lib/tiers'
 import { isAdminClaims } from '@/lib/admin-auth'
 import { actorFromAuth, logActivity } from '@/lib/activity-log'
+import { storableId, withAudit } from '@/lib/audit/route'
+import { adminAuditSubject, noteAuditSubject } from '@/lib/audit/route-subject'
 
 // /api/admin/access/people/[id] — everything the Person 360 renders in one
 // call: profile + bracket, tier memberships, global roles, and the resolved
@@ -53,7 +55,24 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
 
 const roleSchema = z.object({ role: z.string() })
 
-export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
+type Ctx = { params: Promise<{ id: string }> }
+
+/** The member as the event's target, and the role when it is one of ours. */
+function noteRole(req: Request, memberId: string, role: string) {
+  noteAuditSubject(req, { id: storableId(memberId), detail: role in ROLE_LABELS ? { role } : {} })
+}
+
+// Platform audit (docs/TENANCY-S5.md, C7): a global role chip, granted or removed.
+export const POST = withAudit(
+  ({ args: [req] }: { args: [Request, Ctx] }) => ({ action: 'access.member_role.grant', ...adminAuditSubject(req, 'members') }),
+  grantRole,
+)
+export const DELETE = withAudit(
+  ({ args: [req] }: { args: [Request, Ctx] }) => ({ action: 'access.member_role.revoke', ...adminAuditSubject(req, 'members') }),
+  revokeRole,
+)
+
+async function grantRole(req: Request, { params }: Ctx) {
   const { sessionClaims } = await auth()
   if (!isAdminClaims(sessionClaims)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
@@ -61,6 +80,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   const parsed = roleSchema.safeParse(await req.json().catch(() => null))
   if (!parsed.success) return NextResponse.json({ error: 'Invalid request' }, { status: 400 })
 
+  noteRole(req, id, parsed.data.role)
   const db = supabaseServer()
   const result = await addGlobalRole(db, id, parsed.data.role as MemberRole, 'admin')
   if (!result.ok) return NextResponse.json({ error: result.reason }, { status: 400 })
@@ -79,7 +99,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   return NextResponse.json({ ok: true })
 }
 
-export async function DELETE(req: Request, { params }: { params: Promise<{ id: string }> }) {
+async function revokeRole(req: Request, { params }: Ctx) {
   const { sessionClaims } = await auth()
   if (!isAdminClaims(sessionClaims)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
@@ -87,6 +107,7 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ id: s
   const parsed = roleSchema.safeParse(await req.json().catch(() => null))
   if (!parsed.success) return NextResponse.json({ error: 'Invalid request' }, { status: 400 })
   const role = parsed.data.role as MemberRole
+  noteRole(req, id, role)
 
   if (role === 'member') {
     return NextResponse.json({ error: 'The base member role cannot be removed.' }, { status: 400 })

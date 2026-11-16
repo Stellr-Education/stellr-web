@@ -98,6 +98,24 @@ async function auditViewAs(
   })
 }
 
+/**
+ * The platform audit event for DELETE, on every path that answers 200. With a live ticket it
+ * records the session's end; with none, nothing was running, and the row says only that
+ * someone cleared the cookie (reason no_session, no target).
+ */
+async function auditViewAsEnd(ticket: ImpersonationTicket | null): Promise<void> {
+  if (!auditEnabled()) return
+  const actor = await callerClerkId()
+  if (ticket) return auditViewAs('support.impersonate.stop', actor, ticket, { reason: 'exited' })
+  await audit({
+    tenantId: STELLR_TENANT_ID,
+    actor: actor ?? 'system',
+    action: 'support.impersonate.stop',
+    target: null,
+    metadata: { reason: 'no_session' },
+  })
+}
+
 /** The caller's Clerk id, or null when there is none (or it cannot be read). */
 async function callerClerkId(): Promise<string | null> {
   try {
@@ -257,8 +275,8 @@ export async function DELETE() {
       console.error('[impersonation] audit write failed; leaving view-as running:', err)
       return refuse(503, 'Could not record the end of this view-as session, so it is still running. Try again.')
     }
-    if (auditEnabled()) await auditViewAs('support.impersonate.stop', await callerClerkId(), ticket, { reason: 'exited' })
   }
+  await auditViewAsEnd(ticket)
 
   const res = NextResponse.json({ ok: true })
   res.cookies.set(IMPERSONATION_COOKIE, '', cookieOptions(0))

@@ -6,6 +6,7 @@ import { renderDigestEmail } from '@/lib/admin-digest-email'
 import { appUrl } from '@/lib/email-campaigns'
 import { sendEmail } from '@/lib/email'
 import { maskEmail } from '@/lib/utils'
+import { withAudit } from '@/lib/audit/route'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
@@ -14,7 +15,15 @@ export const maxDuration = 60
 // app/api/cron/weekly-digest) to the signed-in admin, and nobody else, so it
 // can be checked on demand. Outside production lib/email reroutes it to the
 // dev safelist, as it does every send.
-export async function POST() {
+//
+// Platform audit (docs/TENANCY-S5.md, C7): who asked for it. The address it went to is the
+// caller's own, and is never stored.
+export const POST = withAudit(
+  { action: 'digest.preview.send', actor: { session: true }, tenant: { stellr: true } },
+  sendDigest,
+)
+
+async function sendDigest() {
   if (!(await currentUserIsAdmin())) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
   const user = await currentUser().catch(() => null)

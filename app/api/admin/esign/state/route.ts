@@ -4,6 +4,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { supabaseServer } from '@/lib/supabase'
 import { isAdminClaims } from '@/lib/admin-auth'
 import { applyStateUpdate, loadEngineSummary, stateUpdateSchema } from '@/lib/esign/state'
+import { withAudit } from '@/lib/audit/route'
+import { adminAuditSubject, noteAuditSubject } from '@/lib/audit/route-subject'
 
 // GET  /api/admin/esign/state — the signing-engine card: which engine new
 //       agreements go to, DocuSign allowance used, archive and storage health.
@@ -19,7 +21,14 @@ export async function GET() {
   return NextResponse.json(summary, { headers: noStore })
 }
 
-export async function PATCH(req: NextRequest) {
+// Platform audit (docs/TENANCY-S5.md, C7): which settings changed, the mode, cap and
+// reserve when set, and how many addresses the allowlist holds, never the addresses.
+export const PATCH = withAudit(
+  ({ args: [req] }: { args: [NextRequest] }) => ({ action: 'esign.state.update', ...adminAuditSubject(req, 'esign_provider_state') }),
+  updateState,
+)
+
+async function updateState(req: NextRequest) {
   const { userId, sessionClaims } = await auth()
   if (!userId || !isAdminClaims(sessionClaims)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
@@ -28,6 +37,17 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ error: 'Invalid settings', issues: parsed.error.flatten() }, { status: 400 })
   }
 
+  const { mode, monthlyCap, reserve, overflowAllowlist } = parsed.data
+  noteAuditSubject(req, {
+    userId,
+    detail: {
+      fields: Object.keys(parsed.data),
+      ...(mode !== undefined ? { mode } : {}),
+      ...(monthlyCap !== undefined ? { monthly_cap: monthlyCap } : {}),
+      ...(reserve !== undefined ? { reserve } : {}),
+      ...(overflowAllowlist !== undefined ? { allowlist_size: overflowAllowlist.length } : {}),
+    },
+  })
   const db = supabaseServer()
   await applyStateUpdate(db, parsed.data, `admin:${userId}`)
   console.info(`[esign-state] updated by ${userId}:`, JSON.stringify(parsed.data))

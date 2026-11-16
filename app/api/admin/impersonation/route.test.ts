@@ -412,6 +412,29 @@ describe('platform audit (PLATFORM_AUDIT_ENABLED)', () => {
     })
   })
 
+  // GATE-AUDIT: DELETE records on every path that answers 200. With no live session,
+  // nothing was running: the row says only that the cookie was cleared, with no target.
+  it('records a DELETE with no live ticket as no_session, with no target', async () => {
+    h.auditOn = true
+    h.cookieValue = 'expired-or-forged'
+    h.decoded = null
+    const res = await DELETE()
+    expect(res.status).toBe(200)
+    expect(logActivityOrThrow).not.toHaveBeenCalled()
+    expect(platformAudit.mock.calls.map((c) => c[0])).toEqual([
+      { tenantId: STELLR, actor: 'admin-clerk', action: 'support.impersonate.stop', target: null, metadata: { reason: 'no_session' } },
+    ])
+  })
+
+  it('records nothing for a DELETE whose end could not be logged (503)', async () => {
+    h.auditOn = true
+    h.cookieValue = 'ticket-abc'
+    h.decoded = { memberId: M1, adminMemberId: 'admin1', issuedAt: Date.now() }
+    logActivityOrThrow.mockRejectedValue(new Error('insert failed'))
+    expect((await DELETE()).status).toBe(503)
+    expect(platformAudit).not.toHaveBeenCalled()
+  })
+
   it('a failed platform audit write changes nothing for the caller', async () => {
     h.auditOn = true
     platformAudit.mockResolvedValue({ ok: false, error: 'db down' })
