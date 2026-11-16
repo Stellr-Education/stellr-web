@@ -6,6 +6,7 @@
 // writes nothing, --apply fills only years still NULL. No database is touched.
 import { describe, expect, it } from 'vitest'
 import {
+  applyRefusal,
   argRefusal,
   backfill,
   envRefusal,
@@ -19,6 +20,13 @@ import {
 import { PRODUCTION_SUPABASE_REF } from './production-guard.mjs'
 
 const NOV_2026 = new Date(Date.UTC(2026, 10, 14))
+// The rollover boundaries (backlog-batch2.10 review note): the last day of the
+// 2026 school year, mid-July before the August cutover, and the first day of 2027.
+const JUN_30_2026 = new Date(Date.UTC(2026, 5, 30, 23, 59))
+const JUL_1_2026 = new Date(Date.UTC(2026, 6, 1))
+const JUL_15_2026 = new Date(Date.UTC(2026, 6, 15))
+const JUL_31_2026 = new Date(Date.UTC(2026, 6, 31, 23, 59))
+const AUG_1_2026 = new Date(Date.UTC(2026, 7, 1))
 const opts = (o: Partial<Options> = {}): Options => ({ envFile: '.env.local', apply: false, production: false, batch: 500, ...o })
 
 describe('parseArgs', () => {
@@ -60,6 +68,27 @@ describe('guards', () => {
     expect(envRefusal(opts({ apply: true, production: true }), prod)).toBeNull()
     expect(envRefusal(opts(), 'https://dev-placeholder.supabase.co')).toBeNull()
     expect(envRefusal(opts(), undefined)).toMatch(/NEXT_PUBLIC_SUPABASE_URL/)
+  })
+})
+
+describe('applyRefusal: --apply only from August to June', () => {
+  it('allows --apply on 30 June and from 1 August', () => {
+    expect(applyRefusal({ apply: true }, JUN_30_2026)).toBeNull()
+    expect(applyRefusal({ apply: true }, AUG_1_2026)).toBeNull()
+    expect(applyRefusal({ apply: true }, NOV_2026)).toBeNull()
+  })
+
+  it('refuses --apply from 1 July until the August rollover, with the reason and the window', () => {
+    for (const day of [JUL_1_2026, JUL_15_2026, JUL_31_2026]) {
+      const msg = applyRefusal({ apply: true }, day)
+      expect(msg).toMatch(/^Refusing --apply in July/)
+      expect(msg).toMatch(/August to June/)
+      expect(msg).toMatch(/Report mode \(no --apply\) works any time/)
+    }
+  })
+
+  it('always allows report mode', () => {
+    for (const day of [JUN_30_2026, JUL_15_2026, AUG_1_2026]) expect(applyRefusal({ apply: false }, day)).toBeNull()
   })
 })
 
@@ -133,6 +162,40 @@ const fixture = (): Row[] => [
 ]
 
 describe('backfill', () => {
+  it('in July, --apply throws before reading or writing anything, and report mode still runs', async () => {
+    const { db, writes, filters } = standIn(fixture())
+    await expect(backfill(db, { apply: true, batch: 500 }, JUL_15_2026)).rejects.toThrow(/Refusing --apply in July/)
+    expect(filters).toEqual([])
+    expect(writes).toEqual([])
+
+    const r = await backfill(db, { apply: false, batch: 500 }, JUL_15_2026)
+    expect(writes).toEqual([])
+    // Mid-July is still the 2026 school year: grade 12 graduates in 2026.
+    expect(Object.fromEntries(r.byYear)).toEqual({ 2026: ['a1'], 2028: ['a2', 'a3'] })
+    // ...and the cron's rule does not count 2026 as graduated until August.
+    expect(r.graduated).toBe(0)
+  })
+
+  it('the years it plans are never ones the alumni cron treats as graduated, at each boundary', async () => {
+    const expected: Array<[Date, Record<number, string[]>]> = [
+      [JUN_30_2026, { 2026: ['a1'], 2028: ['a2', 'a3'] }],
+      [JUL_15_2026, { 2026: ['a1'], 2028: ['a2', 'a3'] }],
+      [AUG_1_2026, { 2027: ['a1'], 2029: ['a2', 'a3'] }],
+    ]
+    for (const [day, byYear] of expected) {
+      const r = await backfill(standIn(fixture()).db, { apply: false, batch: 500 }, day)
+      expect(Object.fromEntries(r.byYear)).toEqual(byYear)
+      expect(r.graduated).toBe(0)
+    }
+  })
+
+  it('--apply on 1 August fills the new school year', async () => {
+    const rows = fixture()
+    const r = await backfill(standIn(rows).db, { apply: true, batch: 500 }, AUG_1_2026)
+    expect(r.updated).toBe(3)
+    expect(rows.find((x) => x.id === 'a1')!.graduation_year).toBe(2027)
+  })
+
   it('report mode writes nothing and lists ids by year', async () => {
     const { db, writes, filters } = standIn(fixture())
     const r = await backfill(db, { apply: false, batch: 500 }, NOV_2026)
@@ -174,10 +237,11 @@ describe('backfill', () => {
 describe('formatReport', () => {
   it('prints counts and member ids only', () => {
     const lines = formatReport(
-      { scanned: 3, byYear: new Map([[2029, ['a2']], [2027, ['a1']]]), skipped: { not_a_school_grade: 0, not_a_school_student: 1 }, updated: 0, failed: 0 },
+      { scanned: 3, byYear: new Map([[2029, ['a2']], [2027, ['a1']]]), skipped: { not_a_school_grade: 0, not_a_school_student: 1 }, graduated: 0, updated: 0, failed: 0 },
       false,
     )
     expect(lines[0]).toBe('3 member(s) read with a grade and no graduation year; 2 school student(s) to fill (report only: nothing written)')
-    expect(lines.slice(2)).toEqual(['  2027: 1', '    a1', '  2029: 1', '    a2'])
+    expect(lines[2]).toBe('  0 would be upgraded to Alumni by the next cron run')
+    expect(lines.slice(3)).toEqual(['  2027: 1', '    a1', '  2029: 1', '    a2'])
   })
 })

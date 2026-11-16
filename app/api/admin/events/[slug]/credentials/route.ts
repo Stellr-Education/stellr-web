@@ -7,28 +7,21 @@ import { sendCredentialIssuedEmail } from '@/lib/credentials-notify'
 import { themeFromType } from '@/lib/campaigns'
 import { EVENT_AWARDS, mentorCredentialTitle } from '@/lib/event-awards'
 import { listEventMentors } from '@/lib/event-certificates'
-import { withAudit, type AuditMutation } from '@/lib/audit/route'
-import { auditSubject, noteAuditSubject } from '@/lib/audit/route-subject'
+import { withAudit } from '@/lib/audit/route'
+import { noteAuditSubject } from '@/lib/audit/route-subject'
+import { verifiedEventAudit } from '@/lib/audit-route-helpers'
 
 export const dynamic = 'force-dynamic'
 
 // Platform audit (docs/TENANCY-S5.md, C7). The handler notes who passed requireEventAccess;
-// the event goes on the chain of the event's owner, read from the mirror by its slug.
-/** The event in the URL, /api/admin/events/<slug>/…: only looked up, never stored from here. */
-function eventSlugOf(req: Request): string {
-  const parts = new URL(req.url).pathname.split('/')
-  const at = parts.indexOf('events')
-  return at < 0 ? '' : (parts[at + 1] ?? '')
-}
-function eventAudit(req: Request, table: string): Omit<AuditMutation, 'action'> {
-  return { ...auditSubject(req, table), tenant: { eventSlug: eventSlugOf(req) } }
-}
+// the event goes on the chain of the owner of the event that check verified (the slug it
+// noted), read from the mirror, never from the raw slug in the URL (lib/audit-route-helpers).
 
 // The audience and mode (enums) and the run's counts are the metadata: never a name,
 // and never the wording, which is free text.
 type Ctx = { params: Promise<{ slug: string }> }
-const configureAudit = ({ args: [req] }: { args: [Request, Ctx] }) => ({ action: 'event.credentials.configure' as const, ...eventAudit(req, 'event_settings') })
-const issueAudit = ({ args: [req] }: { args: [Request, Ctx] }) => ({ action: 'event.credentials.issue' as const, ...eventAudit(req, 'credentials') })
+const configureAudit = ({ args: [req] }: { args: [Request, Ctx] }) => ({ action: 'event.credentials.configure' as const, ...verifiedEventAudit(req, 'event_settings') })
+const issueAudit = ({ args: [req] }: { args: [Request, Ctx] }) => ({ action: 'event.credentials.issue' as const, ...verifiedEventAudit(req, 'credentials') })
 
 export const PATCH = withAudit(configureAudit, configureCredentials)
 export const POST = withAudit(issueAudit, issueCredentials)
@@ -244,12 +237,16 @@ async function issueCredentials(req: Request, { params }: Ctx) {
   return NextResponse.json({ ok: true, mode, considered: people.length, created, existing, emailed, skipped: skips.length, skips, failures })
 }
 
-/** A run's counts, for the audit event: the names in skips and failures stay out. */
+/**
+ * A run's counts, for the audit event: the names in skips and failures stay out. The
+ * emailed count is recorded as `notified`: the audit sanitiser drops any key containing
+ * 'email' (lib/audit/platform.ts). The response keeps `emailed`.
+ */
 function runDetail(
   audience: Audience,
   run: { mode: string; considered: number; created: number; existing: number; emailed: number; skipped: number; failures: string[] },
 ) {
-  return { audience, mode: run.mode, considered: run.considered, created: run.created, existing: run.existing, emailed: run.emailed, skipped: run.skipped, failed: run.failures.length }
+  return { audience, mode: run.mode, considered: run.considered, created: run.created, existing: run.existing, notified: run.emailed, skipped: run.skipped, failed: run.failures.length }
 }
 
 async function issueToMentors(

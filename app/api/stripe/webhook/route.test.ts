@@ -334,6 +334,28 @@ describe('members-pay-individually seat settlement (PAY-7 / PAY-N1)', () => {
     expect(await readRow('participants', 'pX')).toMatchObject({ stripe_payment_intent_id: 'pi_1' })
     expect(h.notifyCommunityAdmins).toHaveBeenCalledTimes(1)
   })
+
+  it('a late retry of the duplicate seat refund that gets charge_already_refunded is done: 200, no second alert (PAY-N1, legacy-12.4)', async () => {
+    // The duplicate (pi_2) was refunded on an earlier delivery; this retry comes
+    // after Stripe's 24-hour idempotency window, so Stripe refuses the refund.
+    current = makeDb(seatRows('pi_1', 'paid'))
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    h.refundsCreate.mockRejectedValueOnce(Object.assign(new Error('Charge has already been refunded.'), { type: 'StripeInvalidRequestError', code: 'charge_already_refunded' }))
+    const res = await post({ id: 'evt_dup_seat_late', type: 'checkout.session.completed', data: { object: seatSession('cs_seat2', 'pi_2') } } as unknown as Stripe.Event)
+
+    expect(res.status).toBe(200)
+    expect(h.refundsCreate).toHaveBeenCalledTimes(1)
+    expect(h.refundsCreate).toHaveBeenCalledWith(
+      expect.objectContaining({ payment_intent: 'pi_2', metadata: expect.objectContaining({ reason: 'duplicate_individual_payment', source: 'stellr_app' }) }),
+      { idempotencyKey: 'dup-cs_seat2' },
+    )
+    // Staff were told on the first delivery; the seat keeps the first intent and is not re-settled.
+    expect(h.notifyCommunityAdmins).not.toHaveBeenCalled()
+    expect(await readRow('participants', 'pX')).toMatchObject({ stripe_payment_intent_id: 'pi_1', individual_payment_status: 'paid' })
+    // The event is recorded as processed, so Stripe stops retrying.
+    expect(current.inserts.find((i) => i.table === 'stripe_webhook_events')).toBeDefined()
+    vi.mocked(console.warn).mockRestore()
+  })
 })
 
 describe('checkout.session.completed payment_status gate (PAY-6)', () => {

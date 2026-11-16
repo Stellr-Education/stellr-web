@@ -109,10 +109,15 @@ const STATUSES = new Set(['scheduled', 'cancelled', 'postponed', 'rescheduled', 
  */
 const IN_CHUNK = 100
 
-/** The tenant id, trimmed, or a throw. Never a default. */
+/**
+ * The tenant id, trimmed and lower-cased, or a throw. Never a default. Postgres compares a
+ * uuid without regard to case but returns it lower-cased, so an id passed in upper case
+ * would match its rows in the query and then lose every one to the row check (tracker
+ * s5-programme.50).
+ */
 export function requireTenantId(tenantId: unknown): string {
   if (typeof tenantId !== 'string' || !tenantId.trim()) throw new TenantRequiredError()
-  const id = tenantId.trim()
+  const id = tenantId.trim().toLowerCase()
   if (!UUID.test(id)) throw new TenantRequiredError('events facade: the tenant id is not a uuid')
   return id
 }

@@ -16,6 +16,7 @@ import {
 } from '@/lib/check-in'
 import { loadCheckInView } from '@/lib/check-in-view'
 import { GUARDIAN_CONSENT_PENDING_CHECK_IN, isConsentPendingRefusal } from '@/lib/check-in-consent'
+import { checkSpamSignals } from '@/lib/spam-guard'
 import { reportError } from '@/lib/app-errors'
 import { withAudit, type AuditMutation } from '@/lib/audit/route'
 import { auditSubject, noteAuditSubject } from '@/lib/audit/route-subject'
@@ -36,11 +37,16 @@ const str = (v: unknown) => (typeof v === 'string' ? v.trim() : '')
 // Platform audit (docs/TENANCY-S5.md, C7). Nobody is signed in at the door, so the actor
 // is { userId: null }, which the row records as anonymous. The event's owner is read from
 // the mirror once the event code has matched, and the participant is the target. Nothing
-// typed at the door (name, date of birth, email, the code) goes in the event.
+// typed at the door (name, date of birth, email, the code) goes in the event. The slug is
+// the one the event code matched, never the body's own; a 200 that matched nothing (a
+// tripped honeypot) has none, and goes on the platform chain marked unresolved, as
+// "Not you?" does. Metadata keys are snake_case.
 function doorEvent(req: Request): Omit<AuditMutation, 'action'> {
   const { target, metadata } = auditSubject(req, 'participants')
   const slug = typeof metadata?.event_slug === 'string' ? metadata.event_slug : ''
-  return { actor: { userId: null }, tenant: { eventSlug: slug }, target, metadata }
+  return slug
+    ? { actor: { userId: null }, tenant: { eventSlug: slug }, target, metadata }
+    : { actor: { userId: null }, tenant: { tenantId: null }, target, metadata: { ...metadata, tenant_unresolved: true } }
 }
 const checkInAudit = ({ args: [req] }: { args: [Request] }) => ({ action: 'event.check_in.self_check_in' as const, ...doorEvent(req) })
 // "Not you?" clears this phone's cookie and reads no record. Its slug is the caller's own
@@ -74,6 +80,15 @@ async function selfCheckIn(req: Request) {
   const { tenantId } = await requestTenant()
   const limited = await rateLimit(req, 'check-in', { limit: 600, windowMs: HOUR_MS, tenantId }, slug)
   if (limited) return limited
+  // spam.L1b at the door (docs/REC-form-spam-hardening.md): the honeypot only. No
+  // timing trap: people at the door submit in seconds, and the QR link may fill the
+  // form for them. A filled honeypot gets the silent 200 and nothing is read or
+  // written. Before the per-name limit, so a bot spends no real person's tries.
+  const trapped = checkSpamSignals(body, req, 'check-in', { timing: false })
+  if (trapped) {
+    noteAuditSubject(req, { detail: { spam_trap: 'honeypot' } })
+    return trapped
+  }
   // Guessing someone's birthday means many tries at one name; a real person
   // needs two or three. Keyed by name, so a busy shared IP is unaffected.
   if (byName) {

@@ -9,7 +9,12 @@ import { checkInsVisibleTo, loadOpenCheckIns, pickBannerEvent, todayUtc } from '
 import { verifyCheckInCode } from '@/lib/check-in-codes'
 import { checkInTime, crewActionName, meaningfulNote, type DeskContact, type DeskDetails, type DeskFlags, type DeskGroup } from '@/lib/check-in-desk'
 import { loadDeskCrew, loadCrewCheckIns, writeCrewCheckIn } from '@/lib/check-in-crew'
-import { GUARDIAN_CONSENT_PENDING_DESK, isConsentPendingRefusal } from '@/lib/check-in-consent'
+import {
+  CONSENT_PENDING_CODE,
+  GUARDIAN_CONSENT_PENDING_DESK,
+  consentPendingParticipants,
+  isConsentPendingRefusal,
+} from '@/lib/check-in-consent'
 import { storableId, withAudit, type AuditMutation } from '@/lib/audit/route'
 import { auditSubject, noteAuditSubject } from '@/lib/audit/route-subject'
 
@@ -37,16 +42,17 @@ import { auditSubject, noteAuditSubject } from '@/lib/audit/route-subject'
 
 type Params = { params: Promise<{ slug: string }> }
 
-// Platform audit (docs/TENANCY-S5.md, C7). The handler notes who passed requireEventAccess;
-// the event goes on the chain of the event's owner, read from the mirror by its slug.
-/** The event in the URL, /api/admin/events/<slug>/…: only looked up, never stored from here. */
-function eventSlugOf(req: Request): string {
-  const parts = new URL(req.url).pathname.split('/')
-  const at = parts.indexOf('events')
-  return at < 0 ? '' : (parts[at + 1] ?? '')
-}
+// Platform audit (docs/TENANCY-S5.md, C7). The handler notes who passed requireEventAccess
+// and the slug that check passed for; the event goes on the chain of that event's owner,
+// read from the mirror by the slug. A request that stopped before the check noted no slug,
+// so it goes on the platform chain unplaced (resolveTenant's rule), never on the chain the
+// raw URL names. Metadata keys are snake_case.
 function eventAudit(req: Request, table: string): Omit<AuditMutation, 'action'> {
-  return { ...auditSubject(req, table), tenant: { eventSlug: eventSlugOf(req) } }
+  const subject = auditSubject(req, table)
+  const slug = subject.metadata?.event_slug
+  return typeof slug === 'string' && slug
+    ? { ...subject, tenant: { eventSlug: slug } }
+    : { ...subject, tenant: { tenantId: null }, metadata: { ...subject.metadata, tenant_unresolved: true } }
 }
 
 // Which desk action (an enum) and how many people it named are the metadata, with the
@@ -69,10 +75,27 @@ const MAX_GROUP_IDS = 300
  * "Database error". Never a Stellr participant: Stellr has no consent rows.
  */
 function checkInWriteFailed(error: { code?: string | null; message?: string | null }): NextResponse {
-  if (isConsentPendingRefusal(error)) {
-    return NextResponse.json({ code: 'guardian_consent_pending', error: GUARDIAN_CONSENT_PENDING_DESK }, { status: 409 })
-  }
+  if (isConsentPendingRefusal(error)) return consentPending()
   return NextResponse.json({ error: 'Database error' }, { status: 500 })
+}
+
+/**
+ * The desk's answer for a participant waiting on guardian consent: a failed scan,
+ * nothing written. A 4xx, so withAudit records no event for it, as for any refusal.
+ */
+function consentPending(): NextResponse {
+  return NextResponse.json({ code: CONSENT_PENDING_CODE, error: GUARDIAN_CONSENT_PENDING_DESK }, { status: 409 })
+}
+
+/**
+ * S5 CONSENT (c): asked before a desk check-in writes. True when anyone named is
+ * waiting on guardian consent, and then nobody is written: one pending minor in a
+ * group refuses the whole group (BF-66), as the trigger's refusal of the whole
+ * statement always has. A failed read is not a refusal; the trigger still decides.
+ */
+async function anyConsentPending(db: SupabaseClient, participantIds: string[]): Promise<boolean> {
+  const pending = await consentPendingParticipants(db, { participantIds })
+  return !!pending && pending.size > 0
 }
 
 export async function GET(req: Request, { params }: Params) {
@@ -115,6 +138,11 @@ export async function GET(req: Request, { params }: Params) {
     }),
   ])
 
+  // S5 CONSENT (c): who is waiting on guardian consent, for the desk's marker (WD-6).
+  // Only a tenant event has consent rows, so a Stellr event's poll is unchanged. Null
+  // on a hiccup: no markers this poll, and the write paths still refuse.
+  const pendingConsent = await consentPendingParticipants(db, { registrationIds: (regs ?? []).map((r) => r.id as string) })
+
   const merchByMember = new Map<string, { name: string; qty: number }[]>()
   for (const m of (merchRows ?? []) as { name: string; qty: number; participant_member_id: string }[]) {
     const list = merchByMember.get(m.participant_member_id) ?? []
@@ -136,6 +164,7 @@ export async function GET(req: Request, { params }: Params) {
       company: p.event_companies ?? null,
       merch: p.member_id ? merchByMember.get(p.member_id as string) ?? [] : [],
       merchCollected: (p.merch_collected as boolean) ?? false,
+      ...(pendingConsent?.has(p.id as string) ? { consentPending: true as const } : {}),
     }))
   )
 
@@ -303,6 +332,8 @@ async function deskAction(req: Request, { params }: Params) {
 
     const { error } = await db.from('event_settings').upsert(update, { onConflict: 'event_slug' })
     if (error) return NextResponse.json({ error: 'Database error' }, { status: 500 })
+    // How many other events' check-in this closed, as a count (never their names).
+    if (action === 'open') noteAuditSubject(req, { detail: { desk_action: action, closed_count: closed.length } })
     return NextResponse.json({ ok: true, closed })
   }
 
@@ -352,6 +383,7 @@ async function deskAction(req: Request, { params }: Params) {
     if (!(await allInEvent(db, slug, [participantId]))) {
       return NextResponse.json({ error: 'Participant not found for this event' }, { status: 404 })
     }
+    if (action === 'manual' && (await anyConsentPending(db, [participantId]))) return consentPending()
 
     const { error } = await db
       .from('participants')
@@ -373,6 +405,8 @@ async function deskAction(req: Request, { params }: Params) {
     if (!(await allInEvent(db, slug, ids))) {
       return NextResponse.json({ error: 'Participant not found for this event' }, { status: 404 })
     }
+    // One consent-pending member refuses the whole group (BF-66): nobody in it is written.
+    if (action === 'group_check_in' && (await anyConsentPending(db, ids))) return consentPending()
     const { error } =
       action === 'group_check_in'
         ? await db
@@ -381,7 +415,7 @@ async function deskAction(req: Request, { params }: Params) {
             .in('id', ids)
             .is('checked_in_at', null)
         : await db.from('participants').update({ checked_in_at: null, check_in_method: null }).in('id', ids)
-    // One consent-pending member refuses the whole statement, so nobody in it is in.
+    // The trigger's backstop: one consent-pending member refuses the whole statement.
     if (error) return checkInWriteFailed(error)
     return NextResponse.json({ ok: true })
   }
@@ -424,8 +458,10 @@ async function deskAction(req: Request, { params }: Params) {
     if (p.checked_in_at) {
       return NextResponse.json({ ok: true, kind: 'participant', participantId: p.id, alreadyCheckedIn: true, checkedInAt: p.checked_in_at })
     }
-    const at = checkInTime(body?.at)
     noteAuditSubject(req, { id: p.id })
+    // A participant waiting on guardian consent is a failed scan: nothing is written.
+    if (await anyConsentPending(db, [p.id])) return consentPending()
+    const at = checkInTime(body?.at)
     const { error } = await db
       .from('participants')
       .update({ checked_in_at: at, check_in_method: 'manual' })

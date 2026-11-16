@@ -8,6 +8,7 @@ import { requiresBackgroundCheck } from '@/lib/compliance'
 import { assertLiveCredentials, SandboxCredentialsError } from '@/lib/env-guards'
 import { withAudit } from '@/lib/audit/route'
 import { auditSubject, noteAuditSubject } from '@/lib/audit/route-subject'
+import { memberIdOf } from '@/lib/audit-route-helpers'
 
 // POST /api/admin/members/[id]/background-check
 // Admin orders a background check for an adult member via the hosted-invite flow
@@ -15,13 +16,6 @@ import { auditSubject, noteAuditSubject } from '@/lib/audit/route-subject'
 // billed per report; the member is NOT charged. "Payment occurs automatically
 // once ordered" (PRD) is satisfied by the provider's own per-report billing.
 type Ctx = { params: Promise<{ id: string }> }
-
-/** The member in the URL, /api/admin/members/<id>/…: the event's target. */
-function memberIdOf(req: Request): string | null {
-  const parts = new URL(req.url).pathname.split('/')
-  const at = parts.indexOf('members')
-  return at < 0 ? null : (parts[at + 1] ?? null)
-}
 
 // Platform audit (docs/TENANCY-S5.md, C7). A failed order still records its error row,
 // answered as a 502, so that is recorded too, with the status.

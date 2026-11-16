@@ -67,8 +67,9 @@ vi.mock('@/lib/supabase', () => ({
             : { data: { id: 'p-1' }, error: null },
         insert: (p: unknown) => { if (table === 'participants') h.partInsert(p); return chain },
         upsert: () => chain, update: () => chain,
+        // A members write is the login link, which changes the one new row.
         then: (onF: (v: unknown) => unknown) =>
-          Promise.resolve({ data: null, error: table === 'participants' ? h.countError : null, count: 0 }).then(onF),
+          Promise.resolve({ data: null, error: table === 'participants' ? h.countError : null, count: table === 'members' ? 1 : 0 }).then(onF),
       }
       return chain
     },
@@ -80,7 +81,15 @@ vi.mock('@/lib/docusign-agreements', () => ({ dispatchAgreement: h.dispatch }))
 vi.mock('@/lib/school-link', () => ({ linkMembersToSchoolByName: async () => {} }))
 vi.mock('@/lib/event-participation-sync', () => ({ recordEventParticipation: async () => {} }))
 vi.mock('@/lib/space-inheritance', () => ({ syncObjectSpaceRoster: async () => {}, reconcileEventSpaceRoster: async () => {} }))
-vi.mock('@/lib/member-sync', () => ({ upsertMember: h.upsertMember }))
+// identify.ts calls upsertMemberOutcome; it reports through h.upsertMember, and a
+// row it returns counts as inserted by this request.
+vi.mock('@/lib/member-sync', () => ({
+  upsertMember: h.upsertMember,
+  upsertMemberOutcome: async (...a: Parameters<typeof h.upsertMember>) => {
+    const member = await h.upsertMember(...a)
+    return { member, inserted: member != null }
+  },
+}))
 vi.mock('@/lib/rate-limit-async', () => ({ rateLimit: h.rlGuard }))
 
 const { POST } = await import('./route')

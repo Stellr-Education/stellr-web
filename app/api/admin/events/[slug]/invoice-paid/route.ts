@@ -4,7 +4,7 @@ import { supabaseServer } from '@/lib/supabase'
 import { actorFromAuth, logActivity } from '@/lib/activity-log'
 import { auditSubject, noteAuditSubject } from '@/lib/audit/route-subject'
 import { withAudit } from '@/lib/audit/route'
-import { loadEventRecord, refuseOutsideStellr, refuseUnlessStellrEvent, scopedRowWrite } from '@/lib/tenancy/load-scoped'
+import { loadEventRecord, stellrOnlyEvent, scopedRowWrite } from '@/lib/tenancy/load-scoped'
 
 // POST /api/admin/events/[slug]/invoice-paid — mark a group registration's
 // invoice settled (or clear it). Invoiced registrations have no automatic paid
@@ -14,7 +14,7 @@ import { loadEventRecord, refuseOutsideStellr, refuseUnlessStellrEvent, scopedRo
 //
 // A tenant has no invoices until S9, and C20 takes group invoices. Until then the
 // invoice is on Stellr's Stripe account, so a tenant's event is refused for everyone,
-// a Stellr admin included (refuseUnlessStellrEvent).
+// a Stellr admin included (stellrOnlyEvent).
 
 const ROUTE = '/api/admin/events/[slug]/invoice-paid'
 
@@ -30,9 +30,7 @@ async function setInvoicePaid(req: Request, { params }: Ctx) {
   const crew = await requireEventRoute(slug, { route: ROUTE })
   if (!crew.ok) return crew.response
   noteAuditSubject(req, { userId: crew.userId, tenantId: crew.tenantId, eventSlug: slug })
-  const refused = refuseOutsideStellr(crew.scope)
-  if (refused) return refused
-  const foreign = await refuseUnlessStellrEvent(supabaseServer(), slug, ROUTE)
+  const foreign = await stellrOnlyEvent(crew.scope, supabaseServer(), slug, ROUTE)
   if (foreign) return foreign
 
   const body = await req.json().catch(() => null)

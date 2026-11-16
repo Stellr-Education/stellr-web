@@ -1,7 +1,7 @@
 import { readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, it, expect } from 'vitest'
-import { isPrivatePath } from '@/lib/private-routes'
+import { isHandoffPath, isPrivatePath } from '@/lib/private-routes'
 
 describe('isPrivatePath', () => {
   it('treats the scholarship offer bearer link as private (PUB-13)', () => {
@@ -151,5 +151,16 @@ describe('every public [token] bearer-link page is private (PUB-13)', () => {
       leaked,
       `These [token] bearer-link pages are not private — add them to lib/private-routes.ts and next.config.mjs: ${leaked.join(', ')}`,
     ).toEqual([])
+  })
+})
+
+describe('isHandoffPath', () => {
+  it('names the pages whose query decides whether they are private', () => {
+    for (const p of ['/sign-in', '/sign-up', '/account/onboarding', '/sign-in/factor-one', '/account/onboarding?next=/home']) {
+      expect(isHandoffPath(p), p).toBe(true)
+    }
+    for (const p of ['/', '/about', '/account', '/sign-inside', '/register/sample-event/join/sampletoken']) {
+      expect(isHandoffPath(p), p).toBe(false)
+    }
   })
 })

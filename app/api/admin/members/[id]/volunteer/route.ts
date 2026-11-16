@@ -5,19 +5,13 @@ import { supabaseServer } from '@/lib/supabase'
 import { actorFromAuth } from '@/lib/activity-log'
 import { grantVolunteerRole, revokeVolunteerRole } from '@/lib/volunteer'
 import { withAudit } from '@/lib/audit/route'
+import { memberIdOf } from '@/lib/audit-route-helpers'
 
 // Admin toggle for the additive volunteer role (PRD §15: "update whether an
 // account is a Volunteer or not"). Granting also puts the member on the
 // Volunteer Space roster; revoking removes them.
 
 type Ctx = { params: Promise<{ id: string }> }
-
-/** The member in the URL, /api/admin/members/<id>/…: the event's target. */
-function memberIdOf(req: Request): string | null {
-  const parts = new URL(req.url).pathname.split('/')
-  const at = parts.indexOf('members')
-  return at < 0 ? null : (parts[at + 1] ?? null)
-}
 
 // Platform audit (docs/TENANCY-S5.md, C7): the member is the target.
 const grantAudit = ({ args: [req] }: { args: [Request, Ctx] }) => ({

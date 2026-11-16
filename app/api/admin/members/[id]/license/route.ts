@@ -9,6 +9,7 @@ import { notifyLicenseVerified } from '@/lib/license-review'
 import { recheckEventManagerClearance } from '@/lib/event-manager'
 import { withAudit } from '@/lib/audit/route'
 import { auditSubject, noteAuditSubject } from '@/lib/audit/route-subject'
+import { memberIdOf } from '@/lib/audit-route-helpers'
 
 // POST /api/admin/members/[id]/license
 // Admin manually verifies (or un-verifies) the teacher license on file. This is
@@ -35,13 +36,6 @@ const bodySchema = z.discriminatedUnion('action', [
 ])
 
 type Ctx = { params: Promise<{ id: string }> }
-
-/** The member in the URL, /api/admin/members/<id>/…: the event's target. */
-function memberIdOf(req: Request): string | null {
-  const parts = new URL(req.url).pathname.split('/')
-  const at = parts.indexOf('members')
-  return at < 0 ? null : (parts[at + 1] ?? null)
-}
 
 // Platform audit (docs/TENANCY-S5.md, C7): the member is the target and which action
 // (save, verify, unverify) the metadata. Never the license number, state or expiry.

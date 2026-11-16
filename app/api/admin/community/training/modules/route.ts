@@ -135,6 +135,14 @@ async function updateModule(req: Request) {
   }
 
   const db = supabaseServer()
+  // A module re-tied to an event must be tied to one of Stellr's, as on create (S5 C20a,
+  // backlog-batch2.12 follow-up): another tenant's event is refused the way C20c refuses
+  // (404, or a retryable 503 when the owner read fails), before the write. Clearing the
+  // event names none, so it reads nothing.
+  if (patch.event_ref) {
+    const refused = await refuseUnlessStellrEvent(db, String(patch.event_ref), 'training')
+    if (refused) return refused
+  }
   const { error } = await db.from('training_modules').update(patch).eq('id', id)
   if (error) {
     console.error('[training] module update error:', error)

@@ -100,8 +100,10 @@ async function activeTierIdsByMember(memberIds: string[]): Promise<Map<string, s
  * dropped: an email about a post the member cannot open leaks the post's
  * existence and the actor's name.
  */
-async function recipientsWithSpaceAccess(memberIds: string[], spaceSlug: string): Promise<string[]> {
-  const space = await getSpaceBySlug(spaceSlug)
+async function recipientsWithSpaceAccess(memberIds: string[], where: { spaceId?: string; spaceSlug: string }): Promise<string[]> {
+  // By id when the caller read the post's own space (memberCanAccessSpace then
+  // resolves it, and a missing or archived space lets nobody in); by slug otherwise.
+  const space = where.spaceId ? { id: where.spaceId } : await getSpaceBySlug(where.spaceSlug)
   if (!space) return []
   const tiers = await activeTierIdsByMember(memberIds)
   const checks = await Promise.all(
@@ -147,7 +149,13 @@ type NotifyMentionsOptions = {
   actorName: string
   context: 'post' | 'comment'
   postId: string
+  /** The post's space, for the link in the notification. */
   spaceSlug: string
+  /**
+   * The post's own space id. When given, recipients are checked against this
+   * space, not one looked up by `spaceSlug`.
+   */
+  spaceId?: string
   /** Members to skip (e.g. the post author, who already gets a 'reply'). */
   excludeIds?: string[]
 }
@@ -221,7 +229,7 @@ async function fanOutMentions(opts: NotifyMentionsOptions): Promise<void> {
 
   // deep review MEM-11 (deep-review-v2.17): never notify a member about a post in
   // a space they cannot open.
-  allowed = await recipientsWithSpaceAccess(allowed, opts.spaceSlug)
+  allowed = await recipientsWithSpaceAccess(allowed, { spaceId: opts.spaceId, spaceSlug: opts.spaceSlug })
   if (allowed.length === 0) return
 
   // Last, so only recipients who would really be notified count against the actor.

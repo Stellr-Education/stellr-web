@@ -5,6 +5,7 @@ import { grantTierAllocations } from '@/lib/entitlements'
 import { guardCron } from '@/lib/cron'
 import { withCronAudit } from '@/lib/cron-audit'
 import { startCronRun } from '@/lib/cron-runs'
+import { hasGraduated, latestGraduatedYear } from './graduated'
 
 // Hobby's ceiling: no lower value is safe to pick without run times to prove it
 // (a cron cut short mid-batch loses its run.finish), and it cannot be shorter than
@@ -12,11 +13,17 @@ import { startCronRun } from '@/lib/cron-runs'
 export const maxDuration = 300
 
 // GET /api/cron/alumni-upgrades — runs daily (see vercel.json).
-// The Alumni tier "automatically upgrades on July 1st of the School Student's
-// graduating year" (PRD §2). Grants a complimentary active Alumni membership to
-// members whose graduation_year has passed (on/after July 1), expiring their
-// existing FREE membership. Paid memberships are left untouched. Idempotent via
+// The Alumni tier upgrades a School Student once they graduate (PRD §2 says
+// July 1st of the graduating year). Grants a complimentary active Alumni
+// membership to members who have graduated, expiring their existing FREE
+// membership. Paid memberships are left untouched. Idempotent via
 // sent_reminders (kind='alumni').
+//
+// "Graduated" is hasGraduated (./graduated): the August school-year rollover the
+// onboarding wizard, the admin editor and the graduation-year backfill share. So
+// each cohort is upgraded from 1 August, not 1 July: in July a grade on file can
+// already describe the year ahead, and a rising senior was upgraded a year early
+// (backlog-batch2.10 review note).
 
 export const GET = withCronAudit('alumni-upgrades', async (req: NextRequest) => {
   const blocked = guardCron(req)
@@ -26,8 +33,6 @@ export const GET = withCronAudit('alumni-upgrades', async (req: NextRequest) => 
   // deep review INT-9: record the run so a stalled annual upgrade is visible.
   const run = await startCronRun(db, 'alumni-upgrades')
   const today = new Date()
-  const year = today.getUTCFullYear()
-  const julyFirstThisYear = Date.UTC(year, 6, 1) // month 6 = July
 
   // Alumni tier.
   const { data: alumniTier } = await db
@@ -41,12 +46,12 @@ export const GET = withCronAudit('alumni-upgrades', async (req: NextRequest) => 
     return NextResponse.json({ error: 'Alumni tier not found', upgraded: 0 }, { status: 200 })
   }
 
-  // Candidates: graduation year is set and has been reached.
+  // Candidates: graduation year is set and its school year has ended.
   const { data: members, error: membersErr } = await db
     .from('members')
     .select('id, graduation_year')
     .not('graduation_year', 'is', null)
-    .lte('graduation_year', year)
+    .lte('graduation_year', latestGraduatedYear(today))
   if (membersErr) {
     run.fail('query', membersErr.message)
     await run.finish({ upgraded: 0 })
@@ -61,8 +66,8 @@ export const GET = withCronAudit('alumni-upgrades', async (req: NextRequest) => 
 
   for (const m of members) {
     const gradYear = m.graduation_year as number
-    // For the current graduating cohort, only act on/after July 1.
-    if (gradYear === year && today.getTime() < julyFirstThisYear) continue
+    // The query already bounds this; checked again so the rule has one owner.
+    if (!hasGraduated(gradYear, today)) continue
 
     // Dedupe one upgrade per member per graduating year.
     const { error: dedupeErr } = await db

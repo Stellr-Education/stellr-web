@@ -152,7 +152,7 @@ async function createMember(req: Request) {
   }
   // S4 field encryption: inert unless FIELD_CRYPTO_MODE=shadow; never fails this write.
   shadowSyncFields('members', [member.id])
-  noteAuditSubject(req, { id: member.id, detail: { school_linked: !!resolvedSchoolId, tier_assigned: !!tier_id } })
+  noteAuditSubject(req, { id: member.id, detail: { org_linked: !!resolvedSchoolId, tier_assigned: !!tier_id } })
 
   // Link to school
   if (resolvedSchoolId) {
@@ -191,6 +191,6 @@ async function createMember(req: Request) {
     invite = await sendAccountInvite(db, member.id, { actorMemberId: actor?.id ?? null, actorType: await crewActorType() })
   }
 
-  if (invite) noteAuditSubject(req, { detail: { school_linked: !!resolvedSchoolId, tier_assigned: !!tier_id, invite_sent: invite.sent } })
+  if (invite) noteAuditSubject(req, { detail: { org_linked: !!resolvedSchoolId, tier_assigned: !!tier_id, invite_sent: invite.sent } })
   return NextResponse.json({ member: { id: member.id }, invite }, { status: 201 })
 }

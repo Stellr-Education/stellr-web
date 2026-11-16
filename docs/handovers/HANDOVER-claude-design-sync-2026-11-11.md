@@ -63,3 +63,12 @@ Run `/design-sync` from the main checkout. It reads `.design-sync/config.json` a
 See the tracker file. The most important is `claude-design-sync.4`: standalone
 Claude Design closes by 14 Dec 2026 and moves into Claude. Once the project has
 moved, the sync tool refuses uploads to it.
+
+## Update 15 Nov 2026: shutdown review
+Standalone Claude Design closing does not affect the running sites: nothing in
+the app, the build or CI calls it, and the tokens, components and Storybook are
+all in the repo. The synced project can be rebuilt from `.design-sync/`. Two
+things remain: check the project's move and decide whether syncs continue
+(`claude-design-sync.4`), and save any design work that exists only in Claude
+Design (`claude-design-sync.7`). The plan is in `.design-sync/NOTES.md`,
+"Claude Design shutdown".
