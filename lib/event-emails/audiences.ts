@@ -16,6 +16,7 @@ import { loadEventTenantId } from '@/lib/authz/principal'
 import { STELLR_TENANT_ID } from '@/lib/tenancy/constants'
 import type { AudienceKey, RecipientRole } from './types'
 import { crewKey } from '@/lib/check-in-desk'
+import { payerOf } from '@/lib/group-payer'
 import { AWARD_TYPES, EVENT_AWARDS, isAwardType } from '@/lib/event-awards'
 import { familyCertificateUrl, familyCredentialUrl } from '@/lib/credentials-link'
 import type { CredentialLine, PaymentLine, RecipientForRender } from './render'
@@ -212,16 +213,28 @@ export function buildRecipients(
   }
 
   for (const g of roster.groups) {
-    // A group registration settled in one go (invoice, or the organiser's card
-    // checkout) is the organiser's to pay — parents are not chased for it.
-    const groupPaysAsOne = g.type === 'group' && !g.memberPaysIndividually
-    const method: PaymentLine['method'] = g.invoiceRequested
+    // Who pays for each place (lib/group-payer.ts). In a group or campaign, a place
+    // on the organiser's invoice or card checkout ('group') is the organiser's to
+    // pay: its student and parent are never chased. A place paid by its own link
+    // ('self') is chased with that person, their parent, and the organiser. A
+    // teacher the students' shares cover ('shared') owes nothing.
+    const isGroup = g.type !== 'individual'
+    const groupFacts = {
+      member_pays_individually: g.memberPaysIndividually,
+      late_joiner_payer: g.lateJoinerPayer ?? null,
+      share_estimate: g.shareEstimate ?? null,
+      share_first_paid_at: g.shareFirstPaidAt ?? null,
+    }
+    const groupMethod: PaymentLine['method'] = g.invoiceRequested ? 'invoice' : 'link'
+    const soloMethod: PaymentLine['method'] = g.invoiceRequested
       ? 'invoice'
       : g.memberPaysIndividually
         ? 'individual'
         : 'link'
-    const payUrl = want.has('payment_outstanding') && method === 'link' ? payUrlFor(g) : null
+    const payUrl = want.has('payment_outstanding') && groupMethod === 'link' ? payUrlFor(g) : null
     let groupOwes = false
+    const membersOwing: { key: string; name: string }[] = []
+    const organiserEmails = new Set([g.teacherEmail, g.teacherPocEmail].map((e) => e?.trim().toLowerCase()).filter(Boolean))
 
     for (const p of g.participants) {
       const guardian = p.minor ? p.emergency_contact_email : null
@@ -256,26 +269,38 @@ export function buildRecipients(
       }
 
       if (want.has('payment_outstanding') && !p.paid) {
-        if (groupPaysAsOne) {
+        const payer = isGroup ? payerOf(p, groupFacts) : 'self'
+        if (payer === 'group') {
           groupOwes = true
-        } else {
-          const payment = { key: `${g.registrationId}:${p.id}`, participantName: p.first_name, payUrl, method }
-          add({ ...participant, role: 'participant', reason: 'payment_outstanding', payment })
+        } else if (payer === 'self') {
+          const method = isGroup ? 'individual' : soloMethod
+          const payment = { key: `${g.registrationId}:${p.id}`, participantName: p.first_name, payUrl: !isGroup && soloMethod === 'link' ? payUrl : null, method }
+          add({ ...participant, role: rosterRecipientRole(p.event_role), reason: 'payment_outstanding', payment })
           add({ ...parent, role: 'guardian', reason: 'payment_outstanding', payment })
+          // The organiser hears about the others; their own unpaid place is above.
+          if (isGroup && !organiserEmails.has(p.email?.trim().toLowerCase())) {
+            membersOwing.push({ key: `${g.registrationId}:${p.id}`, name: [p.first_name, p.last_name].filter(Boolean).join(' ') })
+          }
         }
       }
     }
 
-    if (groupOwes && g.teacherEmail) {
-      add({
-        email: g.teacherEmail,
-        firstName: g.teacherFirstName,
-        memberId: g.teacherMemberId,
-        role: 'teacher',
-        reason: 'payment_outstanding',
-        participantName: 'your group',
-        payment: { key: g.registrationId, participantName: 'your group', payUrl, method },
-      })
+    // The group's contacts: whoever registered it (a teacher or a student manager,
+    // never their parent) and the teacher a student manager named as contact.
+    if (isGroup && (groupOwes || membersOwing.length)) {
+      const contacts = [
+        { email: g.teacherEmail, firstName: g.teacherFirstName, memberId: g.teacherMemberId, role: (g.registrantRole === 'student_manager' ? 'student_manager' : 'teacher') as RecipientRole },
+        { email: g.teacherPocEmail, firstName: g.teacherPocFirstName, lastName: g.teacherPocLastName, memberId: null, role: 'teacher' as RecipientRole },
+      ]
+      for (const c of contacts) {
+        if (!c.email) continue
+        if (groupOwes) {
+          add({ ...c, reason: 'payment_outstanding', participantName: 'your group', payment: { key: g.registrationId, participantName: 'your group', payUrl, method: groupMethod } })
+        }
+        for (const m of membersOwing) {
+          add({ ...c, reason: 'payment_outstanding', participantName: 'your group', payment: { key: m.key, participantName: m.name, payUrl: null, method: 'member' } })
+        }
+      }
     }
   }
 

@@ -13,6 +13,7 @@ const s = vi.hoisted(() => ({
   registration: { id: 'reg-placeholder-1', spreadsheet_id: 'sheet-placeholder-1' } as Record<string, unknown> | null,
   sync: vi.fn(async () => ({ created: 0, updated: 0, paymentLinksSent: 0 })),
   tables: [] as string[],
+  rpc: vi.fn(async (..._a: unknown[]) => ({ data: { id: 1, chain_seq: 1 }, error: null })),
 }))
 
 function chain(result: () => unknown) {
@@ -30,6 +31,7 @@ vi.mock('@/lib/supabase', () => ({
       if (table === 'registrations') return chain(() => s.registration)
       throw new Error(`unexpected table ${table}`)
     },
+    rpc: s.rpc,
   }),
 }))
 vi.mock('@/lib/sheet-participant-sync', () => ({
@@ -64,6 +66,8 @@ beforeEach(() => {
 })
 afterEach(() => {
   s.sync.mockClear()
+  s.rpc.mockClear()
+  vi.unstubAllEnvs()
   vi.restoreAllMocks()
 })
 
@@ -131,5 +135,62 @@ describe('POST /api/webhooks/google-sheets: channel token', () => {
     const res = await notify({ 'x-goog-channel-id': 'channel-placeholder-1', 'x-goog-resource-state': 'sync' })
     expect(res.status).toBe(200)
     expect(s.tables).toEqual([])
+  })
+})
+
+// S5 A13a: with PLATFORM_AUDIT_ENABLED on, one event per sync, by webhook:google-sheets,
+// on the chain of the registration's stored tenant (BF-4's default: Stellr's, with the
+// owner in the metadata). A wrong token is answered like an unknown channel and adds
+// nothing to the append-only chain.
+describe('POST /api/webhooks/google-sheets: platform audit (S5 A13a)', () => {
+  const STELLR = '00000000-0000-4000-8000-000000000001'
+  const TENANT_B = 'bbbbbbbb-0000-4000-8000-00000000000b'
+  const REG = 'cccccccc-0000-4000-8000-00000000000c'
+  const settle = () => new Promise((r) => setTimeout(r, 0))
+  beforeEach(() => {
+    vi.stubEnv('PLATFORM_AUDIT_ENABLED', 'true')
+    s.channel = { registration_id: REG, expiration: future(), token: TOKEN }
+    s.registration = { id: REG, spreadsheet_id: 'sheet-placeholder-1', tenant_id: TENANT_B }
+  })
+
+  it('a wrong token writes nothing', async () => {
+    await update(`${TOKEN.slice(0, -1)}x`)
+    await update(undefined)
+    await settle()
+    expect(s.rpc).not.toHaveBeenCalled()
+  })
+
+  it("a valid sync of a tenant's registration is recorded on Stellr's chain with owner_tenant_id", async () => {
+    expect((await update(TOKEN)).status).toBe(200)
+    await vi.waitFor(() => expect(s.rpc).toHaveBeenCalledTimes(1))
+    expect(s.rpc.mock.calls[0][0]).toBe('platform_audit_append')
+    expect(s.rpc.mock.calls[0][1]).toMatchObject({
+      p_tenant: STELLR,
+      p_actor: 'webhook:google-sheets',
+      p_actor_kind: 'webhook',
+      p_action: 'webhook.event.process',
+      p_target_table: 'registrations',
+      p_target_id: REG,
+      p_metadata: { verified: true, sync_failed: false, owner_tenant_id: TENANT_B },
+    })
+    expect((s.rpc.mock.calls[0][1] as { p_metadata: Record<string, unknown> }).p_metadata).not.toHaveProperty('legacy_tokenless')
+  })
+
+  it('a legacy channel with no token is recorded as legacy_tokenless, not verified', async () => {
+    s.channel = { registration_id: REG, expiration: future(), token: null }
+    await update(undefined)
+    await vi.waitFor(() => expect(s.rpc).toHaveBeenCalledTimes(1))
+    expect(s.rpc.mock.calls[0][1]).toMatchObject({
+      p_actor: 'webhook:google-sheets',
+      p_metadata: { verified: false, legacy_tokenless: true, sync_failed: false, owner_tenant_id: TENANT_B },
+    })
+  })
+
+  it('off, nothing is written', async () => {
+    vi.stubEnv('PLATFORM_AUDIT_ENABLED', 'false')
+    await update(TOKEN)
+    await settle()
+    expect(s.sync).toHaveBeenCalledTimes(1)
+    expect(s.rpc).not.toHaveBeenCalled()
   })
 })

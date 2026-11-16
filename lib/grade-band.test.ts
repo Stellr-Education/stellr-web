@@ -2,12 +2,12 @@ import { describe, it, expect } from 'vitest'
 import { gradeBand, gradeOptions, matchesGradeFilter } from './grade-band'
 
 describe('gradeBand', () => {
-  // The whole point of the default path: every event that predates the override
-  // must produce exactly the copy it produced before this module existed.
-  it('derives the historic band from the bracket', () => {
+  // Grade 7 is the youngest grade Stellr accepts (owner, 16 Nov 2026), so the
+  // brackets that reach into middle school start at 7, not 6.
+  it('derives the band from the bracket', () => {
     expect(gradeBand({ gradeLevel: 'High School' })).toMatchObject({ min: 9, max: 12 })
-    expect(gradeBand({ gradeLevel: 'Middle School' })).toMatchObject({ min: 6, max: 8 })
-    expect(gradeBand({ gradeLevel: 'Both' })).toMatchObject({ min: 6, max: 12 })
+    expect(gradeBand({ gradeLevel: 'Middle School' })).toMatchObject({ min: 7, max: 8 })
+    expect(gradeBand({ gradeLevel: 'Both' })).toMatchObject({ min: 7, max: 12 })
   })
 
   it('falls back to 9–12 when the bracket is missing or unrecognised', () => {
@@ -34,14 +34,15 @@ describe('gradeBand', () => {
 
   it('ignores an inverted override', () => {
     expect(gradeBand({ gradeLevel: 'Both', gradeMin: 12, gradeMax: 7 })).toMatchObject({
-      min: 6,
+      min: 7,
       max: 12,
       isOverride: false,
     })
   })
 
-  it('clamps an out-of-range override into K-12', () => {
-    expect(gradeBand({ gradeMin: 0, gradeMax: 20 })).toMatchObject({ min: 1, max: 12 })
+  it('clamps an out-of-range override into grades 7–12', () => {
+    expect(gradeBand({ gradeMin: 0, gradeMax: 20 })).toMatchObject({ min: 7, max: 12 })
+    expect(gradeBand({ gradeMin: 6, gradeMax: 8 })).toMatchObject({ min: 7, max: 8, label: 'Grades 7–8' })
   })
 
   describe('audience wording', () => {
@@ -50,7 +51,7 @@ describe('gradeBand', () => {
         'high school students (grades 9–12)',
       )
       expect(gradeBand({ gradeLevel: 'Middle School' }).audience).toBe(
-        'middle school students (grades 6–8)',
+        'middle school students (grades 7–8)',
       )
       expect(gradeBand({ gradeMin: 7, gradeMax: 8 }).audienceShort).toBe('middle school')
       expect(gradeBand({ gradeMin: 7, gradeMax: 12 }).audienceShort).toBe('middle and high school')
@@ -58,9 +59,12 @@ describe('gradeBand', () => {
   })
 
   describe('pill label', () => {
-    it('keeps the bracket when there is no override', () => {
-      expect(gradeBand({ gradeLevel: 'High School' }).label).toBe('High School')
-      expect(gradeBand({ gradeLevel: 'Both' }).label).toBe('Both')
+    // One wording everywhere: the pill always names the grades, never the bracket.
+    it('names the grades when there is no override', () => {
+      expect(gradeBand({ gradeLevel: 'High School' }).label).toBe('Grades 9–12')
+      expect(gradeBand({ gradeLevel: 'Middle School' }).label).toBe('Grades 7–8')
+      expect(gradeBand({ gradeLevel: 'Both' }).label).toBe('Grades 7–12')
+      expect(gradeBand({}).label).toBe('Grades 9–12')
     })
 
     // "High School" on a 7–12 event tells an eligible seventh-grader they don't

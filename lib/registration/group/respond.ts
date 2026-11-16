@@ -114,6 +114,9 @@ async function createGroupJoinLink(group: GatedGroup, body: GroupBody, regId: st
     token,
     registration_id: regId,
     event_slug,
+    // S5 A8b: the registration's tenant, from the resolved event (A7). For Stellr it
+    // is the value the derivation trigger stamps.
+    tenant_id: group.context.tenantId,
     event_title: group.eventTitle,
     expires_at: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
   })
@@ -188,6 +191,7 @@ async function collectPayment(
           registrationId: regId,
           eventSlug: event_slug,
           eventTitle,
+          tenantId: group.context.tenantId,
           teacher: { email: teacher.email, firstName: teacher.first_name, lastName: teacher.last_name },
           registrantMemberId: members.registrantMemberId ?? null,
           amountCents: invoiceAmountCents,

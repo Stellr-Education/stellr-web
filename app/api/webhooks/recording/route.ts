@@ -1,6 +1,8 @@
 import crypto from 'crypto'
 import { NextResponse, after } from 'next/server'
 import { acceptUpload, markPhase, runOffload, targetForRoom } from '@/lib/recording-offload'
+import { withAudit } from '@/lib/audit/route'
+import { noteWebhook, webhookAudit, webhookEvent } from '@/lib/audit/webhook'
 
 // Recording offload (FR-COM-11/12 sessions + FR-COM-10 live training lessons).
 //
@@ -53,7 +55,14 @@ function verifyJaasSignature(header: string, rawBody: string, secret: string): b
   return a.length === b.length && crypto.timingSafeEqual(a, b)
 }
 
-export async function POST(req: Request) {
+// S5 A13a: one audit event per delivery, by webhook:recording, on Stellr's chain.
+// Off unless PLATFORM_AUDIT_ENABLED is on (lib/audit/webhook.ts).
+export const POST = withAudit(
+  ({ args: [req] }: { args: [Request] }) => webhookAudit('webhook.event.process', webhookEvent('recording', req)),
+  handleRecording,
+)
+
+async function handleRecording(req: Request) {
   const raw = await req.text()
   const jaasSig = req.headers.get('x-jaas-signature')
 
@@ -66,6 +75,7 @@ export async function POST(req: Request) {
     if (!verifyJaasSignature(jaasSig, raw, JAAS_WEBHOOK_SECRET)) {
       return NextResponse.json({ error: 'Bad signature' }, { status: 401 })
     }
+    noteWebhook(req, { metadata: { path: 'jaas' } })
 
     let payload: {
       eventType?: string
@@ -129,6 +139,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
     }
   }
+  noteWebhook(req, { metadata: { path: 'legacy' } })
   let body: { sessionId?: string; recordingUrl?: string }
   try {
     body = JSON.parse(raw)

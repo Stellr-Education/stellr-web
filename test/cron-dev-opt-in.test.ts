@@ -15,7 +15,9 @@ const h = vi.hoisted(() => ({
   expire: vi.fn(async () => 3),
   purge: vi.fn(async (_db: unknown) => ({ scanned: 0, purged: [], cleared: [], heldGuardianSigned: [], heldAdultRoute: [], errors: [] })),
   managers: vi.fn(async (_db: unknown) => ({ errors: [] })),
-  sweep: vi.fn(async (_db: unknown) => ({ scanned: 2, signed: [], expired: ['c-1'], removed: ['c-1'], held: [], voided: [], errors: [] as { consentId: string; error: string }[] })),
+  sweep: vi.fn(async (_db: unknown) => ({ scanned: 2, signed: [], expired: ['c-1'], removed: ['c-1'], held: [], voided: [], escalated: [], errors: [] as { consentId: string; error: string }[] })),
+  // Wave 8 CONSENT (b): whether an unsigned consent row exists. None by default.
+  waiting: vi.fn(async (_db: unknown) => false),
   drain: vi.fn(async (_db: unknown, _opts: unknown) => ({ sent: 1, failed: 0, suppressed: 0, waiting: 0, oldestWaitingHours: null, stoppedFor: null })),
   startRun: vi.fn(),
   finish: vi.fn(async (_r: unknown) => {}),
@@ -33,7 +35,10 @@ vi.mock('@/lib/membership-grants', () => ({ expireLapsedGrants: h.expire }))
 vi.mock('@/lib/pending-consent', () => ({ purgeUnconsentedAccounts: h.purge }))
 vi.mock('@/lib/event-manager', () => ({ sweepEventManagers: h.managers }))
 vi.mock('@/lib/staff', () => ({ sweepStaffGrants: async () => ({ checked: 0, activated: 0, suspended: 0, expired: 0, reminded: 0, failed: 0 }) }))
-vi.mock('@/lib/registration/tenant-guardian-consent', () => ({ sweepTenantGuardianConsents: h.sweep }))
+vi.mock('@/lib/registration/tenant-guardian-consent', () => ({
+  sweepTenantGuardianConsents: h.sweep,
+  tenantGuardianConsentWorkWaiting: h.waiting,
+}))
 vi.mock('@/lib/email/outbox', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/lib/email/outbox')>()),
   drainEmailOutbox: h.drain,
@@ -236,7 +241,7 @@ describe('membership-expiry under the opt-in', () => {
     noOtherStep()
     expect(body).toEqual({
       only: 'tenant-consent',
-      tenantGuardianConsent: { scanned: 2, signed: 0, expired: 1, removed: 1, held: 0, voided: 0, errors: 0 },
+      tenantGuardianConsent: { scanned: 2, signed: 0, expired: 1, removed: 1, held: 0, voided: 0, escalated: 0, errors: 0 },
     })
     expect(h.startRun).toHaveBeenCalledWith(expect.anything(), 'membership-expiry')
     expect(h.finish).toHaveBeenCalledWith(body)
@@ -266,12 +271,28 @@ describe('membership-expiry under the opt-in', () => {
     noOtherStep()
   })
 
-  it('with the consent flag off, sweeps nothing and says why', async () => {
+  it('with the consent flag off and no unsigned consent, sweeps nothing and says why', async () => {
     hostedDev('membership-expiry:tenant-consent')
     const { body } = await call()
+    expect(h.waiting).toHaveBeenCalledTimes(1)
     expect(h.sweep).not.toHaveBeenCalled()
     noOtherStep()
-    expect(body).toEqual({ only: 'tenant-consent', tenantGuardianConsent: { skipped: true, reason: 'TENANT_GUARDIAN_CONSENT_ENABLED is off' } })
+    expect(body).toEqual({ only: 'tenant-consent', tenantGuardianConsent: { skipped: true, reason: 'No unsigned guardian consents' } })
+  })
+
+  // Wave 8 CONSENT (b), s5-programme.26: the trigger opens pending rows whatever the
+  // flag says, so the sweep settles them with the flag off too. Still step 4 alone.
+  it('with the consent flag off and an unsigned consent, sweeps it and nothing else', async () => {
+    hostedDev('membership-expiry:tenant-consent')
+    h.waiting.mockResolvedValueOnce(true)
+    const { status, body } = await call()
+    expect(status).toBe(200)
+    expect(h.sweep).toHaveBeenCalledTimes(1)
+    noOtherStep()
+    expect(body).toEqual({
+      only: 'tenant-consent',
+      tenantGuardianConsent: { scanned: 2, signed: 0, expired: 1, removed: 1, held: 0, voided: 0, escalated: 0, errors: 0 },
+    })
   })
 
   it('a failed sweep answers 500 and is recorded', async () => {

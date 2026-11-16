@@ -9,6 +9,8 @@ import {
   onEnvelopeCompleted,
   type CompletedEnvelope,
 } from '@/lib/esign/completion'
+import { withAudit } from '@/lib/audit/route'
+import { noteWebhook, webhookAudit, webhookEvent } from '@/lib/audit/webhook'
 
 // DocuSign Connect delivers POST events when envelope status changes.
 // Configure Connect in the DocuSign admin console to send JSON to this URL,
@@ -39,7 +41,14 @@ export async function GET() {
   return NextResponse.json({ ok: true })
 }
 
-export async function POST(req: Request) {
+// S5 A13a: one audit event per delivery, by webhook:docusign, on the chain of the agreement it updates.
+// Off unless PLATFORM_AUDIT_ENABLED is on (lib/audit/webhook.ts).
+export const POST = withAudit(
+  ({ args: [req] }: { args: [Request] }) => webhookAudit('webhook.event.process', webhookEvent('docusign', req)),
+  handleConnectEvent,
+)
+
+async function handleConnectEvent(req: Request) {
   const rawBody = await req.text()
 
   const headerList = await headers()
@@ -56,6 +65,7 @@ export async function POST(req: Request) {
   } catch {
     return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
   }
+  noteWebhook(req, { metadata: { event_type: payload.event } })
 
   const envelopeId = payload.data?.envelopeId
   if (!envelopeId) return NextResponse.json({ received: true, skipped: 'no envelopeId' })
@@ -76,6 +86,7 @@ export async function POST(req: Request) {
     console.warn('[docusign-webhook] No envelope record for', envelopeId)
     return NextResponse.json({ received: true })
   }
+  noteWebhook(req, { owner: { agreementId: current.id as string }, target: { table: 'agreements', id: current.id as string } })
 
   // ── Recipient-level state ────────────────────────────────────────────────────
   // Every event refreshes the full signer list, not just recipient-completed.

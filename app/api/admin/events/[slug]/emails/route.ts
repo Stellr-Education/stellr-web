@@ -10,7 +10,7 @@ import { createFromSavedTemplate, getTemplate } from '@/lib/event-emails/templat
 import type { EventEmailRow } from '@/lib/event-emails/types'
 import { loadEventRecord, loadScopedRows } from '@/lib/tenancy/load-scoped'
 
-// /api/admin/events/[slug]/emails — the "Email Reminders" tab (admins + assigned
+// /api/admin/events/[slug]/emails — the "Email Engagement" tab (admins + assigned
 // event managers).
 //   GET  → { emails, history }
 //   POST { templateKey } → a new draft from one of the starter emails (or blank)

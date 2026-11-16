@@ -1082,6 +1082,7 @@ describe('branches: POST /api/register/group — the join link', () => {
     expect(row).toEqual({
       token: expect.stringMatching(/^[a-f0-9]{64}$/),
       registration_id: 'reg-1', event_slug: 'colorado', event_title: 'Colorado',
+      tenant_id: STELLR_TENANT_ID, // S5 A8b: the registration's tenant, from the resolved event
       expires_at: expect.any(String),
     })
     const ms = new Date(row.expires_at as string).getTime()
@@ -1111,6 +1112,7 @@ describe('branches: POST /api/register/group — the invoice', () => {
     expect(h.priceRetrieve).toHaveBeenCalledTimes(2)
     expect(h.invoice.mock.calls[0][2]).toEqual({
       registrationId: 'reg-1', eventSlug: 'colorado', eventTitle: 'Colorado',
+      tenantId: STELLR_TENANT_ID, // S5 A8b: for the ledger row's tenant_id
       teacher: { email: TEACHER, firstName: 'T', lastName: 'Eacher' },
       registrantMemberId: M(TEACHER),
       amountCents: 40500, perSeatCents: 13500, currency: 'usd', totalParticipants: 3,

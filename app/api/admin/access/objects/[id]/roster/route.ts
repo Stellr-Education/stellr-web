@@ -7,6 +7,9 @@ import { getEventRoster } from '@/lib/event-admin'
 import { checkSingletonRoleAvailable } from '@/lib/object-roles'
 import { roleAllowedForBracket, ROLE_LABELS, MANAGE_ROLES, type MemberRole } from '@/lib/member-roles'
 import { isAdminClaims } from '@/lib/admin-auth'
+import { withAudit } from '@/lib/audit/route'
+import { adminAuditSubject } from '@/lib/audit/route-subject'
+import { noteAccessObject } from '../../../audit'
 
 // /api/admin/access/objects/[id]/roster — one roster API for every object type
 // (convergence step 3). Dispatches on the resolved object type:
@@ -58,7 +61,20 @@ const postSchema = z.object({
   role: z.string().optional(),
 })
 
-export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
+type Ctx = { params: Promise<{ id: string }> }
+
+// Platform audit (docs/TENANCY-S5.md, C7): the object is the target; the member, and the
+// role when it is one of ours, the metadata.
+export const POST = withAudit(
+  ({ args: [req] }: { args: [Request, Ctx] }) => ({ action: 'access.object_roster.add', ...adminAuditSubject(req, 'mentoring_cohorts') }),
+  addToRoster,
+)
+export const DELETE = withAudit(
+  ({ args: [req] }: { args: [Request, Ctx] }) => ({ action: 'access.object_roster.remove', ...adminAuditSubject(req, 'mentoring_cohorts') }),
+  removeFromRoster,
+)
+
+async function addToRoster(req: Request, { params }: Ctx) {
   const { sessionClaims } = await auth()
   if (!isAdminClaims(sessionClaims)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
@@ -70,6 +86,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   if (!parsed.success) return NextResponse.json({ error: 'Invalid request' }, { status: 400 })
   const { memberId } = parsed.data
   const role = (parsed.data.role ?? 'member') as MemberRole
+  noteAccessObject(req, object, { member_id: memberId, ...(role in ROLE_LABELS ? { role } : {}) })
 
   if (object.objectType === 'event' || object.objectType === 'campaign') {
     return NextResponse.json(
@@ -158,7 +175,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
 const deleteSchema = z.object({ memberId: z.guid() })
 
-export async function DELETE(req: Request, { params }: { params: Promise<{ id: string }> }) {
+async function removeFromRoster(req: Request, { params }: Ctx) {
   const { sessionClaims } = await auth()
   if (!isAdminClaims(sessionClaims)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
@@ -169,6 +186,7 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ id: s
   const parsed = deleteSchema.safeParse(await req.json().catch(() => null))
   if (!parsed.success) return NextResponse.json({ error: 'Invalid request' }, { status: 400 })
   const { memberId } = parsed.data
+  noteAccessObject(req, object, { member_id: memberId })
 
   if (object.objectType === 'event' || object.objectType === 'campaign') {
     return NextResponse.json(

@@ -9,15 +9,15 @@ import {
 describe('campaignEligibilityCopy', () => {
   it('derives the grade range from the campaign grade level', () => {
     expect(campaignEligibilityCopy({ gradeLevel: 'High School' })).toContain('grades 9–12')
-    expect(campaignEligibilityCopy({ gradeLevel: 'Middle School' })).toContain('grades 6–8')
-    expect(campaignEligibilityCopy({ gradeLevel: 'Both' })).toContain('grades 6–12')
+    expect(campaignEligibilityCopy({ gradeLevel: 'Middle School' })).toContain('grades 7–8')
+    expect(campaignEligibilityCopy({ gradeLevel: 'Both' })).toContain('grades 7–12')
     expect(campaignEligibilityCopy({})).toContain('grades 9–12')
   })
 
   it('prefers an explicit grade band over the bracket', () => {
-    const copy = campaignEligibilityCopy({ gradeLevel: 'Both', gradeMin: 7, gradeMax: 12 })
-    expect(copy).toContain('grades 7–12')
-    expect(copy).not.toContain('grades 6–12')
+    const copy = campaignEligibilityCopy({ gradeLevel: 'Both', gradeMin: 8, gradeMax: 12 })
+    expect(copy).toContain('grades 8–12')
+    expect(copy).not.toContain('grades 7–12')
   })
 
   // The two rules that differ from live events, and the reason this copy is not

@@ -7,6 +7,9 @@ import { grantObjectRole } from '@/lib/object-roles'
 import { getSignedInMember } from '@/lib/community'
 import { MANAGE_ROLES, type MemberRole } from '@/lib/member-roles'
 import { isAdminClaims } from '@/lib/admin-auth'
+import { withAudit } from '@/lib/audit/route'
+import { adminAuditSubject } from '@/lib/audit/route-subject'
+import { noteAccessObject } from '../../../audit'
 
 // /api/admin/access/objects/[id]/managers — the manage axis for any object.
 // Managers come from three sources today (all surfaced by GET):
@@ -70,7 +73,20 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
 
 const bodySchema = z.object({ memberId: z.guid() })
 
-export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
+type Ctx = { params: Promise<{ id: string }> }
+
+// Platform audit (docs/TENANCY-S5.md, C7): the object is the target, the member granted
+// or revoked the metadata.
+export const POST = withAudit(
+  ({ args: [req] }: { args: [Request, Ctx] }) => ({ action: 'access.object_manager.grant', ...adminAuditSubject(req, 'mentoring_cohorts') }),
+  grantManager,
+)
+export const DELETE = withAudit(
+  ({ args: [req] }: { args: [Request, Ctx] }) => ({ action: 'access.object_manager.revoke', ...adminAuditSubject(req, 'mentoring_cohorts') }),
+  revokeManager,
+)
+
+async function grantManager(req: Request, { params }: Ctx) {
   const { sessionClaims } = await auth()
   if (!isAdminClaims(sessionClaims)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
@@ -81,13 +97,14 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   const parsed = bodySchema.safeParse(await req.json().catch(() => null))
   if (!parsed.success) return NextResponse.json({ error: 'Invalid request' }, { status: 400 })
 
+  noteAccessObject(req, object, { member_id: parsed.data.memberId })
   const admin = await getSignedInMember()
   const result = await grantObjectRole(parsed.data.memberId, object.objectType, object.ref, admin?.id)
   if (!result.ok) return NextResponse.json({ error: result.error }, { status: 500 })
   return NextResponse.json({ ok: true })
 }
 
-export async function DELETE(req: Request, { params }: { params: Promise<{ id: string }> }) {
+async function revokeManager(req: Request, { params }: Ctx) {
   const { sessionClaims } = await auth()
   if (!isAdminClaims(sessionClaims)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
@@ -98,6 +115,7 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ id: s
   const parsed = bodySchema.safeParse(await req.json().catch(() => null))
   if (!parsed.success) return NextResponse.json({ error: 'Invalid request' }, { status: 400 })
 
+  noteAccessObject(req, object, { member_id: parsed.data.memberId })
   const db = supabaseServer()
   const legacyType = object.slug && (object.objectType === 'event' || object.objectType === 'campaign')
     ? 'event' : 'container'
