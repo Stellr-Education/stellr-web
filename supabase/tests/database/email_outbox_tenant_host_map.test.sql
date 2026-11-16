@@ -14,7 +14,7 @@
 BEGIN;
 SET LOCAL search_path = extensions, public;
 
-SELECT plan(24);
+SELECT plan(25);
 
 -- ── Fixtures ────────────────────────────────────────────────────────────────
 -- One tenant per status, each with one host. Stellr (the platform owner) is
@@ -106,6 +106,13 @@ SELECT ok(NOT has_function_privilege('authenticated', 'public.tenant_host_map()'
 -- ── 6. As each role ─────────────────────────────────────────────────────────
 -- The call runs inside a DO block under the role and records what happened in
 -- a transaction-local setting, so the pgTAP calls stay on the test's own role.
+-- Let the runner become tenant_app (rolled back with everything else), as
+-- tenant_isolation.test.sql does: on Postgres 16+ a non-superuser creator holds
+-- ADMIN on the role but not SET, so without this SET ROLE itself raises 42501
+-- and the refusal below would pass without testing the function.
+DO $grant$ BEGIN
+  EXECUTE format('GRANT %I TO %I', 'tenant_app', current_user);
+END $grant$;
 DO $$
 DECLARE r text;
 BEGIN
@@ -117,13 +124,17 @@ BEGIN
       PERFORM set_config('m7_test.' || r, 'called', true);
     EXCEPTION WHEN insufficient_privilege THEN
       RESET ROLE;
-      PERFORM set_config('m7_test.' || r, '42501', true);
+      -- Only a refusal of the function counts; a failed SET ROLE does not.
+      PERFORM set_config('m7_test.' || r,
+        CASE WHEN SQLERRM LIKE 'permission denied for function%' THEN '42501' ELSE 'set role failed: ' || SQLERRM END,
+        true);
     END;
   END LOOP;
 END $$;
 SELECT is(current_setting('m7_test.anon'), '42501', 'anon calling it is refused');
 SELECT is(current_setting('m7_test.authenticated'), '42501', 'authenticated calling it is refused');
 SELECT is(current_setting('m7_test.tenant_app'), '42501', 'tenant_app calling it is refused');
+SELECT ok(NOT has_function_privilege('tenant_app', 'public.tenant_host_map()', 'EXECUTE'), 'tenant_app holds no EXECUTE on it');
 
 SELECT * FROM finish();
 ROLLBACK;
