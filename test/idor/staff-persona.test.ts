@@ -189,18 +189,31 @@ describe('stellr_staff in the admin-only areas the crew suite never runs', () =>
 
   it('reads a handler\'s capabilities through the same-file functions it calls, and no further', () => {
     const src = [
+      "import { withAudit as audited } from '@/lib/audit/route'",
+      "import { withCronAudit } from '@/lib/cron-audit'",
+      "import { withSomething } from '@/lib/elsewhere'",
       "async function guard() { return hasCapability('members:write') }",
       "async function adminOnly() { return isStellrAdmin() }",
+      "async function save(req: Request) { if (!(await hasCapability('members:write'))) return deny() }",
+      "async function read() { await guard() }",
       'export async function GET() { await guard() }',
-      'export const POST = withAudit(audit, async () => { await adminOnly() })',
+      'export const POST = audited(audit, async () => { await adminOnly() })',
       "export async function DELETE() { await canManageStoreCatalog() }",
       "export async function PATCH() { await canManageStoreCatalog('portal:read') }",
+      // A wrapped handler, given by name, is read as the function it names, followed through.
+      'export const PUT = audited((o) => ({ action: o.args.length }), save)',
+      'export const HEAD = withCronAudit(\'job\', read)',
+      // Not an audit wrapper: nothing says it calls what it is given, so it reads as checking nothing.
+      'export const OPTIONS = withSomething(audit, save)',
     ].join('\n')
     expect(staffCapabilitiesInHandler('x/route.ts', src, 'GET')).toEqual(['members:write'])
     expect(staffCapabilitiesInHandler('x/route.ts', src, 'POST')).toEqual([])
     expect(staffCapabilitiesInHandler('x/route.ts', src, 'DELETE')).toEqual([])
     expect(staffCapabilitiesInHandler('x/route.ts', src, 'PATCH')).toEqual(['portal:read'])
-    expect(() => staffCapabilitiesInHandler('x/route.ts', src, 'PUT')).toThrow(/no PUT/)
+    expect(staffCapabilitiesInHandler('x/route.ts', src, 'PUT')).toEqual(['members:write'])
+    expect(staffCapabilitiesInHandler('x/route.ts', src, 'HEAD')).toEqual(['members:write'])
+    expect(staffCapabilitiesInHandler('x/route.ts', src, 'OPTIONS')).toEqual([])
+    expect(() => staffCapabilitiesInHandler('x/route.ts', src, 'TRACE')).toThrow(/no TRACE/)
   })
 
   for (const t of ADMIN_ONLY_TARGETS) {
