@@ -9291,6 +9291,13 @@ export type Database = {
           problem: string
         }[]
       }
+      platform_quota_usage: {
+        Args: never
+        Returns: {
+          database_bytes: number
+          storage_bytes: number
+        }[]
+      }
       promote_grades: { Args: never; Returns: undefined }
       prune_email_outbox_blobs: { Args: never; Returns: number }
       rate_limit_gc: { Args: never; Returns: number }
