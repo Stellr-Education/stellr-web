@@ -244,6 +244,8 @@ export interface CampaignCardData {
   gradeLevel?: string | null
   tagline?: string | null
   deadlineLabel: string
+  /** Registration state, same resolver as the admin pill and member portal. */
+  status: 'open' | 'coming-soon' | 'closed'
   registered?: boolean
   /** Watermarked card-header image, built server-side (lib/sanity-image). */
   image?: SanityImageProps | null
@@ -263,5 +265,6 @@ export function toCampaignCardData(e: StellarEvent): CampaignCardData {
     gradeLevel: gradeBand(e).label,
     tagline: e.tagline ?? null,
     deadlineLabel: deadlineInfo(e.deadline)?.label ?? '',
+    status: campaignStatusKey(e),
   }
 }
