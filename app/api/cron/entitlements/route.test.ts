@@ -7,6 +7,7 @@ const h = vi.hoisted(() => ({
   lifecycle: vi.fn(),
   digest: vi.fn(),
   sweep: vi.fn(),
+  quota: vi.fn(),
   jobs: [] as string[],
   runs: [] as { job: string; fail: ReturnType<typeof vi.fn>; finish: ReturnType<typeof vi.fn> }[],
 }))
@@ -16,6 +17,7 @@ vi.mock('@/lib/entitlements', () => ({ runEntitlementsLifecycle: h.lifecycle }))
 vi.mock('@/lib/app-errors', () => ({ sendDailyErrorDigest: h.digest }))
 vi.mock('@/lib/cron', () => ({ guardCron: () => null }))
 vi.mock('@/lib/credential-minor-sweep', () => ({ sweepMinorCredentialPages: h.sweep }))
+vi.mock('@/lib/quota-alarms', () => ({ checkQuotaUsage: h.quota }))
 vi.mock('@/lib/cron-runs', () => ({
   startCronRun: async (_db: unknown, job: string) => {
     h.jobs.push(job)
@@ -30,11 +32,13 @@ import { GET } from './route'
 const call = () => GET(new NextRequest('https://example.test/api/cron/entitlements'))
 
 const SWEEP = { scanned: 4, checked: 3, holdersUnpublished: 1, unpublished: 2, errors: 0, truncated: false }
+const QUOTA = { skipped: 'function_missing' }
 
 beforeEach(() => {
   h.jobs.length = 0
   h.runs.length = 0
   h.sweep.mockReset().mockResolvedValue(SWEEP)
+  h.quota.mockReset().mockResolvedValue(QUOTA)
   h.rpc.mockReset()
   h.lifecycle.mockReset().mockResolvedValue({ granted: 1 })
   h.digest.mockReset().mockResolvedValue({ sent: false })
@@ -104,7 +108,7 @@ describe('GET /api/cron/entitlements: credential minor sweep (legal-credential-f
     expect(res.status).toBe(200)
     expect(await res.json()).toEqual({ granted: 1, errorDigest: { sent: false } })
     expect(h.sweep).toHaveBeenCalledTimes(1)
-    expect(entitlementsRun().finish).toHaveBeenCalledWith({ granted: 1, credentialMinorSweep: SWEEP })
+    expect(entitlementsRun().finish).toHaveBeenCalledWith({ granted: 1, credentialMinorSweep: SWEEP, quota: QUOTA })
     expect(entitlementsRun().fail).not.toHaveBeenCalled()
     // No ledger row or cron of its own.
     expect(h.jobs).toEqual(['entitlements'])
@@ -116,7 +120,7 @@ describe('GET /api/cron/entitlements: credential minor sweep (legal-credential-f
     expect(res.status).toBe(200)
     expect(await res.json()).toEqual({ granted: 1, errorDigest: { sent: false } })
     expect(entitlementsRun().fail).toHaveBeenCalledWith('credential-minor-sweep', expect.any(Error))
-    expect(entitlementsRun().finish).toHaveBeenCalledWith({ granted: 1, credentialMinorSweep: { failed: true } })
+    expect(entitlementsRun().finish).toHaveBeenCalledWith({ granted: 1, credentialMinorSweep: { failed: true }, quota: QUOTA })
     expect(h.digest).toHaveBeenCalled()
   })
 
@@ -136,6 +140,64 @@ describe('GET /api/cron/entitlements: credential minor sweep (legal-credential-f
     expect(await res.json()).toEqual({ error: 'lifecycle failed', errorDigest: { sent: false } })
     expect(h.sweep).toHaveBeenCalledTimes(1)
     expect(entitlementsRun().fail).toHaveBeenCalledWith('run', expect.any(Error))
-    expect(entitlementsRun().finish).toHaveBeenCalledWith({ credentialMinorSweep: SWEEP })
+    expect(entitlementsRun().finish).toHaveBeenCalledWith({ credentialMinorSweep: SWEEP, quota: QUOTA })
+  })
+})
+
+describe('GET /api/cron/entitlements: quota alarm (S1-quota-alarms)', () => {
+  const entitlementsRun = () => h.runs.find((r) => r.job === 'entitlements')!
+  const OVER = {
+    databaseBytes: 320 * 1024 * 1024,
+    storageBytes: 10,
+    databasePercent: 64,
+    storagePercent: 0,
+    over: ['database'],
+    alerted: true,
+    alertedOn: '2026-11-15',
+  }
+
+  it('runs once with the run\'s client, adds quota to the run result beside the existing keys, and leaves the response as it was', async () => {
+    h.quota.mockResolvedValue(OVER)
+    const res = await call()
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({ granted: 1, errorDigest: { sent: false } })
+    expect(h.quota).toHaveBeenCalledTimes(1)
+    expect(h.quota.mock.calls[0][0]).toHaveProperty('rpc', h.rpc)
+    expect(entitlementsRun().finish).toHaveBeenCalledWith({ granted: 1, credentialMinorSweep: SWEEP, quota: OVER })
+    expect(entitlementsRun().fail).not.toHaveBeenCalled()
+    // No ledger row or cron of its own.
+    expect(h.jobs).toEqual(['entitlements'])
+  })
+
+  it('records a missing function as a skip, not a run error', async () => {
+    await call()
+    expect(entitlementsRun().finish).toHaveBeenCalledWith(expect.objectContaining({ quota: { skipped: 'function_missing' } }))
+    expect(entitlementsRun().fail).not.toHaveBeenCalled()
+  })
+
+  it('records a thrown check as a run error, and the lifecycle and sweep still report', async () => {
+    h.quota.mockRejectedValue(new Error('permission denied'))
+    const res = await call()
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({ granted: 1, errorDigest: { sent: false } })
+    expect(entitlementsRun().fail).toHaveBeenCalledWith('quota', expect.any(Error))
+    expect(entitlementsRun().finish).toHaveBeenCalledWith({ granted: 1, credentialMinorSweep: SWEEP, quota: { failed: true } })
+    expect(h.digest).toHaveBeenCalled()
+  })
+
+  it('records an alert that could not be sent as a run error', async () => {
+    const failed = { ...OVER, alerted: false, alertedOn: undefined, alertFailed: true }
+    h.quota.mockResolvedValue(failed)
+    await call()
+    expect(entitlementsRun().fail).toHaveBeenCalledWith('quota', expect.any(Error))
+    expect(entitlementsRun().finish).toHaveBeenCalledWith(expect.objectContaining({ quota: failed }))
+  })
+
+  it('still runs after a failed lifecycle', async () => {
+    h.lifecycle.mockRejectedValue(new Error('boom'))
+    const res = await call()
+    expect(res.status).toBe(500)
+    expect(h.quota).toHaveBeenCalledTimes(1)
+    expect(entitlementsRun().finish).toHaveBeenCalledWith({ credentialMinorSweep: SWEEP, quota: QUOTA })
   })
 })
