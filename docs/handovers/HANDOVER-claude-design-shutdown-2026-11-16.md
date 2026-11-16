@@ -54,9 +54,8 @@ impact, then asked to migrate the "Stellr Design System" project out of it.
   and confirms the 10 Nov export is in the encrypted archive.
 - `account-migration.3`: public-safe design handoffs into the repo after a
   personal-data read.
-- `claude-design-shutdown.4`: one-off unit failure in
-  `components/member/OnboardingForm.graduation-year.test.tsx` on #746 (passed on
-  re-run).
+- `claude-design-shutdown.4`: `components/member/OnboardingForm.graduation-year.test.tsx`
+  is flaky: it failed on #746 and #748 (both docs-only) and passed on `dev`.
 
 ## Process notes
 - This session edited another session's tracker files (`claude-design-sync`
