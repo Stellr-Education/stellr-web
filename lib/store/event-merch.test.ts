@@ -53,7 +53,7 @@ vi.mock('./pricing', () => ({ computeUnitPrice: async () => ({ unit_cents: 1500 
 const { reportError } = vi.hoisted(() => ({ reportError: vi.fn(async () => {}) }))
 vi.mock('@/lib/app-errors', () => ({ reportError }))
 
-import { addRegistrationAddons, finalizeRegistrationMerch } from './event-merch'
+import { addRegistrationAddons, EventMerchOwnerReadError, finalizeRegistrationMerch } from './event-merch'
 
 const addon = { variantId: 'v-cap', sku: 'CAP', name: 'Cap', qty: 1, unitCents: 1500 }
 const orderInserts = () => inserts.filter((i) => i.table === 'store_orders')
@@ -70,6 +70,7 @@ function seed(eventSlug: string, owner: string | null) {
 }
 
 beforeEach(() => {
+  reportError.mockClear()
   inserts = []
   eventReads = []
   eventError = null
@@ -111,15 +112,32 @@ describe('ensureEventMerchOrder: explicit tenant_id (S5 C20a)', () => {
     expect(inserts).toEqual([])
   })
 
-  it('creates nothing when the owner read fails', async () => {
+  it('fails loudly when the owner read fails, rather than drop the chosen add-ons', async () => {
     seed('stellr-comp', STELLR_TENANT_ID)
     eventError = { message: 'boom' }
     const err = vi.spyOn(console, 'error').mockImplementation(() => {})
-    await addRegistrationAddons(db, 'reg-1', [addon], 'student-1')
-    err.mockRestore()
+    try {
+      // Thrown, the registration answers a 500 that its route records in app_errors.
+      await expect(addRegistrationAddons(db, 'reg-1', [addon], 'student-1')).rejects.toBeInstanceOf(EventMerchOwnerReadError)
+    } finally {
+      err.mockRestore()
+    }
     expect(inserts).toEqual([])
-    // The dropped add-ons are reported, so staff see a transient fault in the digest.
-    expect(reportError).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ route: 'LIB store/event-merch owner lookup' }))
+    // The route records it; the library does not record it a second time.
+    expect(reportError).not.toHaveBeenCalled()
+  })
+
+  it('finalize never throws on a failed owner read, writes nothing, and records it in app_errors', async () => {
+    seed('stellr-comp', STELLR_TENANT_ID)
+    eventError = { message: 'boom' }
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      await expect(finalizeRegistrationMerch(db, 'reg-1')).resolves.toBeUndefined()
+    } finally {
+      err.mockRestore()
+    }
+    expect(inserts).toEqual([])
+    expect(reportError).toHaveBeenCalledWith(expect.any(EventMerchOwnerReadError), expect.objectContaining({ route: 'LIB store/event-merch owner lookup' }))
   })
 
   it("finalize still never throws, and writes nothing for another tenant's event", async () => {

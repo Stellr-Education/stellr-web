@@ -82,6 +82,14 @@ async function getIncludedOfferings(db: SupabaseClient, eventSlug: string): Prom
   return result
 }
 
+/** The event's owner could not be read, so no event-merch order was made or found. */
+export class EventMerchOwnerReadError extends Error {
+  constructor(cause: unknown) {
+    super('Event-merch order: the event owner could not be read', { cause })
+    this.name = 'EventMerchOwnerReadError'
+  }
+}
+
 // Get (or create) the single event-merch order for a registration.
 async function ensureEventMerchOrder(db: SupabaseClient, registrationId: string): Promise<string | null> {
   const { data: existing } = await db
@@ -103,21 +111,22 @@ async function ensureEventMerchOrder(db: SupabaseClient, registrationId: string)
   // S5 C20a: the store is Stellr-only in release 1 (plan decision 12). The order's
   // tenant is its event's owner, read once here, before the order exists, by the rule
   // C20c's refuseUnlessStellrEvent applies (loadEventTenantId: an unmirrored slug counts
-  // as Stellr's, a failed read is never Stellr's). That helper answers a route with a
-  // Response; this is a library step whose callers already treat null as "no order".
-  // So another tenant's event gets no event-merch order, and no add-on is persisted or
-  // charged (registration-checkout reads add-ons from this order); a failed owner read
-  // also creates nothing. What is left is Stellr's event, so the row carries Stellr's
+  // as Stellr's, a failed read is never Stellr's). So another tenant's event gets no
+  // event-merch order, and no add-on is persisted or charged (registration-checkout reads
+  // add-ons from this order). What is left is Stellr's event, so the row carries Stellr's
   // tenant_id, the value the S3 trigger derives for it today.
+  //
+  // A failed owner read throws (backlog-batch2.12 follow-up). Every event is Stellr's today,
+  // so answering it as "no order" would drop a registrant's chosen add-ons for a transient
+  // fault and send them to a checkout without them. Thrown, the registration answers a 500
+  // that its route records in app_errors; finalizeRegistrationMerch, which must never break
+  // a confirmation, catches it and records it there itself.
   let owner: string
   try {
     owner = await loadEventTenantId(db, r.event_slug)
   } catch (err) {
-    // Every event is Stellr's today, so a failed read here drops a registrant's chosen
-    // add-ons for a transient fault. Report it so staff see it in the error digest.
     console.error('[store/event-merch] event owner lookup failed:', err instanceof Error ? err.message : err)
-    await reportError(err, { route: 'LIB store/event-merch owner lookup', db })
-    return null
+    throw new EventMerchOwnerReadError(err)
   }
   if (owner !== STELLR_TENANT_ID) return null
 
@@ -231,7 +240,8 @@ export async function listEventAddons(
 }
 
 // Persist add-on lines as 'pending' items on the registration's event-merch order
-// (called at registration time, before payment).
+// (called at registration time, before payment). Throws EventMerchOwnerReadError when the
+// event's owner cannot be read, rather than drop the add-ons the registrant chose.
 export async function addRegistrationAddons(
   db: SupabaseClient,
   registrationId: string,
@@ -325,5 +335,8 @@ export async function finalizeRegistrationMerch(db: SupabaseClient, registration
     await db.from('store_orders').update({ status: 'paid' }).eq('id', orderId)
   } catch (err) {
     console.error('[store/event-merch] finalizeRegistrationMerch failed (non-fatal):', err)
+    // Every event is Stellr's today, so a failed owner read here leaves a paid registration
+    // without its shirts and add-ons: staff see it in the error digest.
+    if (err instanceof EventMerchOwnerReadError) await reportError(err, { route: 'LIB store/event-merch owner lookup', db })
   }
 }

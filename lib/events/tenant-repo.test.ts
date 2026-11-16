@@ -130,6 +130,32 @@ describe('getEventBySlugForTenant', () => {
   })
 })
 
+// s5-programme.50: Postgres returns a uuid lower-cased, so an id passed in upper case (or
+// with stray spaces) is lower-cased before the query and the row check, and keeps its rows.
+describe('an upper-case tenant id keeps its own rows', () => {
+  const LOWER = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee'
+  const UPPER = ' AAAAAAAA-BBBB-4CCC-8DDD-EEEEEEEEEEEE '
+  const ROWS = [row(LOWER, 'mixed-case'), row(TENANT_B, 'mixed-case', { title: 'Tenant B event' })]
+
+  it('by slug, filtering by the lower-cased id', async () => {
+    const { db, queries } = fakeDb(ROWS)
+    expect(await getEventBySlugForTenant(db, UPPER, 'mixed-case')).toMatchObject({ title: `mixed-case for ${LOWER.slice(0, 4)}` })
+    expect(queries[0].filters[0]).toEqual({ op: 'eq', col: 'tenant_id', val: LOWER })
+  })
+
+  it('by slugs and by ids, still within that tenant only', async () => {
+    const { db } = fakeDb(ROWS)
+    expect((await getEventsBySlugsForTenant(db, UPPER, ['mixed-case'])).map((e) => e.title)).toEqual([`mixed-case for ${LOWER.slice(0, 4)}`])
+    expect(await getEventsByIdsForTenant(db, UPPER, [`mixed-case-${LOWER.slice(0, 4)}`])).toHaveLength(1)
+    expect(await getEventsByIdsForTenant(db, UPPER, [`mixed-case-${TENANT_B.slice(0, 4)}`])).toEqual([])
+  })
+
+  it('and the row check still drops another tenant\'s row when the filter does not hold', async () => {
+    const { db } = fakeDb([row(TENANT_B, 'mixed-case')], { ignoreTenant: true })
+    expect(await getEventBySlugForTenant(db, UPPER, 'mixed-case')).toBeNull()
+  })
+})
+
 describe('a missing tenant throws, and no query runs', () => {
   const bad: unknown[] = [undefined, null, '', '   ', 0, 'not-a-uuid', 'stellr']
   it.each(bad)('tenant %j', async (tenant) => {
