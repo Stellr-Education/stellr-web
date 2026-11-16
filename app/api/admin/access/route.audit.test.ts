@@ -5,9 +5,10 @@ import { STELLR_TENANT_ID } from '@/lib/tenancy/constants'
 
 // The access model's admin-only writes (GATE-AUDIT remainder, critique item 2): each
 // records one platform audit event naming the signed-in admin, with the object (or the
-// member) as the target and only ids, counts and enums in the metadata. A container goes
-// on Stellr's chain; an event keyed by its slug on the chain the events mirror names, with
-// the slug itself never stored. Down to the audit() call, with PLATFORM_AUDIT_ENABLED on.
+// member) as the target and only ids, counts and enums in the metadata. A cohort container
+// goes on Stellr's chain; an event or campaign container on its event owner's, by the
+// campaign_ref read with it; an event keyed by its slug on the chain the events mirror
+// names, with the slug itself never stored. Down to the audit() call, with PLATFORM_AUDIT_ENABLED on.
 
 const COHORT = '11111111-1111-4111-8111-111111111111'
 const SPACE = '22222222-2222-4222-8222-222222222222'
@@ -15,6 +16,9 @@ const MEMBER = '33333333-3333-4333-8333-333333333333'
 const MODULE = '44444444-4444-4444-8444-444444444444'
 const OWNER = '55555555-5555-4555-8555-555555555555'
 const CALLER = 'user_adminplaceholder'
+const EVENT_CONTAINER = '66666666-6666-4666-8666-666666666666'
+const CAMPAIGN_CONTAINER = '77777777-7777-4777-8777-777777777777'
+const CONTAINER_SLUG = 'placeholder-container-event'
 
 const h = vi.hoisted(() => ({
   db: null as unknown as FakeDb,
@@ -69,6 +73,8 @@ vi.mock('@/lib/access-objects', async (orig) => ({
   attachAllowed: async () => true,
   resolveAccessObject: async (ref: string) => {
     if (ref === COHORT) return { objectType: 'cohort', ref, label: 'Cohort', archived: false, containerId: COHORT }
+    if (ref === EVENT_CONTAINER) return { objectType: 'event', ref, label: 'Event', archived: false, containerId: EVENT_CONTAINER, slug: CONTAINER_SLUG }
+    if (ref === CAMPAIGN_CONTAINER) return { objectType: 'campaign', ref, label: 'Campaign', archived: false, containerId: CAMPAIGN_CONTAINER, slug: CONTAINER_SLUG }
     if (ref === SPACE) return { objectType: 'space', ref, label: 'Space', archived: false }
     if (ref === 'missing-0000') return null
     return { objectType: 'event', ref, label: ref, archived: false, slug: ref }
@@ -191,6 +197,34 @@ describe('access: contents, managers and roster on a container', () => {
     expect((await managers.POST(send('POST', '/objects/missing-0000/managers', { memberId: MEMBER }), ctx('missing-0000'))).status).toBe(404)
     await flush()
     expect(h.audits).toEqual([])
+  })
+})
+
+// Review of GATE-AUDIT: an event_participation or campaign_participation container is what
+// event-sync creates, and it belongs to the event's tenant, so its rows go on that owner's
+// chain (as the same container's event.access.sync row does), never Stellr's.
+describe('access: an event or campaign container', () => {
+  it.each([
+    ['event', EVENT_CONTAINER],
+    ['campaign', CAMPAIGN_CONTAINER],
+  ])("a %s container's content, manager and roster rows go on the event owner's chain", async (objectType, container) => {
+    const id = ctx(container)
+    expect((await contents.POST(send('POST', `/objects/${container}/contents`, { ref: MODULE, contentType: 'training_module' }), id)).status).toBe(200)
+    expect((await managers.POST(send('POST', `/objects/${container}/managers`, { memberId: MEMBER }), id)).status).toBe(200)
+    expect((await managers.DELETE(send('DELETE', `/objects/${container}/managers`, { memberId: MEMBER }), id)).status).toBe(200)
+    // Event rosters are built by registration, so these refuse (501), and the refusal is
+    // still recorded on the owner's chain.
+    expect((await roster.POST(send('POST', `/objects/${container}/roster`, { memberId: MEMBER, role: 'mentor' }), id)).status).toBe(501)
+    expect((await roster.DELETE(send('DELETE', `/objects/${container}/roster`, { memberId: MEMBER }), id)).status).toBe(501)
+    await flush()
+    expect(h.audits.map((a) => (a.metadata as { status: number }).status)).toEqual([200, 200, 200, 501, 501])
+    for (const a of h.audits) {
+      expect(a.tenantId).toBe(OWNER)
+      expect(a.target).toEqual({ table: 'mentoring_cohorts', id: container })
+      expect(a.metadata).toMatchObject({ object_type: objectType, event_slug: CONTAINER_SLUG })
+    }
+    expect(h.mirrored.every((s) => s === CONTAINER_SLUG)).toBe(true)
+    expect(h.mirrored.length).toBeGreaterThan(0)
   })
 })
 

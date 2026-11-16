@@ -15,6 +15,7 @@ import {
 } from '@/lib/impersonation'
 import { audit, auditEnabled } from '@/lib/audit/platform'
 import { STELLR_TENANT_ID } from '@/lib/tenancy/constants'
+import { checkRateLimit, HOUR_MS } from '@/lib/rate-limit'
 
 // Start / stop "view as member" for the whole member portal.
 //
@@ -100,16 +101,24 @@ async function auditViewAs(
 
 /**
  * The platform audit event for DELETE, on every path that answers 200. With a live ticket it
- * records the session's end; with none, nothing was running, and the row says only that
- * someone cleared the cookie (reason no_session, no target).
+ * records the session's end. With none, nothing was running, and DELETE is not admin-gated
+ * and proxy.ts does not rate-limit it, so that row is written only for a signed-in caller,
+ * whose Clerk id it names, and at most NO_SESSION_ROWS_PER_HOUR times per caller per
+ * instance: an anonymous client cannot append to Stellr's append-only chain or wait on its
+ * write, and a signed-in one looping cannot flood it. The row says only that the caller
+ * cleared the cookie (reason no_session, no target).
  */
+const NO_SESSION_ROWS_PER_HOUR = 20
+
 async function auditViewAsEnd(ticket: ImpersonationTicket | null): Promise<void> {
   if (!auditEnabled()) return
   const actor = await callerClerkId()
   if (ticket) return auditViewAs('support.impersonate.stop', actor, ticket, { reason: 'exited' })
+  if (!actor) return
+  if (!checkRateLimit(`impersonation-no-session:${actor}`, { limit: NO_SESSION_ROWS_PER_HOUR, windowMs: HOUR_MS }).ok) return
   await audit({
     tenantId: STELLR_TENANT_ID,
-    actor: actor ?? 'system',
+    actor,
     action: 'support.impersonate.stop',
     target: null,
     metadata: { reason: 'no_session' },
