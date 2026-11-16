@@ -803,7 +803,7 @@
     },
     "app/api/admin/scholarships/[id]/refund/route.ts": {
       "class": "convert",
-      "reason": "auto: reaches tables it does not name (dynamic .from, rpc, or a client passed to a helper); review before converting"
+      "reason": "auto: touches tenant or event-scoped tables; tables: scholarship_applications"
     },
     "app/api/admin/scholarships/[id]/resend/route.ts": {
       "class": "convert",
@@ -1035,7 +1035,7 @@
     },
     "app/api/cron/group-invoice-sync/route.ts": {
       "class": "convert",
-      "reason": "auto: touches tenant or event-scoped tables; tables: registrations"
+      "reason": "auto: reaches tables it does not name (dynamic .from, rpc, or a client passed to a helper); review before converting"
     },
     "app/api/cron/hubspot-event-options/route.ts": {
       "class": "convert",
@@ -1387,7 +1387,7 @@
     },
     "lib/admin-digest.ts": {
       "class": "convert",
-      "reason": "auto: touches tenant or event-scoped tables; tables: agreements, chat_messages, coaching_requests, cohort_members, community_comments, community_posts (+13)"
+      "reason": "auto: touches tenant or event-scoped tables; tables: agreements, chat_messages, coaching_requests, cohort_members, community_comments, community_posts (+12)"
     },
     "lib/app-errors.ts": {
       "class": "convert",
@@ -1447,7 +1447,7 @@
     },
     "lib/deletion/execute.ts": {
       "class": "convert",
-      "reason": "auto: touches tenant or event-scoped tables; tables: deletion_archive, member_pending_consent, participants, registrations, tenant_guardian_consents"
+      "reason": "auto: touches tenant or event-scoped tables; tables: member_pending_consent, participants, registrations, tenant_guardian_consents"
     },
     "lib/deletion/external.ts": {
       "class": "convert",
@@ -1518,8 +1518,8 @@
       "reason": "auto: touches tenant or event-scoped tables; tables: member_memberships, members, membership_tiers, participants, registrations, tier_grant_rules"
     },
     "lib/mentions.ts": {
-      "class": "stellr_only",
-      "reason": "auto: no tenant or event-scoped table, classed by its stellr_only tables; tables: member_directory_prefs, member_memberships, members"
+      "class": "identity",
+      "reason": "auto: no tenant or event-scoped table, classed by its identity tables; tables: member_directory_prefs, members"
     },
     "lib/mentoring.ts": {
       "class": "convert",
@@ -1647,7 +1647,7 @@
     },
     "lib/training-admin.ts": {
       "class": "convert",
-      "reason": "auto: touches tenant or event-scoped tables; tables: cohort_members, cohort_training_links, community_space_members, community_spaces, course_object_assignments, member_memberships (+8)"
+      "reason": "auto: touches tenant or event-scoped tables; tables: cohort_members, cohort_training_links, community_space_members, community_spaces, course_object_assignments, mentoring_cohorts (+7)"
     },
     "lib/training-portal.ts": {
       "class": "convert",

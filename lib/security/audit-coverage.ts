@@ -692,12 +692,39 @@ function specAlwaysAnswers(spec: ts.Expression | undefined, ctx: Ctx, depth = 0)
   const e = spec && unwrap(spec)
   if (!e || depth > 4) return false
   if (ts.isObjectLiteralExpression(e)) return true
-  if (isFn(e)) return fnAlwaysAnswers(e)
+  if (isFn(e)) return fnAlwaysAnswers(e) || isVerifiedWebhookSpec(e, ctx)
   if (!ts.isIdentifier(e) || e.text === 'undefined') return false
   const local = ctx.locals.get(e.text)
   if (local) return fnAlwaysAnswers(local)
   const value = topLevelValue(ctx.sf, e.text)
   return value ? specAlwaysAnswers(value, ctx, depth + 1) : true
+}
+
+/** A call of `name` imported from `module`. */
+function isImportedCall(n: ts.Node, ctx: Ctx, name: string, module: string): n is ts.CallExpression {
+  if (!ts.isCallExpression(n)) return false
+  const callee = importedCallee(n, ctx)
+  return callee?.name === name && callee.module === module
+}
+
+/**
+ * S5 A13a: a provider webhook's spec, exactly
+ *   (o) => webhookAudit('<action>', webhookEvent('<provider>', <name>))
+ * with both from lib/audit/webhook. It answers with no event only for a delivery the
+ * handler never noted as verified (anyone can POST to a webhook URL, and the chain is
+ * append-only), so it counts as answering when the same file calls noteWebhook from
+ * lib/audit/webhook. Any other spec that can skip is still refused.
+ */
+function isVerifiedWebhookSpec(fn: Fn, ctx: Ctx): boolean {
+  const WEBHOOK = 'lib/audit/webhook'
+  const body = fn.body
+  if (!body || ts.isBlock(body)) return false
+  const outer = unwrap(body as ts.Expression)
+  if (!isImportedCall(outer, ctx, 'webhookAudit', WEBHOOK) || outer.arguments.length !== 2 || !ts.isStringLiteralLike(outer.arguments[0])) return false
+  const inner = unwrap(outer.arguments[1])
+  if (!isImportedCall(inner, ctx, 'webhookEvent', WEBHOOK) || inner.arguments.length !== 2 || !ts.isStringLiteralLike(inner.arguments[0])) return false
+  const notes = (n: ts.Node): boolean => isImportedCall(n, ctx, 'noteWebhook', WEBHOOK) || !!ts.forEachChild(n, (c) => notes(c) || undefined)
+  return notes(ctx.sf)
 }
 
 /**

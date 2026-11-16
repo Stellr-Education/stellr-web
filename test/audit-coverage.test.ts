@@ -404,6 +404,27 @@ export async function DELETE() {}`
       for (const src of named) expect(auditHandlers(file, src)[0], src).toMatchObject({ audited: true, coverage: 'mandatory' })
     })
 
+    // S5 A13a: a webhook's spec skips only a delivery the handler never noted as verified.
+    it('accepts the verified-webhook spec only in its exact form, with noteWebhook in the file', () => {
+      const hook = "import { noteWebhook, webhookAudit, webhookEvent } from '@/lib/audit/webhook'\n"
+      const spec = "({ args: [req] }) => webhookAudit('webhook.event.process', webhookEvent('stripe', req))"
+      const handler = 'async function impl(req) { noteWebhook(req); await supabaseServer().from(\'a\').update({}); return new Response() }\n'
+      expect(auditHandlers(file, `${wrap}${hook}${handler}export const POST = withAudit(${spec}, impl)`)[0]).toMatchObject({ audited: true, coverage: 'mandatory' })
+      const refused = [
+        // Nothing in the file ever notes a delivery, so every one would be skipped.
+        `${wrap}${hook}export const POST = withAudit(${spec}, impl)`,
+        // The helpers from anywhere else.
+        `${wrap}import { noteWebhook, webhookAudit, webhookEvent } from '@/lib/not-audit'\n${handler}export const POST = withAudit(${spec}, impl)`,
+        // Not the exact form: a provider or action that is not a literal, a block body, a skip by hand.
+        `${wrap}${hook}${handler}export const POST = withAudit(({ args: [req] }) => webhookAudit('webhook.event.process', webhookEvent(provider, req)), impl)`,
+        `${wrap}${hook}${handler}export const POST = withAudit(({ args: [req] }) => webhookAudit(action, webhookEvent('stripe', req)), impl)`,
+        `${wrap}${hook}${handler}export const POST = withAudit(({ args: [req] }) => { return webhookAudit('webhook.event.process', webhookEvent('stripe', req)) }, impl)`,
+        `${wrap}${hook}${handler}export const POST = withAudit(() => webhookAudit('webhook.event.process', null), impl)`,
+        `${wrap}import { AUDIT_SKIP } from '@/lib/audit/route'\n${hook}${handler}export const POST = withAudit(() => AUDIT_SKIP, impl)`,
+      ]
+      for (const src of refused) expect(auditHandlers(file, src)[0], src).toMatchObject({ audited: false })
+    })
+
     it("does not hide a cron's guard: the handler's first statement is the route's", () => {
       const first = (src: string) => [...analyzeRoute('app/api/cron/x/route.ts', src).handlers[0].firstStatementCalls]
       const guard = "import { guardCron } from '@/lib/cron-auth'\n"
