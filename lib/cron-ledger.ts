@@ -7,7 +7,8 @@
 //            died. The DocuSign crons were dead this way for weeks in Sept 2026
 //            (started rows, no finish, nothing in the logs Hobby keeps).
 //   missed   a scheduled slot with no started top-level row in its window. The
-//            cron never ran at all, so not even a dead row exists.
+//            cron never ran at all, so not even a dead row exists. A job's
+//            alternate schedules (ALTERNATE_SCHEDULE_JOBS) count as one slot.
 //   failed   a run that finished with ok not true: it recorded a failure.
 //
 // Per-tenant child rows (startTenantRun) are read for dead and failed, and never
@@ -55,7 +56,7 @@ export interface MissedRun {
   job: string
   path: string
   schedule: string
-  /** The slot's start (UTC). */
+  /** The slot's start (UTC); for alternates, the first slot's. `schedule` then lists each, joined with " or ". */
   slot: string
 }
 
@@ -84,6 +85,26 @@ const MINUTE = 60_000
 const DEFAULT_DEAD_MARGIN_MS = 5 * MINUTE
 const DEFAULT_SLOT_WINDOW_MS = 75 * MINUTE
 const DEFAULT_MAX_DURATION_S = 300
+
+/**
+ * Jobs whose vercel.json schedules are alternates for one run, not separate
+ * runs. weekly-digest is scheduled at 18:00 and 19:00 UTC on Fridays, one for
+ * each Denver UTC offset; the call outside Denver midday returns without a
+ * cron_runs row (app/api/cron/weekly-digest/route.ts), so a correct Friday has
+ * one row, under either slot.
+ */
+export const ALTERNATE_SCHEDULE_JOBS: ReadonlySet<string> = new Set(['weekly-digest'])
+
+/** Slots one row meets: a single slot, or a job's alternates within one window of each other. */
+interface SlotGroup {
+  job: string
+  path: string
+  schedules: string[]
+  /** The first slot's start (ms). */
+  from: number
+  /** The last slot's start plus the window (ms): a run must start before this. */
+  to: number
+}
 
 /** The job name a route records under: /api/cron/<job>. Every cron route uses its path segment (weekly-digest's JOB included). */
 export function jobOfPath(path: string): string | null {
@@ -217,7 +238,9 @@ export function buildCronLedger(opts: CronLedgerOptions): CronLedgerReport {
   }
 
   // A slot is met by a top-level row of its job started inside its window. Each
-  // row meets one slot at most, so three daily slots need three rows.
+  // row meets one slot at most, so three daily slots need three rows. A job in
+  // ALTERNATE_SCHEDULE_JOBS lists one run under several schedules, and its slots
+  // that fall within one window of each other form a group that one row meets.
   const startsByJob = new Map<string, number[]>()
   for (const r of opts.runs) {
     if (r.parent_id) continue
@@ -225,23 +248,39 @@ export function buildCronLedger(opts: CronLedgerOptions): CronLedgerReport {
     if (Number.isNaN(t)) continue
     startsByJob.set(r.job, [...(startsByJob.get(r.job) ?? []), t])
   }
-  const slots: { job: string; path: string; schedule: string; at: Date }[] = []
+  const slotsByJob = new Map<string, { path: string; schedule: string; at: Date }[]>()
   for (const s of opts.schedules) {
     const job = jobOfPath(s.path)
     if (!job) continue
-    // Only slots whose whole window has passed: a run may still be on its way.
-    for (const at of cronSlots(s.schedule, opts.since, new Date(now.getTime() - slotWindow))) slots.push({ job, path: s.path, schedule: s.schedule, at })
+    const list = slotsByJob.get(job) ?? []
+    for (const at of cronSlots(s.schedule, opts.since, now)) list.push({ path: s.path, schedule: s.schedule, at })
+    slotsByJob.set(job, list)
   }
-  slots.sort((a, b) => a.at.getTime() - b.at.getTime() || a.job.localeCompare(b.job))
+  const groups: SlotGroup[] = []
+  for (const [job, list] of slotsByJob) {
+    list.sort((a, b) => a.at.getTime() - b.at.getTime())
+    let current: SlotGroup | null = null
+    for (const slot of list) {
+      const t = slot.at.getTime()
+      if (current && ALTERNATE_SCHEDULE_JOBS.has(job) && t < current.from + slotWindow) {
+        current.to = t + slotWindow
+        if (!current.schedules.includes(slot.schedule)) current.schedules.push(slot.schedule)
+        continue
+      }
+      current = { job, path: slot.path, schedules: [slot.schedule], from: t, to: t + slotWindow }
+      groups.push(current)
+    }
+  }
+  // Only groups whose whole window has passed: a run may still be on its way.
+  const due = groups.filter((g) => g.to <= now.getTime())
+  due.sort((a, b) => a.from - b.from || a.job.localeCompare(b.job))
   const used = new Set<string>()
   const missed: MissedRun[] = []
-  for (const slot of slots) {
-    const starts = (startsByJob.get(slot.job) ?? []).map((t, i) => ({ t, key: `${slot.job}#${i}` }))
-    const hit = starts
-      .filter((s) => !used.has(s.key) && s.t >= slot.at.getTime() && s.t < slot.at.getTime() + slotWindow)
-      .sort((a, b) => a.t - b.t)[0]
+  for (const g of due) {
+    const starts = (startsByJob.get(g.job) ?? []).map((t, i) => ({ t, key: `${g.job}#${i}` }))
+    const hit = starts.filter((s) => !used.has(s.key) && s.t >= g.from && s.t < g.to).sort((a, b) => a.t - b.t)[0]
     if (hit) used.add(hit.key)
-    else missed.push({ job: slot.job, path: slot.path, schedule: slot.schedule, slot: slot.at.toISOString() })
+    else missed.push({ job: g.job, path: g.path, schedule: g.schedules.join(' or '), slot: new Date(g.from).toISOString() })
   }
 
   const byStart = <T extends { startedAt: string }>(a: T, b: T) => a.startedAt.localeCompare(b.startedAt)

@@ -2,6 +2,7 @@
 import { readFileSync, readdirSync, existsSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import {
+  ALTERNATE_SCHEDULE_JOBS,
   assertLedgerTarget,
   buildCronLedger,
   cronSlots,
@@ -202,6 +203,44 @@ describe('missed runs', () => {
       maxDurationS: { 'event-emails': 60 },
     })
     expect(report.missed.map((m) => m.slot)).toEqual(['2026-11-15T17:00:00.000Z'])
+  })
+
+  describe('weekly-digest: two Friday schedules, one run', () => {
+    // vercel.json fires it at 18:00 and 19:00 UTC; the route records a row only
+    // for the call at Denver midday (18:xx in summer, 19:xx in winter).
+    const digest = [daily('weekly-digest', '0 18 * * 5'), daily('weekly-digest', '0 19 * * 5')]
+    const friday = (runs: CronRunRow[]) =>
+      buildCronLedger({ now: new Date('2026-11-14T00:00:00Z'), since: new Date('2026-11-13T00:00:00Z'), runs, schedules: digest, maxDurationS: {} })
+
+    it('one winter row at 19:02 meets the Friday', () => {
+      expect(friday([run('weekly-digest', '2026-11-13T19:02:00Z', { at: '2026-11-13T19:02:30Z', ok: true })]).missed).toEqual([])
+    })
+
+    it('one summer row at 18:03 meets the Friday', () => {
+      expect(friday([run('weekly-digest', '2026-11-13T18:03:00Z', { at: '2026-11-13T18:03:30Z', ok: true })]).missed).toEqual([])
+    })
+
+    it('a run late in the 19:00 hour still counts', () => {
+      expect(friday([run('weekly-digest', '2026-11-13T19:58:00Z', { at: '2026-11-13T19:58:30Z', ok: true })]).missed).toEqual([])
+    })
+
+    it('no row is exactly one missed Friday, naming both schedules', () => {
+      expect(friday([]).missed).toEqual([
+        { job: 'weekly-digest', path: '/api/cron/weekly-digest', schedule: '0 18 * * 5 or 0 19 * * 5', slot: '2026-11-13T18:00:00.000Z' },
+      ])
+    })
+
+    it('waits for the 19:00 window to close before calling the Friday missed', () => {
+      const report = buildCronLedger({ now: new Date('2026-11-13T19:30:00Z'), since: new Date('2026-11-13T00:00:00Z'), runs: [], schedules: digest, maxDurationS: {} })
+      expect(report.missed).toEqual([])
+    })
+
+    it('every alternate job really has more than one schedule in vercel.json', () => {
+      const vercel = JSON.parse(readFileSync('vercel.json', 'utf8')) as { crons: { path: string }[] }
+      for (const job of ALTERNATE_SCHEDULE_JOBS) {
+        expect(vercel.crons.filter((c) => jobOfPath(c.path) === job).length, job).toBeGreaterThan(1)
+      }
+    })
   })
 
   it('a per-tenant child row never stands in for the platform calling the route', () => {
