@@ -89,6 +89,16 @@ function timingTripped(renderedAt: number, submittedAt: number | null, now: numb
   return false
 }
 
+export interface SpamCheckOptions {
+  /**
+   * false: the honeypot only. For a form a real person fills in seconds, or
+   * opens already filled, where the timing trap would drop real submissions:
+   * check-in at the door, reached from a QR code. Any timing fields sent are
+   * still stripped, and nothing is logged for their absence. Default true.
+   */
+  timing?: boolean
+}
+
 /**
  * Check one submission's spam signals. Returns a ready-to-return silent 200
  * when a trap tripped, or null to carry on. Either way the honeypot and timing
@@ -102,7 +112,12 @@ function timingTripped(renderedAt: number, submittedAt: number | null, now: numb
  * A body with no usable `renderedAt` is accepted, with a warning: pages cached
  * before this shipped, and open tabs running the previous bundle, send none.
  */
-export function checkSpamSignals(body: unknown, req: Request, routeName: string): Response | null {
+export function checkSpamSignals(
+  body: unknown,
+  req: Request,
+  routeName: string,
+  options: SpamCheckOptions = {}
+): Response | null {
   void req
   if (!isRecord(body)) return null
 
@@ -112,6 +127,7 @@ export function checkSpamSignals(body: unknown, req: Request, routeName: string)
   for (const key of SPAM_FIELDS) delete body[key]
 
   if (filled(website)) return silentAccept('honeypot', routeName)
+  if (options.timing === false) return null
 
   if (renderedAt === null) {
     console.warn('[spam] no-timing', routeName)

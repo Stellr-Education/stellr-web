@@ -186,3 +186,30 @@ describe('checkSpamSignals: outside production', () => {
     await expectSilentAccept(checkSpamSignals({ ...real, website: 'x', renderedAt: NOW - 500 }, req, 'contact'))
   })
 })
+
+describe('checkSpamSignals: honeypot only ({ timing: false })', () => {
+  // Check-in at the door: people submit in seconds, often from a QR link that
+  // fills the form for them. The honeypot bites; the clock never does.
+  const opts = { timing: false } as const
+
+  it('still silently accepts a filled honeypot', async () => {
+    await expectSilentAccept(checkSpamSignals({ ...real, website: 'x' }, req, 'check-in', opts))
+    expect(warn).toHaveBeenCalledWith('[spam] honeypot', 'check-in')
+  })
+
+  it('passes an instant submission in production, and logs nothing', () => {
+    const body = { ...real, website: '', renderedAt: NOW - 200, submittedAt: NOW }
+    expect(checkSpamSignals(body, req, 'check-in', opts)).toBeNull()
+    expect(body).toEqual(real)
+    expect(warn).not.toHaveBeenCalled()
+  })
+
+  it('passes a body with no timing at all without a no-timing warning', () => {
+    expect(checkSpamSignals({ ...real, website: '' }, req, 'check-in', opts)).toBeNull()
+    expect(warn).not.toHaveBeenCalled()
+  })
+
+  it('leaves the default unchanged: an instant submission still trips without the option', async () => {
+    await expectSilentAccept(checkSpamSignals({ ...real, website: '', renderedAt: NOW - 200, submittedAt: NOW }, req, 'contact'))
+  })
+})

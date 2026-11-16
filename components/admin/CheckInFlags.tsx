@@ -1,7 +1,9 @@
 'use client'
 
-import { cn } from '@stellr/web-ui'
+import { Hourglass } from 'lucide-react'
+import { Badge, cn } from '@stellr/web-ui'
 import { hasFlags, type DeskFlags } from '@/lib/check-in-desk'
+import { CONSENT_PENDING_MARKER } from '@/lib/check-in-consent'
 
 // What staff should know when someone arrives: an unsigned agreement, money
 // owed, a medical or dietary note. Flags only, never a block (David, 30 Oct
@@ -61,5 +63,20 @@ export default function CheckInFlags({ flags, className }: { flags: DeskFlags | 
         )}
       </dl>
     </details>
+  )
+}
+
+/**
+ * S5 CONSENT (c), WD-6: a tenant event's participant whose parent or guardian has
+ * not signed the consent form. Unlike the flags above this one is a block: the
+ * desk cannot check them in until the form is signed. Never shown at a Stellr
+ * event, which has no consent rows.
+ */
+export function ConsentPendingMarker({ className }: { className?: string }) {
+  return (
+    <Badge className={cn('mt-1 gap-1 bg-danger/10 text-danger', className)}>
+      <Hourglass className="h-3.5 w-3.5" aria-hidden />
+      {CONSENT_PENDING_MARKER}
+    </Badge>
   )
 }

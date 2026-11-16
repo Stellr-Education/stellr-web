@@ -3,13 +3,18 @@
 import { useMemo, useRef, useState } from 'react'
 import { Phone } from 'lucide-react'
 import { Button, Dialog, cn } from '@stellr/web-ui'
-import CheckInFlags from '@/components/admin/CheckInFlags'
+import CheckInFlags, { ConsentPendingMarker } from '@/components/admin/CheckInFlags'
+import { isConsentPending } from '@/lib/check-in-consent'
 import type { DeskContact, DeskFlags, GroupRow } from '@/lib/check-in-desk'
 
 // Checking in a school group in one go (Oct 2026). The teacher arrives, the desk
 // opens the group, everyone not yet here starts ticked, staff untick whoever
 // isn't on the bus, and one tap checks in the rest. People already in (their
 // own phone, another desk) show their time and aren't touched.
+//
+// S5 CONSENT (c): a tenant event's participant waiting on guardian consent is
+// marked (WD-6). The server still refuses the whole group while they are ticked
+// (BF-66), so the desk unticks them and checks in the rest.
 
 function timeLabel(iso: string) {
   return new Date(iso).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
@@ -131,6 +136,7 @@ export default function CheckInGroupSheet({
                 </span>
                 {m.company && <span className="shrink-0 text-sm font-semibold tabular-nums text-content-body">Co. {m.company.number}</span>}
               </label>
+              {isConsentPending(m) && <ConsentPendingMarker className="-mt-1 mb-1 ml-9" />}
               <CheckInFlags flags={flags[m.id]} className="-mt-2 mb-1 ml-9" />
             </li>
           )
