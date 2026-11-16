@@ -80,6 +80,20 @@ describe('POST /api/cq-lead', () => {
     })
   })
 
+  it('accepts the hub and window pages, each with its own source page and window', async () => {
+    await post({ ...VALID, pageSlug: 'cq-spring-2027' })
+    expect(captured().properties).toMatchObject({ lp_source_page: 'cq-spring-2027', cq_window: 'spring-2027' })
+    captureLead.mockClear()
+    await post({ ...VALID, pageSlug: 'cq-hub' })
+    expect(captured().properties).toMatchObject({ lp_source_page: 'cq-hub', cq_window: '2026-27' })
+  })
+
+  it('rejects a page it does not publish', async () => {
+    const res = await post({ ...VALID, pageSlug: 'not-a-page' })
+    expect(res.status).toBe(400)
+    expect(captureLead).not.toHaveBeenCalled()
+  })
+
   it('never writes an empty UTM over a stored one', async () => {
     await post({ ...VALID, utm_content: undefined, utm_term: undefined })
     expect(captured().properties).not.toHaveProperty('lp_utm_content')

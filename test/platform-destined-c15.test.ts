@@ -411,10 +411,10 @@ describe('audit', () => {
   type Event = { action: string; actor: string; target: unknown; metadata: Record<string, unknown>; tenantId: string }
   const lastEvent = () => auditMock.mock.calls.at(-1)?.[0] as Event
 
-  it('every mutating handler audits on every path, under the gate, except the end of view-as', () => {
+  it('every mutating handler audits on every path, under the gate, the end of view-as included', () => {
     const mutating = FILES.flatMap((f) => auditHandlers(f, readFileSync(f, 'utf8')))
     const open = mutating.filter((m) => !m.audited).map((m) => m.key)
-    expect(open).toEqual(['app/api/admin/impersonation/route.ts#DELETE'])
+    expect(open).toEqual([])
     for (const [file, method] of AUDITED) {
       expect(mutating.find((m) => m.key === `${file}#${method}`), `${file} ${method}`).toMatchObject({ audited: true, coverage: 'mandatory' })
     }

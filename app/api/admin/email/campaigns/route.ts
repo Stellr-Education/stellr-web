@@ -4,6 +4,8 @@ import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import { supabaseServer } from '@/lib/supabase'
 import { isAdminClaims } from '@/lib/admin-auth'
+import { withAudit } from '@/lib/audit/route'
+import { adminAuditSubject, noteAuditSubject } from '@/lib/audit/route-subject'
 import { getSignedInMember } from '@/lib/community'
 
 const audienceSchema = z.object({
@@ -56,7 +58,15 @@ export async function GET() {
 }
 
 // POST /api/admin/email/campaigns — create a campaign in draft.
-export async function POST(req: Request) {
+//
+// Platform audit (docs/TENANCY-S5.md, C7): the new campaign is the target; its template
+// and trigger the metadata, never its name.
+export const POST = withAudit(
+  ({ args: [req] }: { args: [Request] }) => ({ action: 'email.campaign.create', ...adminAuditSubject(req, 'email_campaigns') }),
+  createCampaign,
+)
+
+async function createCampaign(req: Request) {
   const { sessionClaims } = await auth()
   if (!isAdminClaims(sessionClaims)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
@@ -91,5 +101,6 @@ export async function POST(req: Request) {
     console.error('[email-campaigns] insert error:', error.message)
     return NextResponse.json({ error: 'Failed to create campaign' }, { status: 500 })
   }
+  noteAuditSubject(req, { id: data.id as string, detail: { template_id: templateId, trigger_type: triggerType } })
   return NextResponse.json({ id: data.id })
 }

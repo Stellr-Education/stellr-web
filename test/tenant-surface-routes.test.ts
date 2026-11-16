@@ -46,7 +46,8 @@ const MANIFEST_CLASS_COUNTS: Record<RouteClass, number> = {
   // +3 tenant_crew, -3 stellr_only: admin events/[slug]/{companies,offerings,merch/commit} (C18)
   tenant_crew: 38,
   participant: 131,
-  public: 133,
+  // +6 on 16 Nov 2026: the Classroom Qualifier hub, its two window pages, the library and the teacher stories list and detail.
+  public: 139,
   webhook: 12,
   cron: 24,
   // -1 on 14 Nov 2026: the embedded Sanity Studio page left the app for Sanity's hosting.
@@ -62,7 +63,8 @@ const MANIFEST_CLASS_COUNTS: Record<RouteClass, number> = {
 // +1 on 14 Nov 2026: admin staff-settings, the Staff training module (stellr_only, denied on tenant hosts).
 // +1 on 14 Nov 2026: cq-lead, the Classroom Qualifier curriculum request (public, Stellr lead capture, denied on tenant hosts like lp-lead).
 // -1 on 14 Nov 2026: studio/[[...tool]] (stellr_only, denied on tenant hosts), gone: the Studio is hosted by Sanity.
-const MANIFEST_TOTAL = 510
+// +6 on 16 Nov 2026: classroom-qualifier hub, 2026-27, spring-2027, resources, stories and stories/[slug] (public pages, denied on tenant hosts like the other Stellr marketing pages).
+const MANIFEST_TOTAL = 516
 
 // The decisions. Moving a route between them is a deliberate diff here.
 const DECISION_COUNTS: Record<TenantSurfaceDecision, number> = {
@@ -72,7 +74,7 @@ const DECISION_COUNTS: Record<TenantSurfaceDecision, number> = {
   // files pinned under 'routes held back' below
   pending: 49,
   bypass: 4,
-  deny: 407,
+  deny: 413,
 }
 
 /** A concrete URL a manifest file serves, with sample values for its params. */
@@ -98,7 +100,7 @@ function sampleUrl(file: string): string {
 }
 
 describe('the manifest this classifies', () => {
-  it('has the measured class counts, 510 in total', () => {
+  it('has the measured class counts, 516 in total', () => {
     expect(FILES).toHaveLength(MANIFEST_TOTAL)
     const counts = Object.fromEntries(Object.keys(MANIFEST_CLASS_COUNTS).map((c) => [c, 0])) as Record<
       RouteClass,

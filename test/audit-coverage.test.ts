@@ -129,10 +129,10 @@ describe('audit coverage', () => {
     expect(baseline.totals.unauditedGetMutations).toBe(baseline.getMutations.length)
   })
 
-  it('sees the one route known to audit today: POST always, DELETE only down a branch', () => {
+  it('sees view-as audit through same-file helpers: POST and, since GATE-AUDIT, DELETE on every path', () => {
     const file = 'app/api/admin/impersonation/route.ts'
     const by = Object.fromEntries(auditHandlers(file, readFileSync(file, 'utf8')).map((h) => [h.method, h.coverage]))
-    expect(by).toEqual({ DELETE: 'conditional', POST: 'mandatory' })
+    expect(by).toEqual({ DELETE: 'mandatory', POST: 'mandatory' })
   })
 
   it('reports the GET handlers known to write', () => {

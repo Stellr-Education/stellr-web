@@ -314,6 +314,56 @@ export const AUDIT_ACTIONS = [
   'scholarship.offer_email.resend',
   'scholarship.refund.issue',
   'scholarship.refund_quote.read',
+  // The admin-only routes (GATE-AUDIT remainder, critique item 2). Stellr's own chain,
+  // unless the route acts on an event, which goes on its owner's.
+  // The access model: app/api/admin/access/**
+  'access.object.create',
+  'access.object_content.attach',
+  'access.object_content.detach',
+  'access.object_manager.grant',
+  'access.object_manager.revoke',
+  'access.object_roster.add',
+  'access.object_roster.remove',
+  'access.member_role.grant',
+  'access.member_role.revoke',
+  'access.relation.set',
+  // Background checks: re-poll every open one now, and the decision on a flagged report
+  'compliance.background_check.sync',
+  'compliance.background_check.adjudicate',
+  // The Friday digest, sent to the signed-in admin on demand (app/api/admin/digest/send)
+  'digest.preview.send',
+  // Marketing email: app/api/admin/email/**
+  'email.audience.preview',
+  'email.campaign.create',
+  'email.campaign.update',
+  'email.campaign.archive',
+  'email.campaign.test_send',
+  'email.template.create',
+  'email.template.update',
+  'email.template.archive',
+  // Signing: app/api/admin/esign/**
+  'esign.maintenance.run',
+  'esign.membership_backfill.run',
+  'esign.state.update',
+  'esign.template.create',
+  'esign.template.approve',
+  'esign.template.preview',
+  'esign.template.upload',
+  // A member record: app/api/admin/members/[id] (PATCH and DELETE)
+  'member.record.update',
+  'member.record.deactivate',
+  // Sanity's event publish webhook: the access side of the event (app/api/admin/sanity/event-sync)
+  'event.access.sync',
+  // The store catalogue: app/api/admin/store/**
+  'store.discount.save',
+  'store.discount.delete',
+  'store.product.create',
+  'store.product.update',
+  'store.product.archive',
+  'store.product.printful_sync',
+  'store.variant.create',
+  'store.variant.update',
+  'store.variant.delete',
 ] as const
 
 export type AuditAction = (typeof AUDIT_ACTIONS)[number]

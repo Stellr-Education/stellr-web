@@ -3,6 +3,8 @@ import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import { supabaseServer } from '@/lib/supabase'
 import { isAdminClaims } from '@/lib/admin-auth'
+import { withAudit } from '@/lib/audit/route'
+import { adminAuditSubject, noteAuditSubject } from '@/lib/audit/route-subject'
 
 // The object→object relationship matrix (object_type_relations, migration 125).
 // GET returns all 49 cells; PATCH flips one. Read by the Rules-tab matrix editor
@@ -30,7 +32,14 @@ const patchSchema = z.object({
   allowed: z.boolean(),
 })
 
-export async function PATCH(req: Request) {
+// Platform audit (docs/TENANCY-S5.md, C7): which cell, and what it now says. The matrix has
+// no row id, so there is no target id.
+export const PATCH = withAudit(
+  ({ args: [req] }: { args: [Request] }) => ({ action: 'access.relation.set', ...adminAuditSubject(req, 'object_type_relations') }),
+  setRelation,
+)
+
+async function setRelation(req: Request) {
   const { sessionClaims } = await auth()
   if (!isAdminClaims(sessionClaims)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
@@ -38,6 +47,7 @@ export async function PATCH(req: Request) {
   if (!parsed.success) return NextResponse.json({ error: 'Invalid request' }, { status: 400 })
 
   const { fromType, toType, allowed } = parsed.data
+  noteAuditSubject(req, { detail: { from_type: fromType, to_type: toType, allowed } })
   const db = supabaseServer()
   const { error } = await db
     .from('object_type_relations')
