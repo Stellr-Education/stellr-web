@@ -71,6 +71,8 @@ export const TENANT_APP_UNWRITABLE_COLUMNS: Readonly<Record<string, readonly str
 export const TENANT_APP_NO_ACCESS_TABLES: Readonly<Record<string, string>> = {
   'public.cron_runs':
     'the cron ledger (S5 B3): written by service_role through lib/cron-runs.ts; tenant_id only labels a per-tenant child row, and is NULL on every top-level run',
+  'public.email_outbox':
+    'the mail queue (S5 M7): written by service_role through lib/email/outbox.ts; tenant_id only labels a queued row for the per-tenant drain, and NULL counts as Stellr’s',
   'public.platform_audit_events':
     'hash-chained audit (S4 audit lane): written by service_role through lib/audit/platform.ts; a tenant must not read or rewrite the chain, and tenant_id is nullable (NULL = the platform chain)',
   'public.tenant_data_keys':
