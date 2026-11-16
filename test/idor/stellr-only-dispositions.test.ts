@@ -14,7 +14,9 @@ import { DISPOSITION_REGISTER_STATUS, STELLR_ONLY_DISPOSITIONS, dispositionCount
 // existed. C16 moved 14 of its 15 to tenant_crew: event-managers keeps the Stellr admin
 // guard until C21. C17 moved 17 more. registrations/[id]/payment-method (#573) arrived
 // after C16, and its follow-up moved it. C18 moved companies, offerings and merch/commit.
-const MAX_TENANT_DESTINED_STELLR_ONLY = 18
+// C19a (S5 wave 8) moved credentials and the badge and certificate artwork routes, seven in
+// all, to tenant_crew with the Stellr-only option (stellrOnlyEvent).
+const MAX_TENANT_DESTINED_STELLR_ONLY = 11
 
 // platform_destined routes stay listed: the owner's choice for each is still to come.
 const stellrOnly = idorTargets().filter((t) => t.cls === 'stellr_only' || t.cls === 'platform_destined').map((t) => t.file)
