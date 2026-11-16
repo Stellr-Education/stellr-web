@@ -5,7 +5,7 @@ import Link from 'next/link'
 import QRCode from 'qrcode'
 import { Maximize2, Minimize2, Phone, Printer, QrCode, ScanLine, Search, Settings2, X } from 'lucide-react'
 import { Button, cn } from '@stellr/web-ui'
-import CheckInFlags from '@/components/admin/CheckInFlags'
+import CheckInFlags, { ConsentPendingMarker } from '@/components/admin/CheckInFlags'
 import CheckInGroupSheet from '@/components/admin/CheckInGroupSheet'
 import CheckInScanner, { type ScanOutcome } from '@/components/admin/CheckInScanner'
 import {
@@ -40,12 +40,14 @@ import {
   bannerNotice,
   openCheckInConfirm,
 } from '@/lib/check-in-desk'
+import { CONSENT_PENDING_MARKER, isConsentPending, type DeskConsentMarker } from '@/lib/check-in-consent'
 
 interface LiveState {
   checkInOpen: boolean
   checkInToken: string | null
   resourcesUrl: string | null
-  participants: DeskParticipant[]
+  /** consentPending: a tenant event's participant waiting on guardian consent (S5 CONSENT (c)). */
+  participants: (DeskParticipant & DeskConsentMarker)[]
   groups: DeskGroup[]
   /** Mentors and event managers checked in, by crew key; null when that couldn't be read. */
   crewCheckIns?: Record<string, DeskCrewCheckIn> | null
@@ -576,6 +578,8 @@ export default function CheckInLive({
     const who = `${p.firstName} ${p.lastName}`
     const about = [p.company && `Company ${p.company.number}`, p.shirtSize && `Shirt ${p.shirtSize}`].filter(Boolean).join(' · ')
     if (p.checkedInAt) return { tone: 'warn', title: who, detail: `Already checked in at ${timeLabel(p.checkedInAt)}${about ? ` · ${about}` : ''}`, flags: flags[p.id] }
+    // A failed scan: nothing is sent, so nothing is queued or shown as checked in.
+    if (p.consentPending) return { tone: 'error', title: who, detail: `${CONSENT_PENDING_MARKER}. Not checked in.` }
     const at = new Date().toISOString()
     act({ action: 'scan', code, at, label: who }, { [p.id]: { checkedInAt: at, checkInMethod: 'manual' } })
     return { tone: 'ok', title: who, detail: about || 'Checked in', flags: flags[p.id] }
@@ -811,6 +815,7 @@ export default function CheckInLive({
               {(groupById.get(p.registrationId)?.label ?? p.schoolName) && <> · {groupById.get(p.registrationId)?.label ?? p.schoolName}</>}
               {p.merch.length > 0 && <> · {p.merch.map((m) => `${m.name}${m.qty > 1 ? ` ×${m.qty}` : ''}`).join(', ')}</>}
             </p>
+            {p.consentPending && !p.checkedInAt && <ConsentPendingMarker />}
             <CheckInFlags flags={flags[p.id]} />
             {p.merch.length > 0 && (
               <button
@@ -843,6 +848,7 @@ export default function CheckInLive({
           ) : (
             <Button
               onClick={() => rowAction('manual', p, { checkedInAt: new Date().toISOString(), checkInMethod: 'manual' })}
+              disabled={p.consentPending}
               className="min-h-12 shrink-0 px-4 py-2 text-base sm:px-5"
             >
               Check in
@@ -890,6 +896,7 @@ export default function CheckInLive({
         const contact = details?.contacts[row.group.id]
         const unsigned = row.members.filter((m) => flags[m.id]?.agreement).length
         const medical = row.members.filter((m) => flags[m.id]?.medical).length
+        const waitingConsent = row.members.filter((m) => !m.checkedInAt && isConsentPending(m)).length
         const done = row.arrived === row.total
         return (
           <li key={row.group.id} className={cn('flex items-center gap-3 px-4 py-3 sm:gap-4', done && 'bg-enviro-green-bg/40')}>
@@ -913,6 +920,7 @@ export default function CheckInLive({
                 {done ? 'All here' : row.arrived ? `${row.total - row.arrived} not here yet` : 'Not here yet'}
                 {unsigned > 0 && <> · {unsigned} form{unsigned === 1 ? '' : 's'} not signed</>}
                 {medical > 0 && <> · {medical} medical</>}
+                {waitingConsent > 0 && <> · {waitingConsent} waiting for guardian consent</>}
               </p>
               {contact?.phone && !done && (
                 <a href={`tel:${contact.phone.replace(/[^\d+]/g, '')}`} className="inline-flex min-h-11 items-center gap-1.5 text-sm font-medium text-primary-deep">
