@@ -359,14 +359,14 @@ export default function EventRoster({
           {shown} of {roster.summary.totalParticipants} participants
           {roster.summary.scholarshipHolders > 0 && ` · ${roster.summary.scholarshipHolders} on scholarship`}
         </span>
-        {/* Bulk reminders moved to the Email Reminders tab (editable copy,
+        {/* Bulk reminders moved to the Email Engagement tab (editable copy,
             attachments, scheduling, history). The old one-click route,
             /api/admin/events/[slug]/remind, is left in place for now. */}
         <Link
           href={`/admin/competitions/${eventSlug}?tab=emails`}
           className="ml-auto text-sm font-medium text-white bg-brand-blue hover:bg-brand-blue-dark rounded-lg px-3 py-1.5"
         >
-          Email Reminders
+          Email Engagement
         </Link>
         <a
           href={exportHref}
