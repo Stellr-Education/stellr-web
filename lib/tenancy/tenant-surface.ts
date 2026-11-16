@@ -219,7 +219,6 @@ export const TENANT_SURFACE_DENY: readonly TenantSurfaceRule[] = [
   { match: 'app/(stellr)/(member)/join/', reason: 'Stellr membership' },
   { match: 'app/api/stripe/membership-checkout/route.ts', reason: 'Stellr membership billing' },
   { match: 'app/api/stripe/membership-invoice/route.ts', reason: 'Stellr membership billing' },
-  { match: 'app/(stellr)/studio/', reason: "Stellr's Sanity Studio" },
   { match: 'app/sitemap.ts', reason: "Stellr's sitemap lists Stellr pages only" },
   { match: 'app/llms.txt/', reason: "Stellr's answer-engine summary" },
   { match: 'app/indexnow-key.txt/', reason: "Stellr's IndexNow key" },

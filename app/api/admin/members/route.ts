@@ -11,9 +11,23 @@ import { getSignedInMember } from '@/lib/community'
 import { sendAccountInvite } from '@/lib/member-invite'
 import { isMinorOn } from '@/lib/age'
 import { shadowSyncFields } from '@/lib/field-crypto-shadow'
+import { withAudit } from '@/lib/audit/route'
+import { auditSubject, noteAuditSubject } from '@/lib/audit/route-subject'
+
+// Platform audit (docs/TENANCY-S5.md, C7): the new member's uuid is the target, noted
+// once the row exists. Nothing from the form goes in the event.
+const createAudit = ({ args: [req] }: { args: [Request] }) => ({
+  action: 'member.record.create' as const,
+  actor: { session: true } as const,
+  tenant: { stellr: true } as const,
+  target: auditSubject(req, 'members').target,
+  metadata: auditSubject(req, 'members').metadata,
+})
+
+export const POST = withAudit(createAudit, createMember)
 
 // POST /api/admin/members — admin manually creates a new member record
-export async function POST(req: Request) {
+async function createMember(req: Request) {
   const { sessionClaims } = await auth()
   if (!(await hasCapability('members:write'))) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
@@ -138,6 +152,7 @@ export async function POST(req: Request) {
   }
   // S4 field encryption: inert unless FIELD_CRYPTO_MODE=shadow; never fails this write.
   shadowSyncFields('members', [member.id])
+  noteAuditSubject(req, { id: member.id, detail: { org_linked: !!resolvedSchoolId, tier_assigned: !!tier_id } })
 
   // Link to school
   if (resolvedSchoolId) {
@@ -176,5 +191,6 @@ export async function POST(req: Request) {
     invite = await sendAccountInvite(db, member.id, { actorMemberId: actor?.id ?? null, actorType: await crewActorType() })
   }
 
+  if (invite) noteAuditSubject(req, { detail: { org_linked: !!resolvedSchoolId, tier_assigned: !!tier_id, invite_sent: invite.sent } })
   return NextResponse.json({ member: { id: member.id }, invite }, { status: 201 })
 }

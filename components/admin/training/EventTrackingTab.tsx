@@ -11,6 +11,7 @@ import type { TrainableObject, EventTracking, TrackStatus } from '@/lib/training
 // chip, completion summary, bulk Email/SMS reminders, and the participant table.
 
 import { ObjectPicker } from './ObjectPicker'
+import { AdminOnlyNote, useCan } from '@/components/admin/CapabilitiesContext'
 
 const STATUS: Record<TrackStatus, { label: string; bg: string; color: string }> = {
   complete: { label: 'Complete', bg: '#E7F7F1', color: '#158463' },
@@ -52,6 +53,9 @@ export function EventTrackingTab({
   const [loading, setLoading] = useState(false)
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [sent, setSent] = useState(false)
+  // Sending reminders is academy:manage, an admin's alone: Staff see the
+  // tracking, without the select boxes that lead to the send.
+  const canWrite = useCan('academy:manage')
 
   const selectedObject = objects.find((o) => o.ref === objectRef)
   const objectLabel = selectedObject?.label ?? 'this event'
@@ -154,8 +158,10 @@ export function EventTrackingTab({
         <SummaryCard label="Overdue" value={data?.summary.overdue ?? 0} color="#C0392B" />
       </div>
 
+      {!canWrite && <AdminOnlyNote>An admin sends training reminders.</AdminOnlyNote>}
+
       {/* Bulk action bar */}
-      {selected.size > 0 && (
+      {canWrite && selected.size > 0 && (
         <div className="flex flex-col gap-3 rounded-2xl bg-brand-blue-dark px-5 py-4 text-white sm:flex-row sm:items-center sm:justify-between">
           <span className="text-sm font-semibold">{selected.size} incomplete selected</span>
           <div className="flex flex-wrap items-center gap-3">
@@ -187,7 +193,7 @@ export function EventTrackingTab({
                   aria-label="Select all incomplete"
                   checked={allIncompleteSelected}
                   onChange={toggleAll}
-                  disabled={incompleteRows.length === 0}
+                  disabled={!canWrite || incompleteRows.length === 0}
                 />
               </th>
               <th className="px-3 py-3 font-semibold">Participant</th>
@@ -217,7 +223,7 @@ export function EventTrackingTab({
                       aria-label={`Select ${r.name}`}
                       checked={selected.has(r.memberId)}
                       onChange={() => toggle(r.memberId)}
-                      disabled={!selectable}
+                      disabled={!canWrite || !selectable}
                     />
                   </td>
                   <td className="px-3 py-3">

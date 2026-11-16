@@ -7,6 +7,9 @@ import { actorFromAuth, logActivity } from '@/lib/activity-log'
 import { teacherLicenseSchema, type TeacherLicenseInput } from '@/lib/teacher-license'
 import { notifyLicenseVerified } from '@/lib/license-review'
 import { recheckEventManagerClearance } from '@/lib/event-manager'
+import { withAudit } from '@/lib/audit/route'
+import { auditSubject, noteAuditSubject } from '@/lib/audit/route-subject'
+import { memberIdOf } from '@/lib/audit-route-helpers'
 
 // POST /api/admin/members/[id]/license
 // Admin manually verifies (or un-verifies) the teacher license on file. This is
@@ -32,7 +35,21 @@ const bodySchema = z.discriminatedUnion('action', [
   teacherLicenseSchema.extend({ action: z.literal('save') }),
 ])
 
-export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
+type Ctx = { params: Promise<{ id: string }> }
+
+// Platform audit (docs/TENANCY-S5.md, C7): the member is the target and which action
+// (save, verify, unverify) the metadata. Never the license number, state or expiry.
+const licenseAudit = ({ args: [req] }: { args: [Request, Ctx] }) => ({
+  action: 'compliance.license.update' as const,
+  actor: { session: true } as const,
+  tenant: { stellr: true } as const,
+  target: { table: 'members', id: memberIdOf(req) },
+  metadata: auditSubject(req, 'member_teacher_licenses').metadata,
+})
+
+export const POST = withAudit(licenseAudit, updateLicense)
+
+async function updateLicense(req: Request, { params }: Ctx) {
   // Staff may enter license details (members:write); verifying decides clearance (admins, clearance:verify).
   if (!(await hasCapability('members:write'))) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
@@ -46,6 +63,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     return NextResponse.json({ error: fromForm ? issue.message : 'Invalid request' }, { status: 400 })
   }
 
+  noteAuditSubject(req, { detail: { license_action: parsed.data.action } })
   const db = supabaseServer()
   if (parsed.data.action === 'save') return saveLicense(db, id, parsed.data)
   if (!(await hasCapability('clearance:verify'))) return NextResponse.json({ error: 'Only an admin can verify or unverify a teaching license.' }, { status: 403 })

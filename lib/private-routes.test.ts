@@ -1,7 +1,7 @@
 import { readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, it, expect } from 'vitest'
-import { isPrivatePath } from '@/lib/private-routes'
+import { isHandoffPath, isPrivatePath } from '@/lib/private-routes'
 
 describe('isPrivatePath', () => {
   it('treats the scholarship offer bearer link as private (PUB-13)', () => {
@@ -44,6 +44,62 @@ describe('isPrivatePath', () => {
     expect(isPrivatePath('/register/nevada-2027/individual')).toBe(false)
     // not a credential path, just a prefix collision
     expect(isPrivatePath('/credentialsomething')).toBe(false)
+  })
+})
+
+// A guest who opens a pay or join link is sent to sign in with the link in
+// ?next (lib/auth-path), and signed-in onboarding carries it on. The token is
+// then in the sign-in page's own address, so that page is private too.
+describe('isPrivatePath: a sign-in or onboarding page whose query names a private link', () => {
+  const PAY = '/register/sample-event/pay/sampletoken'
+  const SEAT = '/register/sample-event/pay-seat/sampletoken'
+  const JOIN = '/register/sample-event/join/sampletoken'
+  const enc = encodeURIComponent
+
+  it.each(['/sign-in', '/sign-up', '/account/onboarding', '/sign-in/factor-one'])('%s with ?next=<pay, pay-seat or join link> is private', (page) => {
+    for (const link of [PAY, SEAT, JOIN]) {
+      expect(isPrivatePath(page, `?next=${enc(link)}`), `${page} ${link}`).toBe(true)
+      expect(isPrivatePath(`${page}?next=${enc(link)}`), `${page} ${link} (one string)`).toBe(true)
+      expect(isPrivatePath(page, new URLSearchParams({ next: link })), `${page} ${link} (params)`).toBe(true)
+    }
+  })
+
+  it('reads redirect_url, and an absolute URL as well as a path', () => {
+    expect(isPrivatePath('/sign-in', `?redirect_url=${enc(`https://www.placeholder.test${PAY}`)}`)).toBe(true)
+    expect(isPrivatePath('/sign-in', `?redirect_url=${enc(JOIN)}`)).toBe(true)
+  })
+
+  it('follows a handoff to onboarding whose own ?next is the link', () => {
+    const onboarding = `/account/onboarding?next=${enc(JOIN)}`
+    expect(isPrivatePath('/sign-in', `?redirect_url=${enc(`https://app.placeholder.test${onboarding}`)}`)).toBe(true)
+    expect(isPrivatePath('/sign-in', `?next=${enc(onboarding)}`)).toBe(true)
+  })
+
+  it('treats any other private link in ?next the same way', () => {
+    expect(isPrivatePath('/sign-in', `?next=${enc('/survey/sampletoken')}`)).toBe(true)
+    expect(isPrivatePath('/sign-in', `?next=${enc('/scholarship/offer/sampletoken')}`)).toBe(true)
+  })
+
+  it('leaves sign-in and onboarding public with an ordinary ?next, or none', () => {
+    expect(isPrivatePath('/sign-in')).toBe(false)
+    expect(isPrivatePath('/sign-in', '')).toBe(false)
+    expect(isPrivatePath('/sign-in', `?next=${enc('/community/events')}`)).toBe(false)
+    expect(isPrivatePath('/sign-up', `?next=${enc('/register/sample-event/individual')}`)).toBe(false)
+    expect(isPrivatePath('/account/onboarding', `?next=${enc('/academy/coaching?x=1')}`)).toBe(false)
+    expect(isPrivatePath('/sign-in', '?next=register/sample-event/pay/sampletoken')).toBe(false)
+    expect(isPrivatePath('/sign-in', `?next=${enc('/register/sample-event/pay')}`)).toBe(false)
+  })
+
+  it('reads the query only on the handoff pages', () => {
+    expect(isPrivatePath('/about', `?next=${enc(PAY)}`)).toBe(false)
+    expect(isPrivatePath('/account', `?next=${enc(PAY)}`)).toBe(false)
+    expect(isPrivatePath('/sign-inside', `?next=${enc(PAY)}`)).toBe(false)
+  })
+
+  it('stops following a chain of handoffs and keeps it private', () => {
+    let next = '/home'
+    for (let i = 0; i < 6; i += 1) next = `/sign-in?next=${enc(next)}`
+    expect(isPrivatePath(next)).toBe(true)
   })
 })
 
@@ -95,5 +151,16 @@ describe('every public [token] bearer-link page is private (PUB-13)', () => {
       leaked,
       `These [token] bearer-link pages are not private — add them to lib/private-routes.ts and next.config.mjs: ${leaked.join(', ')}`,
     ).toEqual([])
+  })
+})
+
+describe('isHandoffPath', () => {
+  it('names the pages whose query decides whether they are private', () => {
+    for (const p of ['/sign-in', '/sign-up', '/account/onboarding', '/sign-in/factor-one', '/account/onboarding?next=/home']) {
+      expect(isHandoffPath(p), p).toBe(true)
+    }
+    for (const p of ['/', '/about', '/account', '/sign-inside', '/register/sample-event/join/sampletoken']) {
+      expect(isHandoffPath(p), p).toBe(false)
+    }
   })
 })

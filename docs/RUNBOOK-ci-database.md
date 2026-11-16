@@ -22,12 +22,14 @@ and how, is in the [enforcement ledger](#enforcement-ledger) below.
 
 | Step | What happens |
 |---|---|
-| Scope | A PR that touches neither `supabase/` nor `ci.yml` cannot change the database, so the job ends green in seconds. Pushes to `dev`/`main` and manual runs always build. |
+| Scope | A PR that touches none of `supabase/`, `ci.yml` or `lib/database.generated.ts` cannot change the database, so the job ends green in seconds. Pushes to `dev`/`main` and manual runs always build. |
 | Start | `supabase db start` (CLI pinned in the job's `SUPABASE_CLI_VERSION`, which also pins the Postgres image). Postgres only, not the full stack. The CLI's own migration replay and seed are switched off for this step with `SUPABASE_DB_MIGRATIONS_ENABLED=false` and `SUPABASE_DB_SEED_ENABLED=false`, because `001`–`148` cannot rebuild the schema (see `docs/SCHEMA-BASELINE.md`). |
 | Baseline | `supabase/baseline.sql` is loaded the documented way (drop `entitlements` and `public`, load with `ON_ERROR_STOP=1`). Three kinds of line are removed first: `\restrict`/`\unrestrict`, and the `ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin` lines the `postgres` role cannot run. |
 | Migrations | Every timestamped file in `supabase/migrations/` (14-digit prefix), oldest first, each in its own transaction. The first failure names the file and stops the job. |
+| Database types | Right after the migrations: `supabase gen types typescript --local --schema public`, uploaded as the `database-types` artifact. |
 | pgTAP | `supabase test db supabase/tests/database`. |
 | Schema diff | Pushes to `dev`/`main` and manual runs only, never pull requests. Runs only when the `PROD_SCHEMA_DUMP` secret is set; otherwise it prints a notice. Publishes object names and counts, never SQL. Report-only. |
+| Types drift | Last step: the committed `lib/database.generated.ts` must equal the generated types. Fails with a diff when it does not. See "Regenerating database types". |
 
 Time: **not measured yet.** The estimate is 2–4 minutes, mostly image pulls
 (Postgres, plus the Auth and Storage images the CLI runs once to create their
@@ -96,6 +98,34 @@ npx supabase stop --no-backup
 Do not run `supabase start` or `supabase db reset` with the defaults: both
 replay `001`–`148`, which fails at `001`.
 
+## Regenerating database types
+
+`lib/database.generated.ts` is generated, never edited by hand. The `db` job
+builds it from the baseline plus every migration (`supabase gen types
+typescript --local --schema public`), uploads it as the `database-types`
+artifact, and its last step, "Database types drift check", fails if the
+committed file differs.
+
+When a PR adds or changes a migration, the drift check fails on that PR. To fix
+it, take the file CI generated (no local database is needed, and nothing is
+applied anywhere):
+
+```bash
+gh run list --branch <your-branch> --workflow CI --limit 1   # the run id
+gh run download <run-id> -n database-types -D lib            # writes lib/database.generated.ts
+git add lib/database.generated.ts && git commit -m "Regenerate database types"
+git push
+```
+
+With Docker you can also build the schema locally ("Running it locally" above)
+and run the same `supabase gen types` command into `lib/database.generated.ts`.
+Do not generate it from the dev or production project: the file must describe
+the repository's migrations, which is what CI checks.
+
+The hand-written `lib/database.types.ts` is unchanged and still used by the
+code; moving callers and the typed client onto the generated types is a later
+piece of work (deep-review-v2.8 adoption, batch 4).
+
 ## First run, then making it a required check
 
 The job is report-only at first: `continue-on-error` is on unless the repository
@@ -157,8 +187,42 @@ nothing about this job: read its steps and its summary.
 | Wait | Reads `public.members` and `entitlements.tiers` through the gateway until PostgREST has the schema. |
 | Seed | `npm run seed:e2e-stack`: blank agreement documents with the real field maps, survey definitions, and Clerk links looked up by address. Refuses anything but loopback and `sk_test_`. |
 | Suite | `npm run build`, then `npx playwright test`. Storybook and Lighthouse stay in `e2e`: neither reads the database. |
+| Summary | `scripts/e2e-report-summary.mjs` writes the counts and every skipped test's title to the step summary. `e2e-tests` runs the same script, headed with its own name, so the two skip lists can be compared side by side. |
 
 Clerk is still the shared dev instance. Only the database moved.
+
+### Start-up times
+
+Measured on `71bca6e8` and `73830a33` (e2e-local-stack.5), before the suite starts:
+
+| Step | Time |
+|---|---|
+| Start the local stack (`supabase start`) | about 75 s on both runs |
+| Build the database (`scripts/e2e-stack-db.sh`) | 6–7 s |
+| Wait for PostgREST to see the schema | 2 s |
+| Seed documents, surveys and Clerk links | 4–5 s |
+| **In all** | **about 1.5 min** |
+
+The stack's image pulls are most of it. That is the extra time `e2e-local` spends
+over `e2e-tests` before `npm run build`, and why its timeout is 5 minutes longer.
+
+### What global setup repairs on either database
+
+`e2e/global-setup.ts` runs before any spec, on the shared dev project and on this
+stack alike, and only once `assertE2eSupabase` has accepted the database:
+
+- **Leftover survey events** (deps-tailwind4.6). A newer push cancels a PR's
+  running suite, so a survey spec's `afterEach` can miss its event. Any
+  `e2e-survey-<8 hex>` event with no row newer than an hour is removed through
+  `e2e/fixtures/survey-cli.ts remove`, the fixture's own command, which refuses
+  any other slug. The log says how many went.
+- **The event-manager fixture** (event-manager-e2e.4). It looks up the fixture's
+  Clerk user by its address (`e2e/fixtures/users.ts`), with a `sk_test_` key only,
+  then sets `members.clerk_user_id` on the seed row and upserts its
+  `event_manager_assignments` row for `seed-regional-challenge`. A second run
+  changes nothing. With `E2E_EVENT_MANAGER_PASSWORD` set and no such Clerk user,
+  setup fails, because the boundary spec would otherwise fail with a misleading
+  error.
 
 ### What it does not test
 
@@ -177,11 +241,57 @@ The lock can go only when all of these hold. Record the evidence here.
    skipped lists as well as the failures: the job's summary lists its skips.
 2. Two `e2e-local` runs overlapping with no failures, which proves concurrent
    sign-ins as the same Clerk users. Clerk's rate limits are the unknown.
-3. Real start-up times recorded in this section.
+3. Real start-up times recorded in this section. Done: see "Start-up times".
 
 Then move this job's contents under the required `e2e` name, delete the
 `concurrency` block and the dev Supabase secrets from it, and keep a manual or
 nightly run against dev so drift there is still seen.
+
+## Before you push: `check:pr` and `baselines`
+
+Two scripts run locally what CI would otherwise tell you about twenty minutes later
+(s5-programme.45). Fetch first (`git fetch origin`): the caps compare with the merge
+base with `origin/dev`, and a stale `origin/dev` gives the wrong one.
+
+### `npm run check:pr`
+
+Runs `scripts/pr-check.mjs`: every step of `verify-build`, in its order, then the
+`unit` job's tests. That is the PII lint, the shell lint, the typecheck, the authz,
+tenant-host and audit caps against `origin/dev`, the design-system, staff-word,
+migration and ESLint lints, the build and the browser-bundle key check, then
+`npm run test`.
+
+- The environment is CI's: the script reads the `env: &verify-env` block from
+  `ci.yml` when it runs. Next.js lets those placeholders win over `.env.local`, so
+  `.next` then holds a build with placeholder keys. Rebuild before `npm start`.
+- It stops at the first failure. `-- --keep-going` runs the rest; `-- --skip-build`
+  leaves out the build and the bundle check; `-- --since <ref>` changes the base.
+- `npm ci` is not run: your `node_modules` are used as they are.
+- Without `shellcheck` installed (`brew install shellcheck`), the shell lint shows as
+  skipped, not passed. CI always runs it.
+- `test/ci-pr-check.test.ts` fails when `verify-build` or `unit` gains a step this
+  script doesn't run, so add the step to both.
+
+### `npm run baselines`
+
+Runs `scripts/baselines.mjs`: every ratchet baseline generator, in this order, each
+in its shrink-only mode, then lists the files that changed. It does not stage or
+commit anything.
+
+| Order | Generator | Writes |
+|---|---|---|
+| 1 | `npx tsx scripts/s5-inventory.mjs --write` | `test/baselines/service-role-files.json`, `sanity-event-getters.json`, `unaudited-mutations.json` |
+| 2 | `npx tsx scripts/authz-idioms.mjs --write` | `test/baselines/authz-legacy-idioms.json` |
+| 3 | `npx tsx scripts/tenant-surface-baseline.mjs --write` | `test/tenant-surface-baseline.json` |
+| 4 | `STELLR_ONLY_LISTS_WRITE=1 npx vitest run test/stellr-only-lists-ratchet.test.ts` | `test/baselines/stellr-only-lists.json` |
+| 5 | `node scripts/ds-lint.mjs --update-baseline`, only after a plain `ds-lint` passes (its write mode would record a rise too) | `scripts/ds-lint-baseline.json` |
+| 6 | `npm run idor:snapshot` | `test/idor/idor-snapshot.json`, `test/baselines/tenant-host-idor.json` |
+
+A count that fell is written down. A count that rose makes the generator refuse, and
+the script exits 1: fix the cause. Growing a baseline stays a person's decision,
+taken with that generator's own flag and the matching PR label (see each script's
+header), never through this script. On a tree whose baselines are current, it
+changes nothing and prints "No baseline changed."
 
 ## The schema diff against production
 

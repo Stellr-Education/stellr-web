@@ -7,6 +7,7 @@ import { logRecordAccess } from '@/lib/record-access-log'
 import { displayGrade } from '@/lib/member-enums'
 import { supabaseServer } from '@/lib/supabase'
 import { MEDIA_REASON_LABEL, mediaForParticipants } from '@/lib/survey/media'
+import { optOutCell, rosterOptOuts } from '@/lib/roster-optouts'
 import { enforcedTenantFilter } from '@/lib/tenancy/load-scoped'
 import { isStellrScope } from '@/lib/tenancy/scope-context'
 
@@ -17,6 +18,11 @@ import { isStellrScope } from '@/lib/tenancy/scope-context'
 // That answer rests on shared member settings and on forms signed for any organiser, so it
 // is Stellr's alone. A tenant's staff get "check" for everyone: A10 and A11 say what a
 // tenant's own answer is.
+//
+// Quote opt-out, Digital comms opt-out (esign-native-engine.9): the boxes ticked on the
+// signed agreement, as completion read them back for either signing engine
+// (lib/roster-optouts.ts): yes, no (read and left unticked), or blank (not known). Stellr's
+// alone for the same reason as media_ok, so a tenant's export leaves them blank.
 const TENANT_MEDIA_NOTE = 'Not available for your organisation yet: check your own records'
 
 async function exportRoster(_req: Request, { params }: { params: Promise<{ slug: string }> }) {
@@ -25,9 +31,11 @@ async function exportRoster(_req: Request, { params }: { params: Promise<{ slug:
   if (!crew.ok) return crew.response
 
   const roster = await getEventRoster(slug, undefined, { tenant: enforcedTenantFilter(crew.scope, 'registrations') })
-  const media = isStellrScope(crew.scope)
+  const stellr = isStellrScope(crew.scope)
+  const media = stellr
     ? await mediaForParticipants(supabaseServer(), roster.groups.flatMap((g) => g.participants.map((p) => p.id)))
     : null
+  const optOuts = stellr ? await rosterOptOuts(supabaseServer(), roster.groups.flatMap((g) => g.participants)) : null
 
   const header = [
     'Registration Type', 'Group', 'First Name', 'Last Name', 'Email', 'Role', 'School', 'Grade',
@@ -35,6 +43,7 @@ async function exportRoster(_req: Request, { params }: { params: Promise<{ slug:
     'Emergency Contact First Name', 'Emergency Contact Last Name', 'Emergency Contact Relationship',
     'Emergency Contact Email', 'Emergency Contact Phone',
     'Paid', 'Payment Status', 'DocuSign', 'DocuSign Status', 'Checked In At', 'media_ok', 'Media Note',
+    'Quote opt-out', 'Digital comms opt-out',
   ]
   const rows = roster.groups.flatMap((g) =>
     g.participants.map((p) => [
@@ -63,6 +72,8 @@ async function exportRoster(_req: Request, { params }: { params: Promise<{ slug:
       p.checked_in_at ?? '',
       media?.get(p.id)?.status ?? 'check',
       media ? MEDIA_REASON_LABEL[media.get(p.id)?.reason ?? 'form_unread'] : TENANT_MEDIA_NOTE,
+      optOutCell(optOuts?.get(p.id)?.quotes),
+      optOutCell(optOuts?.get(p.id)?.digital_comms),
     ])
   )
 

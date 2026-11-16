@@ -8,6 +8,8 @@ import {
   TEACHER_LICENSE_BUCKET,
   isLicenseDocumentType,
 } from '@/lib/teacher-license'
+import { withAudit } from '@/lib/audit/route'
+import { memberIdOf } from '@/lib/audit-route-helpers'
 
 export const dynamic = 'force-dynamic'
 
@@ -52,7 +54,19 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   return res
 }
 
-export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
+type Ctx = { params: Promise<{ id: string }> }
+
+// Platform audit (docs/TENANCY-S5.md, C7): the member is the target. Not the path.
+const attachAudit = ({ args: [req] }: { args: [Request, Ctx] }) => ({
+  action: 'compliance.license_document.attach' as const,
+  actor: { session: true } as const,
+  tenant: { stellr: true } as const,
+  target: { table: 'members', id: memberIdOf(req) },
+})
+
+export const POST = withAudit(attachAudit, attachDocument)
+
+async function attachDocument(req: Request, { params }: Ctx) {
   const denied = await requireAdmin('members:write')
   if (denied) return denied
 

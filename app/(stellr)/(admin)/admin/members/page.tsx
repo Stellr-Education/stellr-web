@@ -1,3 +1,4 @@
+import Link from 'next/link'
 import { supabaseServer } from '@/lib/supabase'
 import { MemberTable, type MemberRow } from '@/components/admin/MemberTable'
 import { requireAdminPage } from '@/lib/admin-auth'
@@ -64,12 +65,12 @@ export default async function AdminMembersPage({
           <p className="text-sm text-brand-muted-soft mt-0.5">{count ?? 0} matching</p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <a
+          <Link
             href="/admin/members/new"
             className="inline-flex min-h-11 items-center bg-brand-blue text-white px-4 rounded-lg text-sm font-medium hover:bg-brand-blue-dark"
           >
             + Add member
-          </a>
+          </Link>
           <a
             href={`/api/admin/members/export${exportQuery ? `?${exportQuery}` : ''}`}
             className="inline-flex min-h-11 items-center bg-white border border-brand-border text-brand-muted px-4 rounded-lg text-sm font-medium hover:bg-brand-canvas"

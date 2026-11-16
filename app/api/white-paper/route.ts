@@ -1,15 +1,22 @@
 import { NextResponse } from 'next/server'
+import { z } from 'zod'
 import { sendEmail, MARKETING_FROM } from '@/lib/email'
 import { LEAD_SOURCE_LIFECYCLE } from '@/lib/hubspot-fields'
 import { captureLead, logLine, readHubspotCookie } from '@/lib/hubspot'
 import { rateLimitGuard, HOUR_MS } from '@/lib/rate-limit'
-import { isEmailLike } from '@/lib/utils'
+import { checkSpamSignals } from '@/lib/spam-guard'
 import { GATED_ASSETS } from '@/lib/gated-assets'
 import { gatedDownloadUrl } from '@/lib/gated-download-link'
 import { gatedAssetEmailHtml, gatedAssetEmailText } from '@/lib/gated-asset-email'
 
 const PAPER = GATED_ASSETS['white-paper']
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://www.stellreducation.org'
+
+/** Server-side validation, with caps (docs/REC-form-spam-hardening.md §5). */
+const schema = z.object({
+  name: z.string().trim().min(1).max(120),
+  email: z.string().trim().email().max(254),
+})
 /**
  * The /impact white paper. Like every gated download, the full file sits in
  * private storage and goes out only by email, as a signed link
@@ -21,13 +28,15 @@ export async function POST(req: Request) {
   const limited = rateLimitGuard(req, 'white-paper', { limit: 3, windowMs: HOUR_MS })
   if (limited) return limited
   try {
-    const { name, email } = await req.json()
-
-    const cleanName = typeof name === 'string' ? name.trim() : ''
-    const cleanEmail = typeof email === 'string' ? email.trim() : ''
-    if (!cleanName || !isEmailLike(cleanEmail)) {
+    const body: unknown = await req.json()
+    const parsed = schema.safeParse(body)
+    if (!parsed.success) {
       return NextResponse.json({ error: 'A name and valid email are required.' }, { status: 400 })
     }
+    // A tripped trap answers 200 and mails nobody.
+    const spam = checkSpamSignals(body, req, 'white-paper')
+    if (spam) return spam
+    const { name: cleanName, email: cleanEmail } = parsed.data
 
     const downloadUrl = gatedDownloadUrl(SITE_URL, 'white-paper')
     if (!downloadUrl) {

@@ -7,6 +7,7 @@ import { Mail, FileText } from 'lucide-react'
 import { TemplateForm } from './TemplateForm'
 import { CampaignForm } from './CampaignForm'
 import type { EmailTemplate, EmailCampaign, Tier } from './types'
+import { AdminOnlyBanner, useCan } from '@/components/admin/CapabilitiesContext'
 
 const STATUS_STYLE: Record<EmailCampaign['status'], string> = {
   draft: 'bg-brand-hairline text-brand-muted',
@@ -23,6 +24,8 @@ export function EmailManager({
   const router = useRouter()
   const [tab, setTab] = useState<'campaigns' | 'templates'>('campaigns')
   const [busy, setBusy] = useState<string | null>(null)
+  // Campaigns and templates are email:manage, an admin's alone: Staff see them.
+  const canWrite = useCan('email:manage')
 
   const act = async (url: string, init: RequestInit, confirmMsg?: string) => {
     if (confirmMsg && !window.confirm(confirmMsg)) return
@@ -72,7 +75,7 @@ export function EmailManager({
 
       {tab === 'campaigns' ? (
         <>
-          <CampaignForm templates={templates} tiers={tiers} />
+          {canWrite ? <CampaignForm templates={templates} tiers={tiers} /> : <AdminOnlyBanner>An admin creates, tests, starts and pauses campaigns.</AdminOnlyBanner>}
 
           <div className="rounded-xl border border-brand-border bg-white overflow-hidden">
             <div className="border-b border-brand-hairline bg-brand-canvas px-4 py-2.5">
@@ -96,6 +99,7 @@ export function EmailManager({
                       {c.sent_at && ` · sent ${formatDateShort(c.sent_at)}`}
                     </p>
                   </div>
+                  {canWrite && (
                   <div className="flex shrink-0 items-center gap-2 text-xs">
                     <button onClick={() => testSend(c.id)} disabled={!!busy} className="rounded border border-brand-border px-2 py-1 text-brand-muted hover:bg-brand-canvas">Test</button>
                     {(c.status === 'draft' || c.status === 'paused') && (
@@ -108,6 +112,7 @@ export function EmailManager({
                       <button onClick={() => campaignAction(c.id, 'archive')} disabled={!!busy} className="rounded border border-brand-border px-2 py-1 text-brand-muted-soft hover:bg-brand-canvas">Archive</button>
                     )}
                   </div>
+                  )}
                 </li>
               ))}
               {campaigns.length === 0 && <li className="px-4 py-6 text-center text-sm text-brand-muted-soft">No campaigns yet.</li>}
@@ -116,7 +121,7 @@ export function EmailManager({
         </>
       ) : (
         <>
-          <TemplateForm />
+          {canWrite ? <TemplateForm /> : <AdminOnlyBanner>An admin creates and archives templates.</AdminOnlyBanner>}
 
           <div className="rounded-xl border border-brand-border bg-white overflow-hidden">
             <div className="border-b border-brand-hairline bg-brand-canvas px-4 py-2.5">
@@ -130,6 +135,7 @@ export function EmailManager({
                     <p className="truncate text-sm font-medium text-brand-blue-dark">{t.name}</p>
                     <p className="truncate text-xs text-brand-muted-soft">{t.subject} · <code>{t.key}</code></p>
                   </div>
+                  {canWrite && (
                   <button
                     onClick={() => act(`/api/admin/email/templates/${t.id}`, { method: 'DELETE' }, 'Archive this template?')}
                     disabled={!!busy}
@@ -137,6 +143,7 @@ export function EmailManager({
                   >
                     Archive
                   </button>
+                  )}
                 </li>
               ))}
               {templates.length === 0 && <li className="px-4 py-6 text-center text-sm text-brand-muted-soft">No templates yet.</li>}

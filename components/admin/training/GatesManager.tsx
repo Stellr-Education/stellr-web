@@ -4,6 +4,7 @@ import { useId, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { X } from 'lucide-react'
 import { Select } from '@stellr/web-ui'
+import { AdminOnlyNote, ReadOnlyFieldset, useCan } from '@/components/admin/CapabilitiesContext'
 
 export interface ModuleRef {
   id: string
@@ -27,6 +28,8 @@ export default function GatesManager({
   persistence: Record<string, string>
 }) {
   const router = useRouter()
+  // Prerequisites and archive behaviour are academy:manage, an admin's alone.
+  const canWrite = useCan('academy:manage')
   const [busy, setBusy] = useState(false)
   // Scope prerequisites/persistence to a single course — the one being viewed —
   // rather than listing every module at once. Other modules remain available as
@@ -95,6 +98,7 @@ export default function GatesManager({
         </div>
       </div>
 
+      <ReadOnlyFieldset readOnly={!canWrite}>
       <div className="overflow-hidden rounded-xl border border-brand-border bg-white">
         <div className="px-4 py-3">
           <div className="flex flex-wrap items-center justify-between gap-3">
@@ -152,6 +156,8 @@ export default function GatesManager({
           </div>
         </div>
       </div>
+      </ReadOnlyFieldset>
+      {!canWrite && <AdminOnlyNote>An admin sets prerequisites and archive behaviour.</AdminOnlyNote>}
     </div>
   )
 }

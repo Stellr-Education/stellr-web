@@ -12,8 +12,23 @@ import {
   loadDefaultBadgeTemplates,
   prepareTemplate,
 } from '@/lib/event-badges'
+import { bodyIds, withAudit } from '@/lib/audit/route'
+import { noteAuditSubject } from '@/lib/audit/route-subject'
+import { verifiedEventAudit } from '@/lib/audit-route-helpers'
 
 export const dynamic = 'force-dynamic'
+
+// Platform audit (docs/TENANCY-S5.md, C7). The handler notes who passed requireEventAccess;
+// the event goes on the chain of the owner of the event that check verified (the slug it
+// noted), read from the mirror, never from the raw slug in the URL (lib/audit-route-helpers).
+
+// The template row is the target; format, audience (enums) and company id the metadata.
+const saveAudit = ({ args: [req] }: { args: [Request, Ctx] }) => ({ action: 'event.badge_template.save' as const, ...verifiedEventAudit(req, 'event_badge_templates') })
+const deleteAudit = ({ args: [req] }: { args: [Request, Ctx] }) => ({ action: 'event.badge_template.delete' as const, ...verifiedEventAudit(req, 'event_badge_templates') })
+type Ctx = { params: Promise<{ slug: string }> }
+
+export const PUT = withAudit(saveAudit, saveBadgeTemplate)
+export const DELETE = withAudit(deleteAudit, deleteBadgeTemplate)
 
 // Name badge templates: one background per Avery format per audience
 // (everyone, mentors, or one company). GET lists the event's own with its
@@ -41,10 +56,11 @@ const AUDIENCES: BadgeAudience[] = ['everyone', 'mentors', 'company']
 // PUT { format, audience, companyId?, storagePath?, fileType?, name_x?, name_y?, name_max_width?, name_size?, reset? }
 // New artwork resets the placement to one found from the artwork's rule;
 // the reply says whether a rule was found.
-export async function PUT(req: Request, { params }: { params: Promise<{ slug: string }> }) {
+async function saveBadgeTemplate(req: Request, { params }: Ctx) {
   const { slug } = await params
   const access = await requireEventAccess(slug)
   if (!access.ok) return NextResponse.json({ error: 'Forbidden' }, { status: access.status })
+  noteAuditSubject(req, { userId: access.userId, eventSlug: slug })
 
   const b = (await req.json().catch(() => ({}))) as Record<string, unknown>
   const format = b.format
@@ -54,6 +70,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ slug: st
     return NextResponse.json({ error: 'format and audience (with companyId for a company) are required' }, { status: 400 })
   }
 
+  noteAuditSubject(req, { detail: { format, audience, ...bodyIds({ company_id: companyId }, ['company_id']) } })
   const db = supabaseServer()
   if (companyId) {
     const { data: company } = await db.from('event_companies').select('id').eq('id', companyId).eq('event_slug', slug).maybeSingle()
@@ -105,17 +122,19 @@ export async function PUT(req: Request, { params }: { params: Promise<{ slug: st
     console.error('[badge templates] save error:', error)
     return NextResponse.json({ error: 'Database error' }, { status: 500 })
   }
+  noteAuditSubject(req, { id: saved.id })
   return NextResponse.json({ ok: true, lineFound, template: await loadBadgeTemplate(db, slug, saved.id) })
 }
 
 // DELETE ?id= — drop one of the event's backgrounds. Those badges fall back to
 // the next one down (company → mentors → everyone, the theme default standing
 // in for a mentors or everyone slot the event no longer has → plain).
-export async function DELETE(req: Request, { params }: { params: Promise<{ slug: string }> }) {
+async function deleteBadgeTemplate(req: Request, { params }: Ctx) {
   const { slug } = await params
   const access = await requireEventAccess(slug)
   if (!access.ok) return NextResponse.json({ error: 'Forbidden' }, { status: access.status })
   const id = new URL(req.url).searchParams.get('id') ?? ''
+  noteAuditSubject(req, { userId: access.userId, eventSlug: slug, id })
   const { error } = await supabaseServer().from('event_badge_templates').delete().eq('event_slug', slug).eq('id', id)
   if (error) {
     console.error('[badge templates] delete error:', error)

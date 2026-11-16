@@ -21,6 +21,7 @@ import {
 import { shadowSyncFields } from '@/lib/field-crypto-shadow'
 import { auditMutation } from '@/lib/audit/route'
 import { selfServiceEvent, type SelfServiceAudit } from '@/lib/community/self-service-audit'
+import { parseGraduationYear } from '@/lib/graduation-year'
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
@@ -153,6 +154,17 @@ async function submitOnboarding(req: Request) {
   // then), so a blank or unknown answer from an adult is 'adult', never ''.
   const resolvedBracket = required.isMinor ? 'high_school' : normalizeAgeBracket(age_bracket)
   const resolvedRole = required.isMinor ? 'participant' : event_role
+
+  // Expected graduation year (alumni.mentor-upgrade): optional, and asked only
+  // of school students, so it is read only for one. It feeds the July-1 Alumni
+  // upgrade. Blank writes nothing, so a year already on file is never cleared
+  // by a re-run that leaves it empty; a value outside the range is refused.
+  let graduationYear: number | null = null
+  if (resolvedBracket === 'high_school' && !isVolunteerSignup) {
+    const parsed = parseGraduationYear(body.graduation_year)
+    if (!parsed.ok) return NextResponse.json({ error: parsed.error }, { status: 400 })
+    graduationYear = parsed.value
+  }
 
   // deep review MEM-3: onboarding is a POST anyone signed in can re-run, and it
   // used to revive and rewrite whatever member row it matched. Gate a re-run
@@ -359,6 +371,7 @@ async function submitOnboarding(req: Request) {
     gender,
     phone: phone || null,
     grade: grade || null,
+    ...(graduationYear !== null ? { graduation_year: graduationYear } : {}),
     tshirt_size: tshirt_size || null,
     ec_first_name: ec_first_name || null,
     ec_last_name: ec_last_name || null,

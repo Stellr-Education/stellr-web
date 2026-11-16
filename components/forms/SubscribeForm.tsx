@@ -2,11 +2,14 @@
 
 import { useState } from 'react'
 import { usePrefillFields } from '@/components/forms/useMemberPrefill'
+import { useSpamGuard } from '@/components/forms/useSpamGuard'
+import { SpamGuardFields } from '@/components/forms/SpamGuardFields'
 import { trackLeadSubmitted } from '@/lib/analytics'
 
 export function SubscribeForm() {
   const [status, setStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle')
   const [email, setEmail] = useState('')
+  const spam = useSpamGuard()
 
   // Pre-fill from the signed-in member's record; only fills an empty field.
   usePrefillFields({ email: [email, setEmail] })
@@ -18,7 +21,7 @@ export function SubscribeForm() {
       const res = await fetch('/api/subscribe', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email }),
+        body: JSON.stringify({ email, ...(await spam.values()) }),
       })
       if (res.ok) trackLeadSubmitted('newsletter')
       setStatus(res.ok ? 'success' : 'error')
@@ -50,6 +53,7 @@ export function SubscribeForm() {
         className="flex-1 px-4 py-3 rounded-lg border border-line-strong text-input mouse:text-sm focus:outline-hidden focus:ring-2 focus:ring-brand-blue"
         disabled={status === 'loading'}
       />
+      <SpamGuardFields {...spam.fields} />
       <button
         type="submit"
         disabled={status === 'loading'}

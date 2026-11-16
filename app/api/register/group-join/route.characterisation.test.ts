@@ -63,6 +63,13 @@ vi.mock('@/lib/member-sync', async () => {
       rec.event('hook upsertMember')
       return h.upsertMember(db, m, o)
     },
+    // identify.ts calls this one: the same recorded hook, and a row it returns
+    // counts as inserted by this request.
+    upsertMemberOutcome: async (db: unknown, m: Record<string, unknown>, o?: unknown) => {
+      rec.event('hook upsertMember')
+      const member = await h.upsertMember(db, m, o)
+      return { member, inserted: member != null }
+    },
   }
 })
 vi.mock('@/lib/email', async () => {

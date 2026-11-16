@@ -1,6 +1,8 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { reportError } from '@/lib/app-errors'
 import { appendAudit } from '@/lib/esign/native/audit'
-import { sealConfigured, sealPdf } from '@/lib/esign/native/seal'
+import { sealConfigured, sealPdf, type tsaClient } from '@/lib/esign/native/seal'
+import type { TimestampFailure } from '@/lib/esign/native/tsa-verify'
 import { putImmutable, sha256Hex, SIGNED_BUCKET } from '@/lib/esign/storage'
 
 // Puts the certificate seal (./seal) on a stored Stellr signing agreement.
@@ -13,11 +15,33 @@ import { putImmutable, sha256Hex, SIGNED_BUCKET } from '@/lib/esign/storage'
 
 const REASON = 'Signed by every party through Stellr signing; sealed by Stellr Education'
 
+// The checks a timestamp token can fail (tsa-verify's TimestampFailure). Only
+// one of these names reaches the audit trail: never the service's message, the
+// token or any certificate bytes.
+const TIMESTAMP_FAILURES: readonly TimestampFailure[] = ['malformed', 'refused', 'imprint', 'nonce', 'signature', 'eku', 'chain', 'time']
+
+/**
+ * The failed check's name when the seal dropped to plain `pades` because the
+ * timestamp service's token did not verify; null otherwise (a timestamp was
+ * had, none was asked for, or the service could not be reached).
+ */
+export function timestampFailureCode(timestampError: string | null): TimestampFailure | null {
+  const m = /^verification failed \(([a-z]+)\)/.exec(timestampError ?? '')
+  const code = m?.[1] as TimestampFailure | undefined
+  return code && TIMESTAMP_FAILURES.includes(code) ? code : null
+}
+
 export type CertificateSealOutcome =
   | { sealed: true; kind: 'pades' | 'pades-t'; path: string }
   | { sealed: false; reason: string }
 
-export async function applyCertificateSeal(db: SupabaseClient, rowId: string, now = new Date()): Promise<CertificateSealOutcome> {
+export async function applyCertificateSeal(
+  db: SupabaseClient,
+  rowId: string,
+  now = new Date(),
+  // Tests hand in a timestamp client; otherwise sealPdf builds its own.
+  opts: { tsa?: ReturnType<typeof tsaClient> | null } = {},
+): Promise<CertificateSealOutcome> {
   if (!sealConfigured()) return { sealed: false, reason: 'no seal certificate configured' }
   const { data: row, error } = await db
     .from('agreements')
@@ -37,7 +61,7 @@ export async function applyCertificateSeal(db: SupabaseClient, rowId: string, no
     throw new Error('Stored agreement does not match its recorded hash; not sealing it')
   }
 
-  const result = await sealPdf(original, { reason: REASON, at: now })
+  const result = await sealPdf(original, { reason: REASON, at: now, ...('tsa' in opts ? { tsa: opts.tsa } : {}) })
   const path = (row.signed_pdf_path as string).replace(/signed\.pdf$/, 'sealed.pdf')
   if (path === row.signed_pdf_path) throw new Error(`Unexpected stored path ${row.signed_pdf_path}`)
   const sha = await putImmutable(db, path, result.bytes, 'application/pdf')
@@ -59,6 +83,17 @@ export async function applyCertificateSeal(db: SupabaseClient, rowId: string, no
   if (upError) throw new Error(`Recording the seal failed: ${upError.message}`)
   if (!updated?.length) return { sealed: false, reason: 'sealed by another run' }
 
+  // A token that failed verification leaves a seal with no trusted time. That
+  // is allowed (signing is never blocked), but it must not be silent: the
+  // check's name goes in the audit event and staff see it in app_errors.
+  const timestampError = result.kind === 'pades' ? timestampFailureCode(result.timestampError) : null
+  if (timestampError) {
+    await reportError(new Error(`Certificate seal: timestamp verification failed (${timestampError}); sealed without a trusted timestamp`), {
+      route: 'esign certificate seal',
+      db,
+    })
+  }
+
   await appendAudit(db, {
     envelopeRow: rowId,
     event: 'sealed',
@@ -69,6 +104,7 @@ export async function applyCertificateSeal(db: SupabaseClient, rowId: string, no
       previousSha256: row.signed_pdf_sha256,
       certificate: result.certificate,
       timestampedAt: result.timestampedAt,
+      ...(timestampError ? { timestamp_error: timestampError } : {}),
     },
   })
   return { sealed: true, kind: result.kind, path }

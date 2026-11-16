@@ -16,6 +16,7 @@ import { SPACE_TRAINING_BRACKETS, type BracketRequirements, type AgeBracketKey }
 import { postUpload, uploadDirectToStorage } from '@/lib/upload-client'
 import type { AdminSpaceConfig } from '@/lib/space-admin'
 import type { SpaceAccessType, SpaceAudienceMember, SpaceRole, SpaceTheme } from '@/lib/spaces'
+import { AdminOnlyBanner, ReadOnlyFieldset, useCan } from '@/components/admin/CapabilitiesContext'
 
 const TABS = [
   ['general', 'General'],
@@ -40,6 +41,9 @@ export function SpaceConfig({
   const router = useRouter()
   const { space } = config
   const [tab, setTab] = useState<TabKey>('general')
+  // Changing a Space is community:manage, an admin's alone. Staff read every tab;
+  // the members list keeps its search, filters and paging (reads).
+  const canWrite = useCan('community:manage')
 
   // POST an action to the per-space router, then refresh server data.
   const act = async (body: Record<string, unknown>, okMsg?: string): Promise<boolean> => {
@@ -99,14 +103,24 @@ export function SpaceConfig({
 
         {/* Panel */}
         <section className="min-w-0 flex-1">
+          {!canWrite && (
+            <div className="mb-3 max-w-[680px]">
+              <AdminOnlyBanner>An admin changes this Space’s settings, members and content. You can see them here.</AdminOnlyBanner>
+            </div>
+          )}
           <div className="max-w-[680px] rounded-[14px] border border-brand-border bg-white p-5">
-            {tab === 'general' && <GeneralTab space={space} channels={config.channels} act={act} patchSpace={patchSpace} onDelete={() => router.push('/admin/community/spaces')} />}
-            {tab === 'access' && <AccessTab space={space} assignedTierIds={config.assignedTierIds} assignedRoles={config.assignedRoles} sources={config.sources} tierIdByName={tierIdByName} act={act} patchSpace={patchSpace} />}
-            {tab === 'resources' && <ResourcesTab spaceId={space.id} resources={config.resources} act={act} onUploaded={() => router.refresh()} />}
-            {tab === 'training' && <TrainingTab assigned={config.assignedTraining} catalogue={config.trainingCatalogue} act={act} />}
-            {tab === 'members' && <MembersTab space={space} config={config} act={act} patchSpace={patchSpace} />}
-            {tab === 'announcements' && <AnnouncementsTab announcements={config.announcements} act={act} />}
-            {tab === 'moderation' && <ModerationTab moderation={config.moderation} act={act} />}
+            {tab === 'members' ? (
+              <MembersTab space={space} config={config} act={act} patchSpace={patchSpace} canWrite={canWrite} />
+            ) : (
+              <ReadOnlyFieldset readOnly={!canWrite}>
+                {tab === 'general' && <GeneralTab space={space} channels={config.channels} act={act} patchSpace={patchSpace} onDelete={() => router.push('/admin/community/spaces')} />}
+                {tab === 'access' && <AccessTab space={space} assignedTierIds={config.assignedTierIds} assignedRoles={config.assignedRoles} sources={config.sources} tierIdByName={tierIdByName} act={act} patchSpace={patchSpace} />}
+                {tab === 'resources' && <ResourcesTab spaceId={space.id} resources={config.resources} act={act} onUploaded={() => router.refresh()} />}
+                {tab === 'training' && <TrainingTab assigned={config.assignedTraining} catalogue={config.trainingCatalogue} act={act} />}
+                {tab === 'announcements' && <AnnouncementsTab announcements={config.announcements} act={act} />}
+                {tab === 'moderation' && <ModerationTab moderation={config.moderation} act={act} />}
+              </ReadOnlyFieldset>
+            )}
           </div>
         </section>
       </div>
@@ -873,12 +887,13 @@ function GrantBadge({ m }: { m: SpaceMemberRow }) {
 }
 
 function MembersTab({
-  space, config, act, patchSpace,
+  space, config, act, patchSpace, canWrite,
 }: {
   space: AdminSpaceConfig['space']
   config: AdminSpaceConfig
   act: Act
   patchSpace: Patch
+  canWrite: boolean
 }) {
   const [inviteOpen, setInviteOpen] = useState(false)
   const [managing, setManaging] = useState<SpaceMemberRow | null>(null)
@@ -944,6 +959,7 @@ function MembersTab({
     <div>
       <PanelTitle>Members &amp; permissions</PanelTitle>
 
+      <ReadOnlyFieldset readOnly={!canWrite}>
       <Field label="Who can post">
         <div className="flex gap-4 text-sm text-brand-muted">
           {(['all', 'moderators'] as const).map((p) => (
@@ -960,6 +976,7 @@ function MembersTab({
           Allow file uploads in chat
         </label>
       </Field>
+      </ReadOnlyFieldset>
 
       <div className="mt-5 mb-2 flex items-center justify-between">
         <div>
@@ -969,9 +986,11 @@ function MembersTab({
             {config.membersAreExceptions && !filtering && ' Listing only those with a role or a block — search to find anyone else.'}
           </p>
         </div>
+        {canWrite && (
         <button onClick={() => setInviteOpen(true)} className="inline-flex shrink-0 items-center gap-1 rounded-lg bg-brand-blue px-3 py-1.5 text-xs font-subheading font-semibold text-white hover:bg-brand-blue-dark">
           <Plus className="h-3.5 w-3.5" /> Add moderator
         </button>
+        )}
       </div>
 
       {/* Search + filters */}
@@ -1013,7 +1032,7 @@ function MembersTab({
             {m.status === 'invited' && <span className="rounded-full bg-brand-canvas px-1.5 py-0.5 text-xs uppercase text-brand-muted-soft">invited</span>}
             {m.postingSuspended && <span className="rounded-full bg-amber-50 px-1.5 py-0.5 text-xs uppercase text-amber-700">suspended</span>}
             {m.revoked && <span className="rounded-full bg-red-50 px-1.5 py-0.5 text-xs uppercase text-red-600">revoked</span>}
-            <button onClick={() => setManaging(m)} className="shrink-0 text-xs text-brand-blue hover:underline">Manage</button>
+            {canWrite && <button onClick={() => setManaging(m)} className="shrink-0 text-xs text-brand-blue hover:underline">Manage</button>}
           </div>
         ))}
         {!loading && members.length === 0 && (
@@ -1049,8 +1068,8 @@ function MembersTab({
         )}
       </div>
 
-      <InviteMemberModal open={inviteOpen} onClose={() => setInviteOpen(false)} act={act} />
-      {managing && (
+      <InviteMemberModal open={canWrite && inviteOpen} onClose={() => setInviteOpen(false)} act={act} />
+      {canWrite && managing && (
         <ManageMemberModal
           member={managing}
           onClose={() => setManaging(null)}

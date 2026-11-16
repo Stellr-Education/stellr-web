@@ -8,7 +8,7 @@ import { type StellarEvent } from '@/lib/sanity'
 import { sendEmail, outstandingItemsReminderEmail } from '@/lib/email'
 import { supabaseServer } from '@/lib/supabase'
 import { ensurePayToken, payPageUrl } from '@/lib/registration-checkout'
-import { enforcedTenantFilter, refuseOutsideStellr, refuseUnlessStellrEvent } from '@/lib/tenancy/load-scoped'
+import { enforcedTenantFilter, stellrOnlyEvent } from '@/lib/tenancy/load-scoped'
 
 // POST /api/admin/events/[slug]/remind — one-click reminder emails for the
 // participants matching the roster filters (admins + assigned event managers).
@@ -18,7 +18,11 @@ import { enforcedTenantFilter, refuseOutsideStellr, refuseUnlessStellrEvent } fr
 // Recipients: the participant; CC the emergency contact for minors and the
 // teacher / student manager for group registrations.
 //
-// Stellr's sender and its pay pages: B14 opens this to a tenant.
+// Stellr's sender and its pay pages. Refused outside Stellr (stellrOnlyEvent: a tenant's
+// staff get 503), and another tenant's event is refused for everyone, a Stellr admin
+// included (404), until the tenant-filtered admin-records helpers
+// exist (AMD-C17-HELPERS) and the route sends through the tenant's own sender. B14 did not
+// lift either refusal.
 
 const ROUTE = '/api/admin/events/[slug]/remind'
 
@@ -34,9 +38,7 @@ async function sendReminders(req: Request, { params }: Ctx) {
   const crew = await requireEventRoute(slug, { route: ROUTE })
   if (!crew.ok) return crew.response
   noteAuditSubject(req, { userId: crew.userId, tenantId: crew.tenantId, eventSlug: slug })
-  const refused = refuseOutsideStellr(crew.scope)
-  if (refused) return refused
-  const foreign = await refuseUnlessStellrEvent(supabaseServer(), slug, ROUTE)
+  const foreign = await stellrOnlyEvent(crew.scope, supabaseServer(), slug, ROUTE)
   if (foreign) return foreign
 
   const body = await req.json().catch(() => null)

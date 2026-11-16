@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from '@storybook/nextjs-vite'
-import { TierCard } from './competition'
+import { TierCard, type TierCardProps } from './competition'
 import { BracketShadeKey } from './tier-shades'
 
 const meta: Meta = { title: 'Competition/TierCard', parameters: { backgrounds: { value: 'surface' } } }
@@ -16,16 +16,25 @@ export const Tiers: StoryObj = {
   ),
 }
 
+// `role` here is TierCard's eyebrow text prop, not an ARIA role; passing the
+// props as data (as MembershipExplorer does) keeps jsx-a11y/aria-role from
+// reading the literal strings as role values.
+const SELECT_TIERS: TierCardProps[] = [
+  { tier: 'educator', role: 'Everyone starts here', name: 'Educator', price: 'Free', priceNote: 'always', cta: { label: 'Join Free', href: '#' } },
+  { tier: 'catalyst', role: 'Competition toolkit', name: 'Catalyst', price: '$149', priceNote: 'per year', selected: true, cta: { label: 'Sign up now', href: '#' } },
+  { tier: 'innovator', role: 'Mentoring & AI tools', name: 'Innovator', price: '$499', priceNote: 'per year', cta: { label: 'Sign up now', href: '#' } },
+  { tier: 'trailblazer', role: 'For teachers who excel', name: 'Trailblazer', price: '$999', priceNote: 'per year', cta: { label: 'Sign up now', href: '#' } },
+]
+
 /* TierCard in select mode, rendering the shade strip, shade price and selected glow. */
 export const TierCards: StoryObj = {
   render: () => (
     <div className="p-8 max-w-content flex flex-col gap-3">
       <BracketShadeKey />
       <div className="flex flex-wrap gap-3">
-        <div className="flex-1 min-w-[200px]"><TierCard tier="educator" role="Everyone starts here" name="Educator" price="Free" priceNote="always" cta={{ label: 'Join Free', href: '#' }} /></div>
-        <div className="flex-1 min-w-[200px]"><TierCard tier="catalyst" role="Competition toolkit" name="Catalyst" price="$149" priceNote="per year" selected cta={{ label: 'Sign up now', href: '#' }} /></div>
-        <div className="flex-1 min-w-[200px]"><TierCard tier="innovator" role="Mentoring & AI tools" name="Innovator" price="$499" priceNote="per year" cta={{ label: 'Sign up now', href: '#' }} /></div>
-        <div className="flex-1 min-w-[200px]"><TierCard tier="trailblazer" role="For teachers who excel" name="Trailblazer" price="$999" priceNote="per year" cta={{ label: 'Sign up now', href: '#' }} /></div>
+        {SELECT_TIERS.map((t) => (
+          <div key={t.tier} className="flex-1 min-w-[200px]"><TierCard {...t} /></div>
+        ))}
       </div>
     </div>
   ),

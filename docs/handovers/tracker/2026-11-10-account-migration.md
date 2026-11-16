@@ -9,7 +9,7 @@ On 10-Nov-2026 Claude-assisted work moved from a personal Claude account to Stel
 |---|---|---|---|---|
 | account-migration.1 | Export account-only assets (22 artifacts, 6 routines, cloud memory store, account skills, claude.ai Docs) | Read back 11-Nov: 22 artifacts, 6 routines and 5 Docs present in the private staging folder |  | ☑ |
 | account-migration.2 | claude.ai data export (chats, Projects) | Requested by the owner | Download, mine, store encrypted with a delete-by date | ☐ |
-| account-migration.3 | Claude Design files and Project knowledge | Owner to download | Public-safe design files → `design/handoff/` after a personal-data read | ☐ |
+| account-migration.3 | Claude Design files and Project knowledge | Downloaded 10 Nov and held privately; not in the repo. Standalone Claude Design closes by 14 Dec 2026 (`claude-design-sync.7`), so these exports and the older local handoff folders are the only copies of designs such as `Admin Access.dc.html` and `Competitions — Redesign v2.dc.html` | Public-safe design files → `design/handoff/` after a personal-data read | ☐ |
 | account-migration.4 | Claude Code memory curated for the Team account | Curated in place 10-Nov: minors' and families' names replaced by role, connector IDs updated |  | ☑ |
 | account-migration.5 | Local-only git work archived (bundle + dirty-worktree patches) | Archive made 10-Nov | `git bundle verify`, then sweep merged/dead worktrees | ☐ |
 | account-migration.6 | Team account set-up: seats include Code + Cowork, retention, org skills, plugins, connectors re-added with least privilege | Done 10-Nov: connectors re-added; each answered one read-only call. Certifier and Wix dropped (owner decision) |  | ☑ |

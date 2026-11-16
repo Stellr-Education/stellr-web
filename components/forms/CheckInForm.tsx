@@ -4,6 +4,8 @@ import { useEffect, useRef, useState } from 'react'
 import { Check, ClipboardList, FolderOpen, Mail } from 'lucide-react'
 import { Button, Eyebrow } from '@stellr/web-ui'
 import type { CheckInView } from '@/lib/check-in-view'
+import { SpamGuardFields } from '@/components/forms/SpamGuardFields'
+import { useSpamGuard } from '@/components/forms/useSpamGuard'
 
 // Phone-first check-in at the door (PRD 6.7; reworked after CO, Oct 2026).
 // Step 1 is name + date of birth, because participants often don't know which
@@ -61,6 +63,9 @@ export default function CheckInForm({
   // Only a check-in made on this screen moves focus to the result; a phone
   // that reopens the page lands on its result without being interrupted.
   const [justCheckedIn, setJustCheckedIn] = useState(false)
+  // spam.L1b: the honeypot only. The route runs no timing trap at the door, so no
+  // timing is sent (people check in within seconds, from a QR link).
+  const spam = useSpamGuard()
 
   async function submit(e: React.FormEvent) {
     e.preventDefault()
@@ -76,6 +81,7 @@ export default function CheckInForm({
     } else {
       payload = { slug, token, email }
     }
+    payload.website = (await spam.values()).website
     setBusy(true)
     const res = await fetch('/api/check-in', {
       method: 'POST',
@@ -133,6 +139,7 @@ export default function CheckInForm({
 
   return (
     <form onSubmit={submit} className="space-y-4">
+      <SpamGuardFields {...spam.fields} />
       {step === 'name' ? (
         <>
           <div className="grid grid-cols-1 gap-3 min-[360px]:grid-cols-2">

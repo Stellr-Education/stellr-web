@@ -71,6 +71,9 @@ export function imagesConfig(env = process.env) {
     // throws, and a production build gets a 400 and shows the alt text. So add
     // a new image folder here.
     localPatterns: [
+      // A pattern here cannot constrain the query, so this allows any `src`.
+      // app/api/img/route.ts checks it instead: only an image in this
+      // deployment's own Sanity project and dataset, anything else a 400.
       { pathname: '/api/img' },
       { pathname: '/images/**', search: '' },
       { pathname: '/team/**', search: '' },
@@ -101,6 +104,36 @@ export function typescriptConfig(env = process.env) {
 // The member app's host, from the variable lib/env reads for APP_HOST. A dev or
 // preview deployment has one host, and both URL variables point at it.
 const APP_HOST = new URL(process.env.NEXT_PUBLIC_AUTH_APP_URL ?? 'https://app.stellreducation.org').host
+
+/**
+ * Sanity Studio is hosted by Sanity (`npx sanity deploy`), not this app: the
+ * embedded /studio route shipped about 10 MB in the function bundle (Vercel
+ * retention .6). When NEXT_PUBLIC_SANITY_STUDIO_URL is set at build, /studio and
+ * everything under it redirect there, so old bookmarks keep working. Unset, or
+ * not an https URL, there is no rule and /studio is the normal 404. Stellr's
+ * hosts only: a tenant host keeps its own 404 for /studio (S5).
+ * docs/RUNBOOK-sanity-studio.md.
+ *
+ * @param {Record<string, string | undefined>} [env]
+ */
+export function studioRedirects(env = process.env) {
+  let target
+  try {
+    target = new URL(env.NEXT_PUBLIC_SANITY_STUDIO_URL ?? '')
+  } catch {
+    return []
+  }
+  if (target.protocol !== 'https:' || target.username || target.password) return []
+  const base = `${target.origin}${target.pathname.replace(/\/+$/, '')}`
+  return [
+    {
+      source: '/studio/:path*',
+      has: [{ type: 'host', value: stellrHostsPattern(env) }],
+      destination: `${base}/:path*`,
+      permanent: false,
+    },
+  ]
+}
 
 /**
  * The hosts that keep Stellr's own 404: the list in proxy.ts's matcher, plus this
@@ -387,6 +420,8 @@ const nextConfig = {
       { source: '/admin/access', destination: '/admin/members/access', permanent: false },
       // Gates folded into the Training console (Reminders & escalation tab).
       { source: '/admin/community/gates', destination: '/admin/academy/training?tab=reminders', permanent: false },
+      // The embedded Studio moved to Sanity's hosting (studioRedirects above).
+      ...studioRedirects(),
     ]
   },
   async rewrites() {

@@ -1,3 +1,12 @@
+// deep review v2 .16: this module holds the Sanity client and the API token
+// (SANITY_API_TOKEN), so it must never reach a browser chunk. A client component
+// takes what it needs from the client-safe modules instead: lib/sanity-urls
+// (EventFlyer, flyerDownloadUrl) and lib/sanity-image-params; a type-only import
+// (`import type { StellarEvent } from '@/lib/sanity'`) is erased and is fine.
+// lib/sanity.test.ts fails on a 'use client' file that value-imports this module.
+// `import 'server-only'` is deferred: plain tsx refuses it, and the e2e fixture
+// CLIs, npm scripts and CI's Lighthouse step load this module that way. Adding it
+// needs those entry points changed in the same PR (docs/RUNBOOK-sanity-studio.md).
 import { createClient } from 'next-sanity'
 import { createImageUrlBuilder } from '@sanity/image-url'
 import type { SanityImageSource } from '@sanity/image-url'

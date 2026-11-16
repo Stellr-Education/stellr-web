@@ -54,9 +54,13 @@ vi.mock('@/lib/survey/distributions', () => ({ ensureDistribution: async () => (
 vi.mock('@/lib/survey/events', () => ({ loadSurveyEvent: async () => null }))
 vi.mock('@/lib/env-guards', () => ({ isRealProductionApp: () => false }))
 vi.mock('@/lib/hubspot-event-options', () => ({ syncEventOptions: async () => ({}) }))
-vi.mock('@/lib/events/sync', () => ({ syncEventMirrorSafe: async () => ({ status: 'synced' }) }))
+// The route re-reads the event from Sanity by _id (deep review v2 .12).
+vi.mock('@/lib/events/sync', () => ({
+  syncEventMirrorSafe: async () => ({ status: 'synced' }),
+  fetchSanityEvent: async () => ({ _id: 'doc1', title: 'An event', slug: 'an-event' }),
+}))
 
-const SECRET = 'top-secret-value'
+const SECRET = 'placeholder-webhook-secret'
 const { POST } = await import('./route')
 
 function publish() {

@@ -8,6 +8,9 @@ import { Button, Choice, Field, Input, Select } from '@stellr/web-ui'
 import Link from '@/components/ui/SiteLink'
 import { trackLeadSubmitted } from '@/lib/analytics'
 import { useUtm } from '@/components/lp/useUtm'
+import { useSpamGuard } from '@/components/forms/useSpamGuard'
+import { SpamGuardFields } from '@/components/forms/SpamGuardFields'
+import { cqLeadFields } from '@/app/api/cq-lead/schema'
 import type { CurriculumLandingPageConfig } from '@/content/lp/cq-types'
 
 /**
@@ -23,17 +26,9 @@ import type { CurriculumLandingPageConfig } from '@/content/lp/cq-types'
  * navigates away, so the conversion is never at the mercy of a redirect.
  */
 
-const schema = z.object({
-  firstName: z.string().trim().min(1, 'Please enter your first name'),
-  lastName: z.string().trim().min(1, 'Please enter your last name'),
-  email: z.string().trim().email('Please enter your school email address'),
-  school: z.string().trim().min(1, 'Please enter your school'),
-  subject: z.string().trim().min(1, 'Please enter your course or subject'),
-  studentsBand: z.enum(['1-25', '26-75', '76-150', '150+'], { error: 'Please choose a range' }),
-  theme: z.enum(['space', 'enviro', 'not_sure'], { error: 'Please choose a theme' }),
-  grantInterest: z.boolean(),
-  consent: z.literal(true, { error: 'Please agree so we can send you the curriculum' }),
-})
+// The fields a teacher fills in, straight from the route's schema: the same
+// caps, bands and themes, so the form and the route cannot drift.
+const schema = z.object(cqLeadFields)
 
 type FormData = z.infer<typeof schema>
 
@@ -42,6 +37,7 @@ const AUTH_URL = process.env.NEXT_PUBLIC_AUTH_APP_URL ?? 'https://app.stellreduc
 export function CurriculumLeadForm({ config }: { config: CurriculumLandingPageConfig }) {
   const { form, slug } = config
   const utm = useUtm()
+  const spam = useSpamGuard()
   const [done, setDone] = useState(false)
   const [failed, setFailed] = useState(false)
   const successHeading = useRef<HTMLHeadingElement>(null)
@@ -66,7 +62,7 @@ export function CurriculumLeadForm({ config }: { config: CurriculumLandingPageCo
       const res = await fetch('/api/cq-lead', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...data, pageSlug: slug, ...utm }),
+        body: JSON.stringify({ ...data, pageSlug: slug, ...utm, ...(await spam.values()) }),
       })
       const body: { stored?: boolean } = res.ok ? await res.json().catch(() => ({})) : {}
       if (res.ok && body.stored) {
@@ -165,6 +161,7 @@ export function CurriculumLeadForm({ config }: { config: CurriculumLandingPageCo
         <Choice label={form.consentLabel} {...register('consent')} />
         {errors.consent && <p className="text-sm text-danger">{errors.consent.message}</p>}
       </div>
+      <SpamGuardFields {...spam.fields} />
       <Button type="submit" disabled={isSubmitting} className="w-full justify-center">
         {isSubmitting ? 'Sending…' : form.submitLabel}
       </Button>

@@ -16,6 +16,13 @@ import {
 } from '@/lib/check-in'
 import { loadCheckInView } from '@/lib/check-in-view'
 import { GUARDIAN_CONSENT_PENDING_CHECK_IN, isConsentPendingRefusal } from '@/lib/check-in-consent'
+import { checkSpamSignals } from '@/lib/spam-guard'
+import { reportError } from '@/lib/app-errors'
+import { withAudit, type AuditMutation } from '@/lib/audit/route'
+import { auditSubject, noteAuditSubject } from '@/lib/audit/route-subject'
+
+/** The app_errors label for this handler's own 500s: a fixed pattern, never a slug. */
+const ERROR_ROUTE = 'POST /api/check-in'
 
 // POST /api/check-in — public, token-gated participant check-in (PRD 6.7).
 // Body: { slug, token, firstName, lastName, dob } or { slug, token, email }.
@@ -27,7 +34,35 @@ import { GUARDIAN_CONSENT_PENDING_CHECK_IN, isConsentPendingRefusal } from '@/li
 
 const str = (v: unknown) => (typeof v === 'string' ? v.trim() : '')
 
-export async function POST(req: Request) {
+// Platform audit (docs/TENANCY-S5.md, C7). Nobody is signed in at the door, so the actor
+// is { userId: null }, which the row records as anonymous. The event's owner is read from
+// the mirror once the event code has matched, and the participant is the target. Nothing
+// typed at the door (name, date of birth, email, the code) goes in the event. The slug is
+// the one the event code matched, never the body's own; a 200 that matched nothing (a
+// tripped honeypot) has none, and goes on the platform chain marked unresolved, as
+// "Not you?" does. Metadata keys are snake_case.
+function doorEvent(req: Request): Omit<AuditMutation, 'action'> {
+  const { target, metadata } = auditSubject(req, 'participants')
+  const slug = typeof metadata?.event_slug === 'string' ? metadata.event_slug : ''
+  return slug
+    ? { actor: { userId: null }, tenant: { eventSlug: slug }, target, metadata }
+    : { actor: { userId: null }, tenant: { tenantId: null }, target, metadata: { ...metadata, tenant_unresolved: true } }
+}
+const checkInAudit = ({ args: [req] }: { args: [Request] }) => ({ action: 'event.check_in.self_check_in' as const, ...doorEvent(req) })
+// "Not you?" clears this phone's cookie and reads no record. Its slug is the caller's own
+// text, never checked, so the event neither stores it nor looks it up: it goes on the
+// platform chain marked as resolveTenant marks an event it cannot place.
+const forgetAudit = {
+  action: 'event.check_in.self_forget',
+  actor: { userId: null },
+  tenant: { tenantId: null },
+  metadata: { tenant_unresolved: true },
+} as const
+
+export const POST = withAudit(checkInAudit, selfCheckIn)
+export const DELETE = withAudit(forgetAudit, forgetPhone)
+
+async function selfCheckIn(req: Request) {
   const body = await req.json().catch(() => null)
   const slug = str(body?.slug)
   const token = str(body?.token)
@@ -45,6 +80,15 @@ export async function POST(req: Request) {
   const { tenantId } = await requestTenant()
   const limited = await rateLimit(req, 'check-in', { limit: 600, windowMs: HOUR_MS, tenantId }, slug)
   if (limited) return limited
+  // spam.L1b at the door (docs/REC-form-spam-hardening.md): the honeypot only. No
+  // timing trap: people at the door submit in seconds, and the QR link may fill the
+  // form for them. A filled honeypot gets the silent 200 and nothing is read or
+  // written. Before the per-name limit, so a bot spends no real person's tries.
+  const trapped = checkSpamSignals(body, req, 'check-in', { timing: false })
+  if (trapped) {
+    noteAuditSubject(req, { detail: { spam_trap: 'honeypot' } })
+    return trapped
+  }
   // Guessing someone's birthday means many tries at one name; a real person
   // needs two or three. Keyed by name, so a busy shared IP is unaffected.
   if (byName) {
@@ -120,6 +164,7 @@ export async function POST(req: Request) {
   }
 
   const alreadyCheckedIn = Boolean(found.checked_in_at)
+  noteAuditSubject(req, { eventSlug: slug, id: found.id, detail: { already_checked_in: alreadyCheckedIn, by: byName ? 'name' : 'email' } })
   if (!alreadyCheckedIn) {
     const event = await getEventBySlug(slug)
     const method = (event as { setting?: string } | null)?.setting === 'virtual' ? 'virtual' : 'qr'
@@ -140,12 +185,16 @@ export async function POST(req: Request) {
     }
     if (error) {
       console.error('[check-in] update error:', error)
+      await reportError(new Error(`check-in update failed: ${error.message}`), { route: ERROR_ROUTE })
       return NextResponse.json({ error: 'Something went wrong. Please see the registration desk.' }, { status: 500 })
     }
   }
 
   const view = await loadCheckInView(db, slug, found.id)
-  if (!view) return NextResponse.json({ error: 'Something went wrong. Please see the registration desk.' }, { status: 500 })
+  if (!view) {
+    await reportError(new Error('Check-in view did not load after a match'), { route: ERROR_ROUTE })
+    return NextResponse.json({ error: 'Something went wrong. Please see the registration desk.' }, { status: 500 })
+  }
 
   const res = NextResponse.json({ view, alreadyCheckedIn })
   const signed = signCheckIn(slug, found.id)
@@ -161,7 +210,7 @@ export async function POST(req: Request) {
   return res
 }
 
-export async function DELETE(req: Request) {
+async function forgetPhone(req: Request) {
   const slug = new URL(req.url).searchParams.get('slug')?.trim()
   if (!slug) return NextResponse.json({ error: 'Missing slug' }, { status: 400 })
   const res = NextResponse.json({ ok: true })

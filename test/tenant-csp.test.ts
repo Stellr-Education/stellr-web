@@ -1,5 +1,6 @@
 // @vitest-environment node
 import { readFileSync, readdirSync } from 'node:fs'
+import { createRequire } from 'node:module'
 import path from 'node:path'
 import { NextRequest, type NextFetchEvent } from 'next/server'
 import ts from 'typescript'
@@ -221,7 +222,7 @@ describe('Stellr’s hosts', () => {
       "img-src 'self' data: blob: https:",
       "font-src 'self' data:",
       "media-src 'self' blob: https://media.test https://abc.supabase.co",
-      "connect-src 'self' https://abc.supabase.co wss://abc.supabase.co https://media.test https://clerk.example.org https://clerk-telemetry.com https://challenges.cloudflare.com https://proj1.api.sanity.io https://proj1.apicdn.sanity.io wss://proj1.api.sanity.io https://api.sanity.io https://*.google-analytics.com https://*.analytics.google.com https://*.googletagmanager.com https://*.g.doubleclick.net https://www.google.com https://*.hubspot.com https://*.hs-banner.com https://*.hscollectedforms.net https://*.hsforms.com https://*.hs-analytics.net https://www.facebook.com https://connect.facebook.net https://px.ads.linkedin.com https://*.apollo.io https://va.vercel-scripts.com",
+      "connect-src 'self' https://abc.supabase.co wss://abc.supabase.co https://media.test https://clerk.example.org https://clerk-telemetry.com https://challenges.cloudflare.com https://*.google-analytics.com https://*.analytics.google.com https://*.googletagmanager.com https://*.g.doubleclick.net https://www.google.com https://*.hubspot.com https://*.hs-banner.com https://*.hscollectedforms.net https://*.hsforms.com https://*.hs-analytics.net https://www.facebook.com https://connect.facebook.net https://px.ads.linkedin.com https://*.apollo.io https://va.vercel-scripts.com",
       "frame-src 'self' https: blob:",
       "worker-src 'self' blob:",
       "manifest-src 'self'",
@@ -355,8 +356,9 @@ describe('the policy', () => {
     ])
 
     it.each(['connect-src', 'frame-src', 'img-src', 'style-src', 'worker-src', 'form-action', 'default-src'])('%s', async (name) => {
-      // Not in the package's exports map, so by path.
-      const file = '../node_modules/@clerk/nextjs/dist/esm/server/content-security-policy.js'
+      // Not in the package's exports map, so by path, found through the package's
+      // own resolution (a worktree without its own node_modules finds its parent's).
+      const file = path.join(path.dirname(createRequire(import.meta.url).resolve('@clerk/nextjs')), '..', '..', 'dist/esm/server/content-security-policy.js')
       const { createContentSecurityPolicyHeaders } = (await import(/* @vite-ignore */ file)) as {
         createContentSecurityPolicyHeaders: (host: string, options: { strict: boolean }) => { headers: [string, string][] }
       }

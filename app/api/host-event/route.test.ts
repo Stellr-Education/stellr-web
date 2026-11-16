@@ -46,3 +46,38 @@ describe('host-event email escaping (PUB-2)', () => {
     expect(html).toContain('&lt;img src=x')
   })
 })
+
+// spam.L1b / spam.L3 (docs/REC-form-spam-hardening.md §3, §5).
+const timing = () => ({ website: '', renderedAt: Date.now() - 60_000, submittedAt: Date.now() })
+
+describe('host-event spam guard and validation', () => {
+  it('sends and captures a valid submission as before, without the spam fields', async () => {
+    const res = await post({ ...VALID, consent: true, ...timing() })
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({ ok: true })
+    expect(sendEmail).toHaveBeenCalledTimes(1)
+    expect(captureLead).toHaveBeenCalledTimes(1)
+    expect((sendEmail.mock.calls[0][0] as { text: string }).text).not.toMatch(/renderedAt|website/)
+  })
+
+  it('answers a filled honeypot with 200 and sends and captures nothing', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const res = await post({ ...VALID, ...timing(), website: 'https://spam.example' })
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({ ok: true })
+    expect(sendEmail).not.toHaveBeenCalled()
+    expect(captureLead).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    ['an over-long overheads note', { facilityOverheads: 'a'.repeat(5001) }],
+    ['an over-long organization', { companySchool: 'a'.repeat(201) }],
+    ['a malformed email', { email: 'dana-at-example' }],
+  ])('refuses %s with 400 and sends nothing', async (_label, patch) => {
+    const res = await post({ ...VALID, ...timing(), ...patch })
+    expect(res.status).toBe(400)
+    expect(await res.json()).toEqual({ error: 'Missing required fields' })
+    expect(sendEmail).not.toHaveBeenCalled()
+    expect(captureLead).not.toHaveBeenCalled()
+  })
+})

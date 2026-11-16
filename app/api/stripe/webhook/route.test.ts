@@ -45,6 +45,8 @@ const h = vi.hoisted(() => ({
   assertLiveCredentials: vi.fn(),
   // Price events refresh the cached prices public pages show (lib/price-cache).
   revalidateTag: vi.fn(),
+  // group-payment-options.10: a caught failure reaches app_errors through this.
+  reportError: vi.fn(async (_err: unknown, _opts: { route: string }) => {}),
 }))
 
 // ── A tiny in-memory Supabase stand-in: enough for select/eq/neq/maybeSingle +
@@ -55,7 +57,9 @@ type Row = Record<string, unknown>
 // {error} (deep review PAY-5), letting a test prove a money-path write failure
 // aborts the webhook instead of being swallowed. Default (omitted) keeps every
 // write succeeding, so existing tests are unaffected.
-function makeDb(tables: Record<string, Row[]>, opts?: { failUpdate?: (table: string) => boolean }) {
+// `failUpdate` also sees the values being written, so a test can fail one write
+// on a table (the share columns) while the others on it succeed.
+function makeDb(tables: Record<string, Row[]>, opts?: { failUpdate?: (table: string, set: Row) => boolean }) {
   const updates: { table: string; set: Row }[] = []
   const inserts: { table: string; rows: Row[] }[] = []
   function builder(table: string) {
@@ -64,7 +68,7 @@ function makeDb(tables: Record<string, Row[]>, opts?: { failUpdate?: (table: str
     const matched = () => (tables[table] ??= []).filter((r) => filters.every((f) => f(r)))
     const run = () => {
       if (pendingUpdate) {
-        if (opts?.failUpdate?.(table)) {
+        if (opts?.failUpdate?.(table, pendingUpdate)) {
           return { data: null, error: { message: `simulated ${table} write failure` } }
         }
         const rows = matched()
@@ -78,6 +82,7 @@ function makeDb(tables: Record<string, Row[]>, opts?: { failUpdate?: (table: str
       select: () => q,
       eq: (c: string, v: unknown) => (filters.push((r) => r[c] === v), q),
       neq: (c: string, v: unknown) => (filters.push((r) => r[c] !== v), q),
+      is: (c: string, v: unknown) => (filters.push((r) => (r[c] ?? null) === v), q),
       in: (c: string, vs: unknown[]) => (filters.push((r) => vs.includes(r[c])), q),
       // Minimal PostgREST `.or('col.is.null,col.eq.val')` support for
       // markIndividualPayment's "is the whole group settled?" check (PAY-7 path).
@@ -123,6 +128,7 @@ vi.mock('@/lib/stripe', () => {
   return { requireStripe: () => stub, stripeClient: () => stub, STRIPE_API_VERSION: 'test' }
 })
 vi.mock('@/lib/env-guards', () => ({ assertLiveCredentials: h.assertLiveCredentials }))
+vi.mock('@/lib/app-errors', () => ({ reportError: h.reportError }))
 vi.mock('@/lib/registration-confirm', () => ({ confirmRegistration: h.confirmRegistration }))
 vi.mock('@/lib/store/orders', () => ({ handleStoreOrderPaid: h.handleStoreOrderPaid }))
 vi.mock('@/lib/store/event-merch', () => ({ finalizeRegistrationMerch: h.finalizeRegistrationMerch }))
@@ -327,6 +333,28 @@ describe('members-pay-individually seat settlement (PAY-7 / PAY-N1)', () => {
     // The seat still references the FIRST intent — the duplicate never overwrote it.
     expect(await readRow('participants', 'pX')).toMatchObject({ stripe_payment_intent_id: 'pi_1' })
     expect(h.notifyCommunityAdmins).toHaveBeenCalledTimes(1)
+  })
+
+  it('a late retry of the duplicate seat refund that gets charge_already_refunded is done: 200, no second alert (PAY-N1, legacy-12.4)', async () => {
+    // The duplicate (pi_2) was refunded on an earlier delivery; this retry comes
+    // after Stripe's 24-hour idempotency window, so Stripe refuses the refund.
+    current = makeDb(seatRows('pi_1', 'paid'))
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    h.refundsCreate.mockRejectedValueOnce(Object.assign(new Error('Charge has already been refunded.'), { type: 'StripeInvalidRequestError', code: 'charge_already_refunded' }))
+    const res = await post({ id: 'evt_dup_seat_late', type: 'checkout.session.completed', data: { object: seatSession('cs_seat2', 'pi_2') } } as unknown as Stripe.Event)
+
+    expect(res.status).toBe(200)
+    expect(h.refundsCreate).toHaveBeenCalledTimes(1)
+    expect(h.refundsCreate).toHaveBeenCalledWith(
+      expect.objectContaining({ payment_intent: 'pi_2', metadata: expect.objectContaining({ reason: 'duplicate_individual_payment', source: 'stellr_app' }) }),
+      { idempotencyKey: 'dup-cs_seat2' },
+    )
+    // Staff were told on the first delivery; the seat keeps the first intent and is not re-settled.
+    expect(h.notifyCommunityAdmins).not.toHaveBeenCalled()
+    expect(await readRow('participants', 'pX')).toMatchObject({ stripe_payment_intent_id: 'pi_1', individual_payment_status: 'paid' })
+    // The event is recorded as processed, so Stripe stops retrying.
+    expect(current.inserts.find((i) => i.table === 'stripe_webhook_events')).toBeDefined()
+    vi.mocked(console.warn).mockRestore()
   })
 })
 
@@ -542,5 +570,158 @@ describe('price changes refresh the cached prices', () => {
     current = makeDb({ stripe_webhook_events: [] })
     await post({ id: 'evt_cust', type: 'customer.updated', data: { object: { id: 'cus_1' } } } as unknown as Stripe.Event)
     expect(h.revalidateTag).not.toHaveBeenCalled()
+  })
+})
+
+// group-payment-options.10: the seat was paid, so a share-record failure must not
+// 500 the webhook (which would re-run the whole seat on every retry); it is
+// reported to app_errors and the webhook carries on.
+describe('shared-cost seat: the share record', () => {
+  const rows = () => ({
+    participants: [{
+      id: 'pS', registration_id: 'rS', email: 'seat@school.org', event_role: 'participant',
+      individual_payment_status: 'pending', stripe_payment_intent_id: null, share_paid_cents: null, base_paid_cents: null,
+      first_name: 'Ada', last_name: 'L', membership_id: 'M1',
+    }],
+    registrations: [{ id: 'rS', status: 'pending', event_title: 'Nevada 2027', share_first_paid_at: null }],
+    stripe_webhook_events: [],
+  })
+  const event = (id: string) => ({
+    id, type: 'checkout.session.completed',
+    data: { object: {
+      id: `cs_${id}`, payment_status: 'paid', payment_intent: `pi_${id}`,
+      metadata: {
+        registrationId: 'rS', participantId: 'pS', participantEmail: 'seat@home.com', isIndividualGroupPayment: 'true',
+        teacherShare: 'true', baseCents: '9700', shareCents: '2425',
+      },
+      customer: null, customer_details: null, amount_total: 12_125, currency: 'usd',
+    } },
+  } as unknown as Stripe.Event)
+
+  it('records the split on the seat', async () => {
+    current = makeDb(rows())
+    const res = await post(event('evt_share_ok'))
+    expect(res.status).toBe(200)
+    expect(await readRow('participants', 'pS')).toMatchObject({ individual_payment_status: 'paid', base_paid_cents: 9700, share_paid_cents: 2425 })
+    expect(h.reportError).not.toHaveBeenCalled()
+  })
+
+  it('a share write that returns {error} is reported, and the webhook still answers 200', async () => {
+    current = makeDb(rows(), { failUpdate: (t, set) => t === 'participants' && 'share_paid_cents' in set })
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    const res = await post(event('evt_share_err'))
+
+    expect(res.status).toBe(200)
+    expect(h.reportError).toHaveBeenCalledTimes(1)
+    const [err, opts] = h.reportError.mock.calls[0]
+    expect(opts).toEqual({ route: 'POST /api/stripe/webhook' })
+    expect((err as Error).message).toMatch(/registration rS, participant pS/)
+    expect((err as Error).message).not.toContain('@')
+    // The seat is still settled and its intent kept; the rest of the seat ran.
+    expect(await readRow('participants', 'pS')).toMatchObject({ individual_payment_status: 'paid', stripe_payment_intent_id: 'pi_evt_share_err', share_paid_cents: null })
+    expect(await readRow('registrations', 'rS')).toMatchObject({ status: 'confirmed' })
+    expect(h.finalizeRedemption).toHaveBeenCalledTimes(1)
+    // Processed: Stripe does not retry the paid seat.
+    expect(current.inserts.find((i) => i.table === 'stripe_webhook_events')).toBeDefined()
+    vi.mocked(console.error).mockRestore()
+  })
+})
+
+// legacy-12.4: the entitlement_booking auto-refund (a failed confirm) is
+// idempotent across webhook retries.
+describe('entitlement_booking auto-refund is idempotent', () => {
+  const bookingEvent = (id = 'evt_book') => ({
+    id, type: 'checkout.session.completed',
+    data: { object: {
+      id: 'cs_book', payment_status: 'paid', payment_intent: 'pi_book',
+      amount_total: 12000, currency: 'usd', customer: null, customer_details: null,
+      metadata: { type: 'entitlement_booking', memberId: 'm1', offeringId: 'off1', creditAppliedCents: '0' },
+    } },
+  } as unknown as Stripe.Event)
+  const alreadyRefunded = () => Object.assign(new Error('Charge has already been refunded.'), { type: 'StripeInvalidRequestError', code: 'charge_already_refunded' })
+
+  beforeEach(() => {
+    h.confirmPaidBooking.mockRejectedValue(new Error('cohort full'))
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+  })
+  afterEach(() => {
+    h.confirmPaidBooking.mockReset()
+    h.confirmPaidBooking.mockResolvedValue('b1')
+    h.finalizeRedemption.mockReset()
+    h.finalizeRedemption.mockResolvedValue(undefined)
+    vi.mocked(console.error).mockRestore()
+    vi.mocked(console.warn).mockRestore()
+  })
+
+  it('refunds keyed on the session, tagged as ours', async () => {
+    current = makeDb({ stripe_webhook_events: [] })
+    const res = await post(bookingEvent())
+    expect(res.status).toBe(200)
+    expect(h.refundsCreate).toHaveBeenCalledTimes(1)
+    expect(h.refundsCreate).toHaveBeenCalledWith(
+      expect.objectContaining({ payment_intent: 'pi_book', metadata: expect.objectContaining({ source: 'stellr_app' }) }),
+      { idempotencyKey: 'entitlement-refund-cs_book' },
+    )
+    expect(h.assertLiveCredentials).toHaveBeenCalledWith('stripe')
+  })
+
+  it('a redelivery of the same event does not refund again', async () => {
+    current = makeDb({ stripe_webhook_events: [] })
+    await post(bookingEvent())
+    const again = await post(bookingEvent())
+    expect(await again.json()).toMatchObject({ duplicate: true })
+    expect(h.refundsCreate).toHaveBeenCalledTimes(1)
+  })
+
+  it('a retry after a later step failed reuses the key, and charge_already_refunded counts as done', async () => {
+    current = makeDb({ stripe_webhook_events: [] })
+    // First delivery: the refund goes through, then a later step fails → 500, not recorded.
+    h.finalizeRedemption.mockRejectedValueOnce(new Error('redemption write failed'))
+    expect((await post(bookingEvent())).status).toBe(500)
+    // Stripe retries (past its 24-hour key window): the charge is already refunded.
+    h.refundsCreate.mockRejectedValueOnce(alreadyRefunded())
+    const retry = await post(bookingEvent())
+
+    expect(retry.status).toBe(200)
+    expect(h.refundsCreate).toHaveBeenCalledTimes(2)
+    for (const call of h.refundsCreate.mock.calls as unknown as unknown[][]) {
+      expect(call[1]).toEqual({ idempotencyKey: 'entitlement-refund-cs_book' })
+    }
+    expect(current.inserts.find((i) => i.table === 'stripe_webhook_events')).toBeDefined()
+  })
+
+  it('any other refund error still fails the webhook so Stripe retries', async () => {
+    current = makeDb({ stripe_webhook_events: [] })
+    h.refundsCreate.mockRejectedValueOnce(Object.assign(new Error('rate limited'), { code: 'rate_limit' }))
+    expect((await post(bookingEvent())).status).toBe(500)
+    expect(current.inserts.find((i) => i.table === 'stripe_webhook_events')).toBeUndefined()
+  })
+})
+
+describe('duplicate-payment refunds survive a late retry (legacy-12.4)', () => {
+  it('charge_already_refunded on the duplicate registration refund is done: 200, no second alert', async () => {
+    current = makeDb({
+      registrations: [{ id: 'r1', status: 'pending', stripe_payment_intent_id: 'pi_1' }],
+      participants: [],
+      stripe_webhook_events: [],
+    })
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    h.refundsCreate.mockRejectedValueOnce(Object.assign(new Error('Charge has already been refunded.'), { code: 'charge_already_refunded' }))
+    const res = await post({
+      id: 'evt_dup_late', type: 'checkout.session.completed',
+      data: { object: {
+        id: 'cs_late', payment_status: 'paid', payment_intent: 'pi_2',
+        metadata: { registrationId: 'r1' }, client_reference_id: 'r1',
+        amount_total: 7500, currency: 'usd', customer: null, customer_details: null,
+      } },
+    } as unknown as Stripe.Event)
+
+    expect(res.status).toBe(200)
+    expect(h.refundsCreate).toHaveBeenCalledWith(expect.anything(), { idempotencyKey: 'dup-cs_late' })
+    expect(h.notifyCommunityAdmins).not.toHaveBeenCalled()
+    expect(h.confirmRegistration).not.toHaveBeenCalled()
+    expect(await readRow('registrations', 'r1')).toMatchObject({ stripe_payment_intent_id: 'pi_1' })
+    vi.mocked(console.warn).mockRestore()
   })
 })

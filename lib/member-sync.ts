@@ -79,9 +79,10 @@ export function fillBlanksFromStored(
 // sheet keeps whatever is already on file. Overwriting with blanks would let a
 // half-filled sheet row wipe a member's phone, emergency contact or DOB.
 //
-// Returns the member id, or null when the email is missing or the write fails —
-// callers treat member creation as non-fatal (the participant row is saved
-// either way).
+// upsertMember returns the member id, or null when the email is missing or the
+// write fails — callers treat member creation as non-fatal (the participant row
+// is saved either way). upsertMemberOutcome also says whether this call inserted
+// the row, from the database's answer rather than the earlier lookup.
 //
 // `onExisting` controls what happens when a member already exists for the email:
 //   'update' (default) — merge the submitted fields in. For TRUSTED callers only
@@ -100,21 +101,42 @@ export interface UpsertMemberOptions {
   onCreated?: (id: string) => void
 }
 
+/**
+ * What upsertMember did, as the database answered it. `inserted` is true only
+ * when THIS call's INSERT created the row; a row matched by the lookup, or one
+ * a concurrent request created between the lookup and the insert (the unique
+ * index on email refuses the second insert), is `inserted: false`. A caller
+ * that runs "new member" steps keys them off `inserted`, never off the lookup.
+ */
+export interface UpsertMemberOutcome {
+  member: string | null
+  inserted: boolean
+}
+
+type MemberRef = { id: string; email: string }
+
+// Postgres unique_violation: another request inserted the same email first.
+const UNIQUE_VIOLATION = '23505'
+
+/** Returns the member id (or null). See upsertMemberOutcome for whether it inserted. */
 export async function upsertMember(
   db: SupabaseClient,
   input: MemberUpsertInput,
   opts: UpsertMemberOptions = {},
 ): Promise<string | null> {
-  // Personal takes primacy (lib/member-email): the primary address is the
-  // personal one, else the school one.
-  const personal = normalizeEmail(input.email)
-  const school = normalizeEmail(input.school_email) || null
-  const email = personal || school
-  if (!email) return null
+  return (await upsertMemberOutcome(db, input, opts)).member
+}
 
-  const eventRole = normalizeEventRole(input.event_role)
-
-  // Cross-reference against the existing membership database by email.
+// Cross-reference against the existing membership database: the primary
+// address, then the school address, then a row whose school address is this
+// one (4 Nov 2026: a student first entered under a school address and later
+// under a personal one, or the reverse, is the same member). `undefined` means
+// the read failed.
+async function findExisting(
+  db: SupabaseClient,
+  email: string,
+  school: string | null,
+): Promise<MemberRef | null | undefined> {
   const { data: byEmail, error: lookupError } = await db
     .from('members')
     .select('id, email')
@@ -123,36 +145,99 @@ export async function upsertMember(
 
   if (lookupError) {
     console.error('[member-sync] Member lookup error (non-fatal):', lookupError)
-    return null
+    return undefined
   }
 
-  // Then by the other address (4 Nov 2026): a student first entered under a
-  // school address and later under a personal one (or the reverse) is the same
-  // member. Without this the second entry created a duplicate record.
-  let existing = byEmail as { id: string; email: string } | null
+  let existing = byEmail as MemberRef | null
   if (!existing && school && school !== email) {
     const { data } = await db.from('members').select('id, email').eq('email', school).limit(1).maybeSingle()
-    existing = (data as { id: string; email: string } | null) ?? null
+    existing = (data as MemberRef | null) ?? null
   }
   if (!existing) {
     const { data } = await db.from('members').select('id, email').eq('school_email', email).limit(1).maybeSingle()
-    existing = (data as { id: string; email: string } | null) ?? null
+    existing = (data as MemberRef | null) ?? null
   }
+  return existing
+}
 
-  // Untrusted input must not touch an existing member (C-3). Hand back the id so
-  // the caller can still attach a participant row; the submitted details live on
-  // that row for staff to review, never on the canonical members record.
-  if (existing && opts.onExisting === 'skip') {
-    return existing.id
-  }
+export async function upsertMemberOutcome(
+  db: SupabaseClient,
+  input: MemberUpsertInput,
+  opts: UpsertMemberOptions = {},
+): Promise<UpsertMemberOutcome> {
+  const none: UpsertMemberOutcome = { member: null, inserted: false }
+  // Personal takes primacy (lib/member-email): the primary address is the
+  // personal one, else the school one.
+  const personal = normalizeEmail(input.email)
+  const school = normalizeEmail(input.school_email) || null
+  const email = personal || school
+  if (!email) return none
+
+  const eventRole = normalizeEventRole(input.event_role)
+
+  let existing = await findExisting(db, email, school)
+  if (existing === undefined) return none
 
   let memberId: string | null = null
+  let inserted = false
+
+  if (!existing) {
+    const { data, error } = await db
+      .from('members')
+      .insert({
+        email,
+        school_email: school,
+        first_name: input.first_name,
+        last_name: input.last_name,
+        nickname: input.nickname || null,
+        phone: input.phone ?? null,
+        date_of_birth: input.date_of_birth || null,
+        gender: normalizeGender(input.gender),
+        grade: normalizeGrade(input.grade),
+        tshirt_size: normalizeTshirt(input.t_shirt_size),
+        age_bracket: normalizeAgeBracket(input.age_bracket),
+        event_role: eventRole,
+        is_active: true,
+        health_conditions: input.health_conditions || null,
+        ec_first_name: input.ec_first_name || null,
+        ec_last_name: input.ec_last_name || null,
+        ec_email: input.ec_email ? normalizeEmail(input.ec_email) : null,
+        ec_phone: input.ec_phone || null,
+        ec_relationship: input.ec_relationship || null,
+      })
+      .select('id')
+      .maybeSingle()
+
+    if (error && (error as { code?: string }).code === UNIQUE_VIOLATION) {
+      // A concurrent request created this member between our lookup and our
+      // insert. The database refused the second row, so this call did NOT
+      // create one: read the winner and continue as an existing member.
+      existing = await findExisting(db, email, school)
+      if (!existing) {
+        console.error('[member-sync] Member insert conflicted but no row was found (non-fatal):', error)
+        return none
+      }
+    } else if (error) {
+      console.error('[member-sync] Member insert error (non-fatal):', error)
+      return none
+    } else {
+      memberId = data?.id ?? null
+      inserted = !!memberId
+      if (memberId) opts.onCreated?.(memberId)
+    }
+  }
+
   // The role written to members/member_roles: an existing member keeps theirs
   // unless a real role was submitted, so a blank/unknown value can't demote a
   // teacher to the 'subscriber' fallback normalizeEventRole falls back to.
   let effectiveRole = eventRole
 
   if (existing) {
+    // Untrusted input must not touch an existing member (C-3). Hand back the id
+    // so the caller can still attach a participant row; the submitted details
+    // live on that row for staff to review, never on the canonical members record.
+    if (opts.onExisting === 'skip') return { member: existing.id, inserted: false }
+
     const patch = compact({
       first_name: submitted(input.first_name) ? input.first_name : undefined,
       last_name: submitted(input.last_name) ? input.last_name : undefined,
@@ -188,42 +273,9 @@ export async function upsertMember(
     const { error: updateError } = await db.from('members').update(patch).eq('id', existing.id)
     if (updateError) {
       console.error('[member-sync] Member update error (non-fatal):', updateError)
-      return null
+      return none
     }
     memberId = existing.id
-  } else {
-    const { data, error } = await db
-      .from('members')
-      .insert({
-        email,
-        school_email: school,
-        first_name: input.first_name,
-        last_name: input.last_name,
-        nickname: input.nickname || null,
-        phone: input.phone ?? null,
-        date_of_birth: input.date_of_birth || null,
-        gender: normalizeGender(input.gender),
-        grade: normalizeGrade(input.grade),
-        tshirt_size: normalizeTshirt(input.t_shirt_size),
-        age_bracket: normalizeAgeBracket(input.age_bracket),
-        event_role: eventRole,
-        is_active: true,
-        health_conditions: input.health_conditions || null,
-        ec_first_name: input.ec_first_name || null,
-        ec_last_name: input.ec_last_name || null,
-        ec_email: input.ec_email ? normalizeEmail(input.ec_email) : null,
-        ec_phone: input.ec_phone || null,
-        ec_relationship: input.ec_relationship || null,
-      })
-      .select('id')
-      .maybeSingle()
-
-    if (error) {
-      console.error('[member-sync] Member insert error (non-fatal):', error)
-      return null
-    }
-    memberId = data?.id ?? null
-    if (memberId) opts.onCreated?.(memberId)
   }
 
   // S4 field encryption: inert unless FIELD_CRYPTO_MODE=shadow; never fails this write.
@@ -232,5 +284,5 @@ export async function upsertMember(
   // Keep the unified member_roles table current with the registration classification.
   if (memberId) await syncMemberClassificationRole(db, memberId, effectiveRole)
 
-  return memberId
+  return { member: memberId, inserted }
 }
