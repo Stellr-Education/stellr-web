@@ -237,12 +237,16 @@ async function issueCredentials(req: Request, { params }: Ctx) {
   return NextResponse.json({ ok: true, mode, considered: people.length, created, existing, emailed, skipped: skips.length, skips, failures })
 }
 
-/** A run's counts, for the audit event: the names in skips and failures stay out. */
+/**
+ * A run's counts, for the audit event: the names in skips and failures stay out. The
+ * emailed count is recorded as `notified`: the audit sanitiser drops any key containing
+ * 'email' (lib/audit/platform.ts). The response keeps `emailed`.
+ */
 function runDetail(
   audience: Audience,
   run: { mode: string; considered: number; created: number; existing: number; emailed: number; skipped: number; failures: string[] },
 ) {
-  return { audience, mode: run.mode, considered: run.considered, created: run.created, existing: run.existing, emailed: run.emailed, skipped: run.skipped, failed: run.failures.length }
+  return { audience, mode: run.mode, considered: run.considered, created: run.created, existing: run.existing, notified: run.emailed, skipped: run.skipped, failed: run.failures.length }
 }
 
 async function issueToMentors(

@@ -43,7 +43,8 @@ async function issueEventAwards(req: Request, { params }: Ctx) {
       reinstated: result.reinstated,
       revoked: result.revoked,
       unchanged: result.unchanged,
-      emailed: result.emailed,
+      // Not 'emailed': the audit sanitiser drops any key containing 'email' (lib/audit/platform.ts).
+      notified: result.emailed,
       skipped: result.skipped,
       failed: result.failures.length,
     },

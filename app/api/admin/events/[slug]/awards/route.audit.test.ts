@@ -1,6 +1,7 @@
 // @vitest-environment node
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { fakeSupabase, type FakeDb } from '@/test/fake-supabase'
+import { sanitizeMetadata } from '@/lib/audit/platform'
 
 // The event routes a Stellr Staff member or an event manager writes through
 // requireEventAccess (Staff role P3/P4, GATE-AUDIT): judging, badge and certificate
@@ -175,7 +176,7 @@ describe('participation credentials', () => {
         ...common,
         action: 'event.credentials.issue',
         target: { table: 'credentials', id: null },
-        metadata: { event_slug: SLUG, audience: 'students', mode: 'checked_in', considered: 1, created: 1, existing: 0, emailed: 1, skipped: 0, failed: 0, status: 200 },
+        metadata: { event_slug: SLUG, audience: 'students', mode: 'checked_in', considered: 1, created: 1, existing: 0, notified: 1, skipped: 0, failed: 0, status: 200 },
       },
     ])
     expect(JSON.stringify(h.audits)).not.toMatch(/Free text|Sam|example\.test/)
@@ -205,6 +206,63 @@ describe('the check-in desk', () => {
     expect((await desk.POST(send('POST', 'check-in', { action: 'teleport' }), ctx)).status).toBe(400)
     await flush()
     expect(h.audits).toEqual([])
+  })
+})
+
+// audit() is mocked above, so the metadata it receives is unsanitised. The live write runs
+// it through sanitizeMetadata, which drops any key naming (or containing a fragment of)
+// personal data: 'emailed' contains 'email' and would be lost. Every key each event route
+// records must survive the real sanitiser unchanged.
+describe('every event route’s metadata survives the real sanitiser', () => {
+  const survives = () => {
+    expect(h.audits.length).toBeGreaterThan(0)
+    for (const a of h.audits) {
+      const metadata = a.metadata as Record<string, unknown>
+      expect(sanitizeMetadata(metadata), String(a.action)).toEqual(metadata)
+    }
+  }
+
+  it('the sanitiser drops a key containing email, which is why the runs record notified', () => {
+    expect(sanitizeMetadata({ emailed: 1, notified: 1 })).toEqual({ notified: 1 })
+  })
+
+  it('judging: a change', async () => {
+    expect((await awards.PUT(send('PUT', 'awards', { action: 'remove', awardType: 'norm_chaffee', participantId: STUDENT }), ctx)).status).toBe(200)
+    await flush()
+    survives()
+  })
+
+  it('judging: issuing the awards records the emailed count as notified', async () => {
+    expect((await issue.POST(send('POST', 'awards/issue'), ctx)).status).toBe(200)
+    await flush()
+    survives()
+    expect(h.audits[0].metadata).toEqual({ event_slug: SLUG, issued: 1, students: 1, reinstated: 0, revoked: 0, unchanged: 0, notified: 1, skipped: 0, failed: 0, status: 200 })
+  })
+
+  it('badge and certificate artwork: save and delete', async () => {
+    expect((await badges.PUT(send('PUT', 'badge-templates', { format: 'avery_5392', audience: 'everyone' }), ctx)).status).toBe(200)
+    expect((await badges.DELETE(send('DELETE', `badge-templates?id=${TEMPLATE}`), ctx)).status).toBe(200)
+    expect((await certificates.PUT(send('PUT', 'certificate-templates', { awardType: 'participation' }), ctx)).status).toBe(200)
+    expect((await certificates.DELETE(send('DELETE', 'certificate-templates?awardType=participation'), ctx)).status).toBe(200)
+    await flush()
+    survives()
+  })
+
+  it('participation credentials: configure, and the students and mentors runs', async () => {
+    expect((await credentials.PATCH(send('PATCH', 'credentials', { credential_title: 'Free text title', audience: 'students' }), ctx)).status).toBe(200)
+    expect((await credentials.POST(send('POST', 'credentials', { mode: 'checked_in' }), ctx)).status).toBe(200)
+    expect((await credentials.POST(send('POST', 'credentials', { audience: 'mentors' }), ctx)).status).toBe(200)
+    await flush()
+    survives()
+    const runs = h.audits.filter((a) => a.action === 'event.credentials.issue').map((a) => a.metadata as Record<string, unknown>)
+    expect(runs.map((m) => [m.audience, 'notified' in m])).toEqual([['students', true], ['mentors', true]])
+  })
+
+  it('the check-in desk: a manual check-in and a regenerated code', async () => {
+    expect((await desk.POST(send('POST', 'check-in', { action: 'manual', participantId: STUDENT }), ctx)).status).toBe(200)
+    expect((await desk.POST(send('POST', 'check-in', { action: 'regenerate' }), ctx)).status).toBe(200)
+    await flush()
+    survives()
   })
 })
 
