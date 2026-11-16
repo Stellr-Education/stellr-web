@@ -7,6 +7,7 @@ import { startCronRun } from '@/lib/cron-runs'
 import { sendDailyErrorDigest } from '@/lib/app-errors'
 import { gcRateLimitStore } from '@/lib/rate-limit-store'
 import { sweepMinorCredentialPages } from '@/lib/credential-minor-sweep'
+import { checkQuotaUsage } from '@/lib/quota-alarms'
 import type { CronRun } from '@/lib/cron-runs'
 import type { SupabaseClient } from '@supabase/supabase-js'
 
@@ -34,6 +35,13 @@ export const maxDuration = 300
 // permits it (lib/credential-minor-sweep). The counts go into this run's
 // cron_runs result as credentialMinorSweep, a failure is recorded as a run error,
 // and it runs whether or not the lifecycle succeeded. The response is unchanged.
+//
+// S1-quota-alarms: it also checks Supabase database and storage use against 60%
+// of the plan limits (lib/quota-alarms), alerting the admins at most once a day.
+// The outcome goes into this run's cron_runs result as quota; a missing
+// platform_quota_usage function is recorded as a skip, any other failure as a
+// run error. It runs whether or not the lifecycle succeeded, and the response is
+// unchanged.
 export const GET = withCronAudit('entitlements', async (req: NextRequest) => {
   const blocked = guardCron(req)
   if (blocked) return blocked
@@ -49,7 +57,8 @@ export const GET = withCronAudit('entitlements', async (req: NextRequest) => {
     run.fail('run', err)
   }
   const credentialMinorSweep = await credentialMinorSweepStep(db, run)
-  await run.finish({ ...(result ?? {}), credentialMinorSweep })
+  const quota = await quotaStep(db, run)
+  await run.finish({ ...(result ?? {}), credentialMinorSweep, quota })
   const errorDigest = await sendDailyErrorDigest(db)
   const rateLimitGc = await gcRateLimitStore(db)
   if (!result) {
@@ -72,6 +81,21 @@ async function credentialMinorSweepStep(db: SupabaseClient, run: CronRun): Promi
   } catch (err) {
     console.error('[cron/entitlements] credential minor sweep failed:', err)
     run.fail('credential-minor-sweep', err)
+    return { failed: true }
+  }
+}
+
+/** The quota alarm as one step of this run: never throws, and records its problems on the run. */
+async function quotaStep(db: SupabaseClient, run: CronRun): Promise<Record<string, unknown>> {
+  try {
+    const outcome = await checkQuotaUsage(db)
+    if ('alertFailed' in outcome && outcome.alertFailed) {
+      run.fail('quota', new Error('usage is past the alarm, but the admin alert could not be sent'))
+    }
+    return { ...outcome }
+  } catch (err) {
+    console.error('[cron/entitlements] quota check failed:', err)
+    run.fail('quota', err)
     return { failed: true }
   }
 }

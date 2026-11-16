@@ -166,7 +166,10 @@ function fakeDb(tables: Record<string, Row[]>, failWrite?: FailWrite) {
 function fakeStripe() {
   return {
     prices: { retrieve: vi.fn(async () => ({ unit_amount: 9700, currency: 'usd', product: 'prod_event' })) },
-    refunds: { create: vi.fn(async (args: { amount: number }) => ({ id: `re_${args.amount}` })) },
+    refunds: {
+      create: vi.fn(async (args: { amount: number }) => ({ id: `re_${args.amount}` })),
+      list: vi.fn(async (_args: { payment_intent: string; limit: number }): Promise<{ data: { id: string; amount: number; status: string; metadata: Record<string, string> }[] }> => ({ data: [] })),
+    },
     promotionCodes: {
       list: vi.fn(async ({ code }: { code: string }) => ({
         data: code === 'STEMCAREERS' ? [{ code, coupon: 'co_15' }] : code === 'OTHEREVENT' ? [{ code, coupon: 'co_other' }] : [],
@@ -411,10 +414,23 @@ describe('settlement with a share the webhook couldn\u2019t record', () => {
     expect(f.tables.participants[1]).toMatchObject({ share_paid_cents: null })
   })
 
-  it('a session for another participant is not used', async () => {
+  it('a session for another participant is not used, and is reported', async () => {
     const f = setup(group(), REG)
+    vi.spyOn(console, 'error').mockImplementation(() => {})
     f.stripe.checkout.sessions.list.mockResolvedValue({ data: [{ id: 'cs_x', metadata: { participantId: 's9', teacherShare: 'true', baseCents: '9700', shareCents: '2425' } }] })
     await settleShare(f.db, f.stripe as never, 'reg-1')
+    expect(f.tables.participants[1]).toMatchObject({ share_paid_cents: null })
+    expect(errors.reportError).toHaveBeenCalledTimes(1)
+    expect((errors.reportError.mock.calls[0][0] as Error).message).toContain('participant s1 (checkout session is for another participant)')
+    expect(errors.reportError.mock.calls[0][1]).toEqual({ route: 'lib/teacher-share settleShare' })
+  })
+
+  it('a per-seat session from before PAY-7 (no participantId, no share) is neither refunded nor reported', async () => {
+    const f = setup(group(), REG)
+    f.stripe.checkout.sessions.list.mockResolvedValue({ data: [{ id: 'cs_old', metadata: { isIndividualGroupPayment: 'true', participantEmail: 'student@example.test' } }] })
+    expect(await settleShare(f.db, f.stripe as never, 'reg-1')).toEqual({ refunded: 0, failed: 0 })
+    expect(f.stripe.refunds.create).not.toHaveBeenCalled()
+    expect(errors.reportError).not.toHaveBeenCalled()
     expect(f.tables.participants[1]).toMatchObject({ share_paid_cents: null })
   })
 
@@ -443,5 +459,143 @@ describe('settlement with a share the webhook couldn\u2019t record', () => {
     const f = setup(group(), { ...REG, share_settled_at: '2026-11-21T00:00:00Z' })
     expect(await settleShare(f.db, f.stripe as never, 'reg-1')).toBeNull()
     expect(f.stripe.checkout.sessions.list).not.toHaveBeenCalled()
+  })
+})
+
+// backlog-batch2.2: Stripe's charge_already_refunded on a share refund means the
+// money is already back (as #715 treats it in the webhook), not a refund to finish by hand.
+describe('a share refund Stripe says is already made', () => {
+  const alreadyRefunded = () => Object.assign(new Error('Charge has already been refunded.'), { type: 'StripeInvalidRequestError', code: 'charge_already_refunded' })
+  const paidShare = () => [person('s1', { individual_payment_status: 'paid', share_paid_cents: 2425, stripe_payment_intent_id: 'pi_s1' })]
+  beforeEach(() => { vi.spyOn(console, 'warn').mockImplementation(() => {}) })
+
+  it('our earlier refund is found and logged once as cash; not a failure, and the share is cleared', async () => {
+    const f = setup(paidShare())
+    f.stripe.refunds.create.mockRejectedValueOnce(alreadyRefunded())
+    f.stripe.refunds.list.mockResolvedValueOnce({ data: [{ id: 're_earlier', amount: 2425, status: 'succeeded', metadata: { source: 'stellr_app', participant_id: 's1', kind: 'share_unwind' } }] })
+    expect(await unwindShares(f.db, f.stripe as never, 'reg-1')).toEqual({ refunded: 1, failed: 0 })
+    expect(f.stripe.refunds.create).toHaveBeenCalledWith(expect.anything(), { idempotencyKey: 'share_unwind-s1-2425' })
+    expect(f.stripe.refunds.list).toHaveBeenCalledWith({ payment_intent: 'pi_s1', limit: 100 })
+    expect(f.tables.event_refunds).toEqual([
+      expect.objectContaining({ participant_id: 's1', refund_type: 'cash', refund_cents: 2425, stripe_refund_id: 're_earlier', kind: 'share_unwind' }),
+    ])
+    expect(f.tables.event_refunds.some((r) => r.refund_type === 'manual_required')).toBe(false)
+    expect(f.tables.participants[0]).toMatchObject({ share_paid_cents: 0 })
+  })
+
+  it('an earlier refund that is already in the log is not logged again', async () => {
+    const f = setup(paidShare())
+    f.tables.event_refunds.push({ participant_id: 's1', refund_type: 'cash', refund_cents: 2425, stripe_refund_id: 're_earlier', kind: 'share_unwind' })
+    f.stripe.refunds.create.mockRejectedValueOnce(alreadyRefunded())
+    f.stripe.refunds.list.mockResolvedValueOnce({ data: [{ id: 're_earlier', amount: 2425, status: 'succeeded', metadata: { participant_id: 's1', kind: 'share_unwind' } }] })
+    expect(await unwindShares(f.db, f.stripe as never, 'reg-1')).toEqual({ refunded: 1, failed: 0 })
+    expect(f.tables.event_refunds).toHaveLength(1)
+    expect(f.tables.participants[0]).toMatchObject({ share_paid_cents: 0 })
+  })
+
+  it('a charge refunded some other way is logged as none for 0, so the log never counts it twice', async () => {
+    const f = setup(paidShare())
+    f.stripe.refunds.create.mockRejectedValueOnce(alreadyRefunded())
+    f.stripe.refunds.list.mockResolvedValueOnce({ data: [{ id: 're_dashboard', amount: 12125, status: 'succeeded', metadata: {} }] })
+    expect(await unwindShares(f.db, f.stripe as never, 'reg-1')).toEqual({ refunded: 1, failed: 0 })
+    expect(f.tables.event_refunds).toEqual([
+      expect.objectContaining({ participant_id: 's1', refund_type: 'none', refund_cents: 0, kind: 'share_unwind' }),
+    ])
+  })
+
+  it('at settlement the true-up counts as done and a re-run has nothing to refund', async () => {
+    const f = setup([
+      person('t', { payer: 'shared', individual_payment_status: 'covered', event_role: 'teacher' }),
+      person('s1', { individual_payment_status: 'paid', share_paid_cents: 2425, stripe_payment_intent_id: 'pi_s1' }),
+      person('s2'), person('s3'), person('s4'), person('s5'),
+    ], { share_cents: 2425, share_first_paid_at: '2026-11-10T00:00:00Z' })
+    f.stripe.refunds.create.mockRejectedValueOnce(alreadyRefunded())
+    f.stripe.refunds.list.mockResolvedValueOnce({ data: [{ id: 're_485', amount: 485, status: 'succeeded', metadata: { participant_id: 's1', kind: 'share_true_up' } }] })
+    expect(await settleShare(f.db, f.stripe as never, 'reg-1')).toEqual({ refunded: 1, failed: 0 })
+    expect(f.tables.event_refunds).toEqual([expect.objectContaining({ refund_type: 'cash', refund_cents: 485, stripe_refund_id: 're_485', kind: 'share_true_up' })])
+    expect(f.tables.participants[1]).toMatchObject({ share_paid_cents: 1940 })
+  })
+
+  it('any other Stripe error is still logged for a person to finish', async () => {
+    const f = setup(paidShare())
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    f.stripe.refunds.create.mockRejectedValueOnce(Object.assign(new Error('charge disputed'), { code: 'charge_disputed' }))
+    expect(await unwindShares(f.db, f.stripe as never, 'reg-1')).toEqual({ refunded: 0, failed: 1 })
+    expect(f.stripe.refunds.list).not.toHaveBeenCalled()
+    expect(f.tables.event_refunds[0]).toMatchObject({ refund_type: 'manual_required', kind: 'share_unwind' })
+    expect(f.tables.participants[0]).toMatchObject({ share_paid_cents: 2425 })
+  })
+})
+
+// backlog-batch2.2: leaving the shared cost recovers a share the webhook couldn't
+// record, as settlement does (#715), and reports one it can't work out.
+describe('leaving the shared cost with a share the webhook couldn\u2019t record', () => {
+  const group = () => [
+    person('t', { payer: 'shared', individual_payment_status: 'covered', event_role: 'teacher' }),
+    person('s1', { individual_payment_status: 'paid', share_paid_cents: null, stripe_payment_intent_id: 'pi_s1' }),
+    person('s2', { individual_payment_status: 'paid', share_paid_cents: 2425, stripe_payment_intent_id: 'pi_s2' }),
+  ]
+  const REG = { share_cents: 2425, share_first_paid_at: '2026-11-10T00:00:00Z' }
+
+  it('takes the split from the Checkout session and refunds that share too', async () => {
+    const f = setup(group(), REG)
+    f.stripe.checkout.sessions.list.mockImplementation(async ({ payment_intent }) => ({
+      data: payment_intent === 'pi_s1'
+        ? [{ id: 'cs_s1', metadata: { participantId: 's1', teacherShare: 'true', baseCents: '9700', shareCents: '2425' } }]
+        : [],
+    }))
+    expect(await unwindShares(f.db, f.stripe as never, 'reg-1')).toEqual({ refunded: 2, failed: 0 })
+    expect(f.stripe.refunds.create.mock.calls.map((c) => [(c[0] as unknown as { payment_intent: string }).payment_intent, (c[0] as unknown as { amount: number }).amount]))
+      .toEqual([['pi_s1', 2425], ['pi_s2', 2425]])
+    expect(f.tables.participants[1]).toMatchObject({ base_paid_cents: 9700, share_paid_cents: 0 })
+    expect(errors.reportError).not.toHaveBeenCalled()
+    expect(f.reg).toMatchObject({ share_estimate: null, share_cents: null, share_first_paid_at: null })
+  })
+
+  it('a session that isn\u2019t a shared-cost one: they paid before sharing, nothing to refund or report', async () => {
+    const f = setup(group(), REG)
+    f.stripe.checkout.sessions.list.mockImplementation(async ({ payment_intent }) => ({
+      data: payment_intent === 'pi_s1' ? [{ id: 'cs_old', metadata: { participantId: 's1', isIndividualGroupPayment: 'true' } }] : [],
+    }))
+    expect(await unwindShares(f.db, f.stripe as never, 'reg-1')).toEqual({ refunded: 1, failed: 0 })
+    expect(f.stripe.refunds.create).toHaveBeenCalledTimes(1)
+    expect(errors.reportError).not.toHaveBeenCalled()
+  })
+
+  it('a per-seat session from before PAY-7 (no participantId, no share): nothing to refund or report', async () => {
+    const f = setup(group(), REG)
+    f.stripe.checkout.sessions.list.mockImplementation(async ({ payment_intent }) => ({
+      data: payment_intent === 'pi_s1' ? [{ id: 'cs_old', metadata: { isIndividualGroupPayment: 'true', participantEmail: 'student@example.test' } }] : [],
+    }))
+    expect(await unwindShares(f.db, f.stripe as never, 'reg-1')).toEqual({ refunded: 1, failed: 0 })
+    expect(f.stripe.refunds.create.mock.calls.map((c) => (c[0] as unknown as { payment_intent: string }).payment_intent)).toEqual(['pi_s2'])
+    expect(errors.reportError).not.toHaveBeenCalled()
+  })
+
+  it('a share that can\u2019t be worked out is reported to app_errors with the ids only, and the rest still unwinds', async () => {
+    const f = setup(group(), REG)
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    f.stripe.checkout.sessions.list.mockRejectedValue(new Error('stripe down'))
+    expect(await unwindShares(f.db, f.stripe as never, 'reg-1')).toEqual({ refunded: 1, failed: 0 })
+    expect(errors.reportError).toHaveBeenCalledTimes(1)
+    const [err, opts] = errors.reportError.mock.calls[0]
+    expect((err as Error).message).toContain('registration reg-1, participant s1')
+    expect((err as Error).message).toContain('checkout session lookup failed')
+    expect(opts).toEqual({ route: 'lib/teacher-share unwindShares' })
+    expect(f.reg).toMatchObject({ share_estimate: null })
+  })
+
+  it('no session for the payment, or a paid seat with no payment intent, is reported too', async () => {
+    const f = setup([
+      ...group(),
+      person('s3', { individual_payment_status: 'paid', share_paid_cents: null, stripe_payment_intent_id: null }),
+    ], REG)
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    await unwindShares(f.db, f.stripe as never, 'reg-1')
+    const messages = errors.reportError.mock.calls.map((c) => (c[0] as Error).message)
+    expect(messages).toEqual([
+      expect.stringContaining('participant s1 (no checkout session for the payment)'),
+      expect.stringContaining('participant s3 (no payment intent recorded)'),
+    ])
   })
 })

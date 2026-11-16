@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { Pencil, Trash2 } from 'lucide-react'
 import { Dialog } from '@stellr/web-ui'
@@ -31,6 +31,11 @@ function BinaryActions({
   const [value, setValue] = useState(title)
   const [confirming, setConfirming] = useState(false)
   const [busy, setBusy] = useState(false)
+  const renameInputRef = useRef<HTMLInputElement>(null)
+  // Focus the field when a click opens it (no autoFocus: jsx-a11y/no-autofocus).
+  useEffect(() => {
+    if (editing) renameInputRef.current?.focus()
+  }, [editing])
 
   const rename = async () => {
     const next = value.trim()
@@ -68,7 +73,7 @@ function BinaryActions({
           value={value}
           onChange={(e) => setValue(e.target.value)}
           maxLength={200}
-          autoFocus
+          ref={renameInputRef}
           className="w-44 rounded border border-line-strong px-2 py-1 text-input mouse:text-xs focus:border-brand-blue-dark focus:outline-hidden"
         />
         <button onClick={rename} disabled={busy} className="rounded bg-brand-blue-dark px-2 py-1 text-xs font-medium text-white disabled:opacity-50">

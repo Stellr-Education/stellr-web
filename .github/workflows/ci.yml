@@ -670,9 +670,9 @@ jobs:
           run=true
           if [ "$EVENT" = pull_request ]; then
             files=$(git diff --name-only --no-renames HEAD^1 HEAD || true)
-            if [ -n "$files" ] && ! echo "$files" | grep -qE '^supabase/|^\.github/workflows/ci\.yml$'; then
+            if [ -n "$files" ] && ! echo "$files" | grep -qE '^supabase/|^\.github/workflows/ci\.yml$|^lib/database\.generated\.ts$'; then
               run=false
-              echo "No change under supabase/ or to ci.yml: database checks skipped." >> "$GITHUB_STEP_SUMMARY"
+              echo "No change under supabase/, to ci.yml or to lib/database.generated.ts: database checks skipped." >> "$GITHUB_STEP_SUMMARY"
             fi
           fi
           echo "run=$run" >> "$GITHUB_OUTPUT"
@@ -734,6 +734,28 @@ jobs:
             count=$((count + 1))
           done
           echo "Applied $count migrations on top of the baseline." | tee -a "$GITHUB_STEP_SUMMARY"
+
+      # Database types (deep-review-v2.8), generated from the schema just built,
+      # before any test runs against it. Uploaded so a drift can be fixed by
+      # committing the artifact (docs/RUNBOOK-ci-database.md, "Regenerating
+      # database types"); compared with the committed file at the end of the job.
+      - if: steps.scope.outputs.run == 'true'
+        name: Generate database types
+        run: |
+          supabase gen types typescript --local --schema public > /tmp/database.generated.ts
+          if [ ! -s /tmp/database.generated.ts ]; then
+            echo "::error::supabase gen types produced no output."
+            exit 1
+          fi
+          echo "Generated $(wc -l < /tmp/database.generated.ts) lines of database types." | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - if: steps.scope.outputs.run == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: database-types
+          path: /tmp/database.generated.ts
+          retention-days: 14
+          if-no-files-found: error
 
       # pgTAP. Pass the directory: the other files in supabase/tests/ are
       # manual SQL-editor checks, not pgTAP.
@@ -856,6 +878,25 @@ jobs:
           report | tee -a "$GITHUB_STEP_SUMMARY"
           echo "::warning::The repository schema differs from the production dump: $n_prod object(s) only in production, $n_repo only in the repository, $n_changed with different definitions. Identifiers are in the job summary."
           exit 1
+
+      # The committed lib/database.generated.ts must match the types generated
+      # above. Only supabase/ is checked out, so the committed file is read from
+      # git (one blob, fetched on demand). Last in the job so a drift never hides
+      # the pgTAP results. The schema is the repository's own, already public.
+      - if: steps.scope.outputs.run == 'true'
+        name: Database types drift check
+        run: |
+          committed="$RUNNER_TEMP/database.generated.committed.ts"
+          if ! git show HEAD:lib/database.generated.ts > "$committed" 2>/dev/null || [ ! -s "$committed" ]; then
+            echo "::error file=lib/database.generated.ts::lib/database.generated.ts is missing or empty. Download the database-types artifact from this run (gh run download <run-id> -n database-types -D lib), commit it as lib/database.generated.ts, and push."
+            exit 1
+          fi
+          if ! diff -u "$committed" /tmp/database.generated.ts > "$RUNNER_TEMP/types.diff"; then
+            echo "::error file=lib/database.generated.ts::lib/database.generated.ts is out of date with the migrations ($(grep -cE '^[-+][^-+]' "$RUNNER_TEMP/types.diff") changed lines). Download the database-types artifact from this run (gh run download <run-id> -n database-types -D lib), commit it, and push. See docs/RUNBOOK-ci-database.md, 'Regenerating database types'."
+            head -n 200 "$RUNNER_TEMP/types.diff"
+            exit 1
+          fi
+          echo "lib/database.generated.ts matches the schema built from the migrations." | tee -a "$GITHUB_STEP_SUMMARY"
 
   # S5 C11: tenantDb's Postgres driver (lib/tenancy/driver.ts) against a real
   # database. The same throwaway local database as `db` (baseline plus every

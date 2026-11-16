@@ -12,7 +12,7 @@ import {
   setGroupDiscount,
 } from '@/lib/group-billing'
 import { withAudit } from '@/lib/audit/route'
-import { loadEventRecord, refuseOutsideStellr, refuseUnlessStellrEvent } from '@/lib/tenancy/load-scoped'
+import { loadEventRecord, stellrOnlyEvent } from '@/lib/tenancy/load-scoped'
 import { rowTenant } from '@/lib/registration/event-context'
 
 // "Invoice & discount…" on a group in the event roster.
@@ -62,11 +62,10 @@ async function guard(db: Db, id: string, req: Request) {
   // takes it to be.
   if (rowTenant(loaded.row.tenant_id) !== crew.tenantId) return notFound()
   // Every action here reads or changes Stellr's Stripe account, its coupons included.
-  const refused = refuseOutsideStellr(crew.scope)
-  if (refused) return refused
-  // So the group's event must be Stellr's, for a Stellr admin too. Another tenant's answers
-  // as a missing group; a failed read of the event's owner is a retryable 503.
-  const foreign = await refuseUnlessStellrEvent(db, loaded.row.event_slug, ROUTE)
+  // So a tenant's staff are refused (503), and the group's event must be Stellr's, for a Stellr
+  // admin too: another tenant's answers as a missing group, and a failed read of the event's
+  // owner is a retryable 503 (stellrOnlyEvent).
+  const foreign = await stellrOnlyEvent(crew.scope, db, loaded.row.event_slug, ROUTE)
   if (foreign) return foreign.status === 404 ? notFound() : foreign
   const actorLabel: InvoiceActorLabel = (await crewActorType()) === 'staff' ? 'staff' : crew.isAdmin ? 'admin' : 'event_manager'
   return { slug: loaded.row.event_slug, teacherMemberId: loaded.row.teacher_member_id ?? null, isAdmin: crew.isAdmin, actorLabel }

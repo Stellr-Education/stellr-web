@@ -2,14 +2,14 @@
  * Fill members.graduation_year from the grade, for school students who have a
  * grade on file and no graduation year (alumni.mentor-upgrade, REG-23).
  *
- * Why: the July-1 Alumni upgrade (app/api/cron/alumni-upgrades) reads
+ * Why: the Alumni upgrade (app/api/cron/alumni-upgrades) reads
  * graduation_year, and until onboarding and the admin editor wrote it nothing
  * did, so the cron had no one to upgrade. New members now give it; this is the
  * one-off for the members already on file. docs/PLAN-former-student-mentor-
  * upgrade.md §3.
  *
  *   npx tsx scripts/backfill-graduation-year.ts --env-file .env.local            # report only (default): writes nothing
- *   npx tsx scripts/backfill-graduation-year.ts --env-file .env.local --apply    # write the years
+ *   npx tsx scripts/backfill-graduation-year.ts --env-file .env.local --apply    # write the years (August to June only)
  *   options: --production   required as well when the env file names the production project (owner only)
  *            --batch <n>    rows read per page (default 500, 1–1000)
  *
@@ -21,7 +21,13 @@
  * graduates in the current school year (named for the year it ends; August is
  * the cutover), grade 11 the year after, and so on. A grade that has gone stale
  * can only make the year later than the truth, never earlier, so this cannot
- * upgrade anyone to Alumni early.
+ * upgrade anyone to Alumni early. The report counts how many filled years the
+ * cron would treat as graduated (hasGraduated, the cron's own rule in
+ * app/api/cron/alumni-upgrades/graduated.ts); it should always be 0.
+ *
+ * --apply is refused in July (from 1 July until the August rollover): a grade
+ * read then may be last year's or next year's, so a rising senior could be
+ * given this school year and upgraded a year early. Report mode runs any time.
  *
  * Guards: refuses to run without an explicit --env-file (nothing is read from
  * the shell's environment or a default file), refuses the production project
@@ -38,6 +44,7 @@ import * as path from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { PRODUCTION_SUPABASE_REF } from './production-guard.mjs'
 import { graduationYearFromGrade } from '../lib/graduation-year'
+import { hasGraduated, inRolloverGap } from '../app/api/cron/alumni-upgrades/graduated'
 
 // ── Arguments and guards ────────────────────────────────────────────────────
 
@@ -88,6 +95,20 @@ export function argRefusal(opts: Options, fileExists: (p: string) => boolean = f
   return null
 }
 
+/**
+ * Why an --apply must not run on `now`, or null. From 1 July until the school
+ * year rolls over in August a grade on file is ambiguous, so writes wait for
+ * August (backlog-batch2.10 review note). Report mode is always allowed.
+ */
+export function applyRefusal(opts: Pick<Options, 'apply'>, now: Date = new Date()): string | null {
+  if (!opts.apply || !inRolloverGap(now)) return null
+  return (
+    'Refusing --apply in July: the school year rolls over in August, and until then a grade on file ' +
+    'may already describe next year, so a rising senior could be upgraded to Alumni a year early. ' +
+    'Run --apply from August to June. Report mode (no --apply) works any time.'
+  )
+}
+
 /** Why the run must not start once the env file is loaded, or null. */
 export function envRefusal(opts: Options, url: string | undefined): string | null {
   if (!url) return 'NEXT_PUBLIC_SUPABASE_URL is not set in the env file.'
@@ -119,6 +140,8 @@ export interface Report {
   /** Member ids to fill, by the year each gets. */
   byYear: Map<number, string[]>
   skipped: Record<Skip, number>
+  /** Planned years the alumni cron would already treat as graduated (should be 0). */
+  graduated: number
   updated: number
   failed: number
 }
@@ -130,6 +153,7 @@ export function formatReport(r: Report, apply: boolean): string[] {
     `${r.scanned} member(s) read with a grade and no graduation year; ${eligible} school student(s) to fill` +
       (apply ? `; ${r.updated} written, ${r.failed} failed` : ' (report only: nothing written)'),
     `  skipped: ${r.skipped.not_a_school_student} not a school student, ${r.skipped.not_a_school_grade} without a school grade`,
+    `  ${r.graduated} would be upgraded to Alumni by the next cron run`,
   ]
   for (const [year, ids] of [...r.byYear].sort(([a], [b]) => a - b)) {
     lines.push(`  ${year}: ${ids.length}`)
@@ -171,7 +195,10 @@ export async function backfill(
   opts: Pick<Options, 'apply' | 'batch'>,
   now: Date = new Date(),
 ): Promise<Report> {
-  const r: Report = { scanned: 0, byYear: new Map(), skipped: { not_a_school_grade: 0, not_a_school_student: 0 }, updated: 0, failed: 0 }
+  // main() refuses first; checked here too so no caller can write in July.
+  const refused = applyRefusal(opts, now)
+  if (refused) throw new Error(refused)
+  const r: Report = { scanned: 0, byYear: new Map(), skipped: { not_a_school_grade: 0, not_a_school_student: 0 }, graduated: 0, updated: 0, failed: 0 }
   let last: string | null = null
   for (;;) {
     let q = db
@@ -192,6 +219,7 @@ export async function backfill(
         r.skipped[plan.skip]++
         continue
       }
+      if (hasGraduated(plan.year, now)) r.graduated++
       const ids = r.byYear.get(plan.year) ?? []
       ids.push(row.id)
       r.byYear.set(plan.year, ids)
@@ -227,7 +255,7 @@ async function main(): Promise<number> {
     console.error(opts.error)
     return 1
   }
-  const refusedArgs = argRefusal(opts)
+  const refusedArgs = argRefusal(opts) ?? applyRefusal(opts)
   if (refusedArgs) {
     console.error(refusedArgs)
     return 1

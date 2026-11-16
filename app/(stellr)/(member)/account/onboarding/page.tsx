@@ -1,11 +1,15 @@
-import { auth } from '@clerk/nextjs/server'
+import { auth, currentUser } from '@clerk/nextjs/server'
+import Link from 'next/link'
 import { redirect } from 'next/navigation'
+import { Button } from '@stellr/web-ui'
 import { OnboardingForm, PendingConsentPanel, type SelectedTier } from '@/components/member/OnboardingForm'
 import { minorSelfSignupEnabled, readPendingConsent, settlePendingConsent } from '@/lib/pending-consent'
 import { supabaseServer } from '@/lib/supabase'
 import { tierBySlug } from '@/app/(stellr)/(public)/membership/tier-data'
 import { impersonatedMemberId } from '@/lib/impersonation'
 import { safeNext } from '@/lib/safe-next'
+import { memberAccountClosed } from './account-closed'
+import { normalizeEmail } from '@/lib/member-enums'
 
 export const metadata = { title: 'Complete Your Profile' }
 
@@ -43,6 +47,18 @@ export default async function OnboardingPage({
   // Admin view-as: resolve the member being viewed, not the admin.
   const viewAsId = await impersonatedMemberId()
   const db = supabaseServer()
+
+  // A closed (deactivated) account gets one clear answer, never the form: the
+  // POST refuses it anyway, so the form would only loop. Asked first, before
+  // anything below can read further or write.
+  if (!viewAsId) {
+    const clerkUser = await currentUser()
+    const primaryEmail = normalizeEmail(
+      clerkUser?.emailAddresses.find((e) => e.id === clerkUser.primaryEmailAddressId)?.emailAddress,
+    )
+    if (await memberAccountClosed(db, userId, primaryEmail)) return <AccountClosed />
+  }
+
   const memberQuery = db.from('members').select('id, date_of_birth, gender, age_bracket, event_role')
   const { data: member } = viewAsId
     ? await memberQuery.eq('id', viewAsId).maybeSingle()
@@ -95,6 +111,22 @@ export default async function OnboardingPage({
         volunteerFlow={volunteerFlow}
         minorSelfSignup={minorSelfSignupEnabled()}
       />
+    </div>
+  )
+}
+
+function AccountClosed() {
+  return (
+    <div className="max-w-2xl mx-auto">
+      <div className="mb-8">
+        <h1 className="font-heading text-ds-h2 text-ink">This account is closed</h1>
+        <p className="mt-2 text-sm text-content-body">
+          There is nothing to set up here. If you think it was closed by mistake, contact us and we&rsquo;ll look into it.
+        </p>
+      </div>
+      <Button href="/contact" as={Link}>
+        Contact Stellr
+      </Button>
     </div>
   )
 }

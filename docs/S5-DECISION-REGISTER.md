@@ -4,7 +4,7 @@ One list of the owner decisions that S5 wave 7 depends on, grouped by the gate e
 
 This is a new file so that it never collides with `docs/TENANCY-S5.md`, which stays the plan of record. Decisions already written up elsewhere are linked, not copied (see [Settled elsewhere](#settled-elsewhere)). Open questions go to the owner about 5 at a time, each with its default. Tracker row `s5-programme.41` points here. Batch 2 was answered on 12 Nov 2026, with the merges of A10a (#655) and A10b (#660). Batch 3 (`W7-14` and `W7-17` to `W7-32`) and the remaining questions from wave 7 PR bodies were answered on 13 Nov 2026. The row stays open until the rest of the decisions are added.
 
-Started 12 Nov 2026; batch 2, `W7-16` and the PR-review answers recorded on 12 Nov 2026 (docs train D2); batch 3, the dev canary zone and the rest of the PR-review answers recorded on 13 Nov 2026 (docs train D3); the open questions from backlog batch 1's and batch 2's S5 PRs recorded on 14 Nov 2026. People are named by role only: "the owner" is the programme's owner.
+Started 12 Nov 2026; batch 2, `W7-16` and the PR-review answers recorded on 12 Nov 2026 (docs train D2); batch 3, the dev canary zone and the rest of the PR-review answers recorded on 13 Nov 2026 (docs train D3); the open questions from backlog batch 1's and batch 2's S5 PRs recorded on 14 Nov 2026, and batch 3's on 15 Nov 2026. People are named by role only: "the owner" is the programme's owner.
 
 ## How to read an entry
 
@@ -125,7 +125,7 @@ Raised by the reviews of batch 1's S5 PRs (`docs/handovers/tracker/2026-11-14-ba
 
 ## Open: backlog batch 2 PR review (14 Nov 2026)
 
-Raised by the reviews of batch 2's S5 PRs, none merged on 14 Nov 2026 (`docs/handovers/tracker/2026-11-14-backlog-batch2.md`). Each is open; the default is what the PR builds unless it says otherwise, and nothing changes until the owner answers or merges. Platform audit is off everywhere, so `PR721-1` gates `PLATFORM_AUDIT_ENABLED`, not the merge.
+Raised by the reviews of batch 2's S5 PRs (`docs/handovers/tracker/2026-11-14-backlog-batch2.md`), all of which merged into `dev` on 15 Nov 2026. Each question is still open; the default is what the PR built unless it says otherwise, and it stands until the owner answers. `PR725-1`'s follow-up is built in batch 3's #738 (`PR738-2`). Platform audit is off everywhere, so `PR721-1` gates `PLATFORM_AUDIT_ENABLED`, not the merge.
 
 | Id | Question | Recommended default | Answer | Answered |
 |---|---|---|---|---|
@@ -134,6 +134,16 @@ Raised by the reviews of batch 2's S5 PRs, none merged on 14 Nov 2026 (`docs/han
 | PR721-1 | **#721, "Not you?" on check-in:** `DELETE /api/check-in` is unauthenticated and not rate-limited. With platform audit on, each request appends one row to the append-only chain, with an anonymous actor, no tenant and no target, so anyone could flood a table that is never erased | Drop the audit event from that handler (the row carries no information); rate-limiting it is the alternative. Decide before `PLATFORM_AUDIT_ENABLED` is set anywhere | Open | open |
 | PR725-1 | **#725, C20a:** a failed `events` read in `ensureEventMerchOrder` now returns quietly. At registration, a registrant's chosen add-ons are dropped and only the fee is charged; with a full scholarship plus add-ons, the registration is left unconfirmed. Ignored errors on this path already behaved this way | Accept for the merge, and make that read fail loudly in the registration path in a follow-up slice | Open | open |
 | PR728-1 | **#728, the roster opt-out pill:** on a tenant event, the pill and the CSV columns fall back to the member's newest Stellr agreement, which can be from a form signed for another event. Only Stellr staff see it (the page and export are Stellr-scoped), so nothing crosses tenants | Accept for now: every event is Stellr's today; revisit when tenant agreements exist | Open | open |
+
+## Open: backlog batch 3 PR review (15 Nov 2026)
+
+Raised by the reviews of batch 3's S5 PRs, none merged on 15 Nov 2026 (`docs/handovers/tracker/2026-11-15-backlog-batch3.md`). Each is open; the default is what the PR builds, and nothing changes until the owner answers or merges. `B3-AUDIT-1` belongs to a slice that is built but not yet pushed, because open PR #730 changes the same audit baseline. Platform audit is off everywhere.
+
+| Id | Question | Recommended default | Answer | Answered |
+|---|---|---|---|---|
+| PR738-1 | **#738, REQ-EVT's placement:** the plan put the Stellr-only check inside `requireEventAccess`. It is built as a separate `stellrOnlyEvent(scope, db, slug, label)` in `lib/tenancy/load-scoped.ts`, because nine route test files mock `@/lib/authz` wholesale, so a check inside it would vanish under the mocks and their existing 404 and 503 tests would fail. Same order, reads and answers as the hand-written checks it replaces | Accept the separate option; the guard test holds register entries to it, and C19a clears the pending list | Open | open |
+| PR738-2 | **#738, event merch at registration:** a failed `events` read now fails loudly (the follow-up to `PR725-1`). On the individual path it is thrown after the registration is saved and its hooks have run, before checkout: the registrant sees a generic error and has a pending registration with no pay link, and a retry counts against the hourly limit. The old code dropped the chosen add-ons silently | Accept: a visible failure staff can see in `app_errors` beats charging without the add-ons. Revisit if the read fails in practice | Open | open |
+| B3-AUDIT-1 | **The admin-only audit slice (`backlog-batch3.1`), the access routes keyed by slug:** the audit row's chain is picked from the raw URL slug. `resolveTenant` checks it against the events mirror (the platform chain, `tenant_unresolved`, on a miss) and the slug is never stored, so the result matches a verified slug, but the spec said never to use the raw URL param | Accept, as built; the alternative is to resolve the slug through `getMirroredEvent` in the route and pass the tenant id | Open | open |
 
 ## Settled elsewhere
 

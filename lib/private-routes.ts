@@ -65,6 +65,16 @@ function linkedUrl(value: string): URL | null {
 }
 
 /**
+ * A page that hands the visitor on to a URL named in its query (sign-in,
+ * sign-up, onboarding). Whether one is private depends on that query, so a
+ * caller that cannot see the query yet must treat it as private.
+ */
+export function isHandoffPath(pathname: string): boolean {
+  const q = pathname.indexOf('?')
+  return HANDOFF.test(q === -1 ? pathname : pathname.slice(0, q))
+}
+
+/**
  * Whether a page's address is a private link (see above). `pathname` may carry
  * its own `?query`; `search` is the query when it is passed separately, as
  * `URL.search` or `URLSearchParams`. Without either, only the path decides.

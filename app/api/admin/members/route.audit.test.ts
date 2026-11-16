@@ -2,6 +2,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { fakeSupabase, type FakeDb } from '@/test/fake-supabase'
 import { STELLR_TENANT_ID } from '@/lib/tenancy/constants'
+import { sanitizeMetadata } from '@/lib/audit/platform'
 
 // The admin member routes a Stellr Staff member can write (Staff role P3/P4, GATE-AUDIT):
 // each records one platform audit event on Stellr's chain, naming the signed-in caller,
@@ -112,9 +113,22 @@ describe('members: create', () => {
     const { member } = await res.json()
     await flush()
     expect(recorded()).toEqual([
-      { ...common, action: 'member.record.create', target: { table: 'members', id: member.id }, metadata: { school_linked: false, tier_assigned: false, status: 201 } },
+      { ...common, action: 'member.record.create', target: { table: 'members', id: member.id }, metadata: { org_linked: false, tier_assigned: false, status: 201 } },
     ])
     expect(JSON.stringify(h.audits)).not.toMatch(/New|Person|example\.test|1990/)
+  })
+
+  it('every metadata key it records survives the real sanitiser (a key naming personal data is dropped)', async () => {
+    // audit() is mocked above, so the metadata it receives is unsanitised: run it through
+    // the real sanitizeMetadata, which the live write applies, and check nothing is lost.
+    // A key containing a denied word ('school_linked' contains 'school') would be dropped.
+    const res = await createMember(send('POST', '', { first_name: 'New', last_name: 'Person', email: 'new@example.test', date_of_birth: '1990-02-03', gender: 'female' }))
+    expect(res.status).toBe(201)
+    await flush()
+    const metadata = h.audits[0].metadata as Record<string, unknown>
+    expect(metadata).toHaveProperty('org_linked', false)
+    expect(sanitizeMetadata(metadata)).toEqual(metadata)
+    expect(sanitizeMetadata({ school_linked: true })).toEqual({})
   })
 
   it('a refusal (409 for a duplicate email) records nothing', async () => {

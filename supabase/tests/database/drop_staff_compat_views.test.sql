@@ -8,7 +8,7 @@
 BEGIN;
 SET LOCAL search_path = extensions, public;
 
-SELECT plan(8);
+SELECT plan(15);
 
 -- ── 1. The old names are gone, as views and as anything else ─────────────────
 SELECT hasnt_view('public', 'staff_roles', 'the staff_roles compatibility view is dropped');
@@ -23,9 +23,25 @@ SELECT has_table('public', 'admin_duties', 'admin_duties (was staff_roles) still
 SELECT has_table('public', 'event_crew_check_ins', 'event_crew_check_ins (was event_staff_check_ins) still exists');
 SELECT has_column('public', 'event_crew_check_ins', 'crew_key',
   'event_crew_check_ins keeps its crew_key column');
-SELECT ok(has_table_privilege('service_role', 'public.admin_duties', 'SELECT, INSERT, UPDATE, DELETE')
-          AND has_table_privilege('service_role', 'public.event_crew_check_ins', 'SELECT, INSERT, UPDATE, DELETE'),
-  'service_role can still read and write both renamed tables');
+-- ── 3. service_role keeps every privilege it needs, each checked on its own ──
+-- has_table_privilege with a comma-separated list is true if ANY one of them is
+-- held, so each privilege is asserted separately on each table.
+SELECT ok(has_table_privilege('service_role', 'public.admin_duties', 'SELECT'),
+  'service_role can SELECT from admin_duties');
+SELECT ok(has_table_privilege('service_role', 'public.admin_duties', 'INSERT'),
+  'service_role can INSERT into admin_duties');
+SELECT ok(has_table_privilege('service_role', 'public.admin_duties', 'UPDATE'),
+  'service_role can UPDATE admin_duties');
+SELECT ok(has_table_privilege('service_role', 'public.admin_duties', 'DELETE'),
+  'service_role can DELETE from admin_duties');
+SELECT ok(has_table_privilege('service_role', 'public.event_crew_check_ins', 'SELECT'),
+  'service_role can SELECT from event_crew_check_ins');
+SELECT ok(has_table_privilege('service_role', 'public.event_crew_check_ins', 'INSERT'),
+  'service_role can INSERT into event_crew_check_ins');
+SELECT ok(has_table_privilege('service_role', 'public.event_crew_check_ins', 'UPDATE'),
+  'service_role can UPDATE event_crew_check_ins');
+SELECT ok(has_table_privilege('service_role', 'public.event_crew_check_ins', 'DELETE'),
+  'service_role can DELETE from event_crew_check_ins');
 
 SELECT * FROM finish();
 ROLLBACK;

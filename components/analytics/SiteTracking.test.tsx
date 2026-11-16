@@ -240,3 +240,105 @@ describe('hydrating the markup the server sent', () => {
     await unmount()
   })
 })
+
+// Registration identity hardening: a guest who opens a pay or join link is sent
+// to sign in (or on to onboarding) with that link in ?next, so the page's own
+// address carries the token. The path alone looks public; the query decides.
+describe('SiteTracking on a sign-in or onboarding page whose query names a private link', () => {
+  const JOIN = '/register/sample-event/join/sampletoken'
+  const PAY = '/register/sample-event/pay/sampletoken'
+  const at = (path: string, search: string) => {
+    pathname = path
+    vi.stubGlobal('location', new URL(`https://www.stellreducation.org${path}${search}`))
+  }
+
+  for (const page of ['/sign-in', '/sign-up', '/account/onboarding']) {
+    for (const link of [JOIN, PAY]) {
+      it(`loads no tag on ${page}?next=${link}`, () => {
+        at(page, `?next=${encodeURIComponent(link)}`)
+        render(<SiteTracking />)
+        expect(log.rendered).toEqual([])
+        expect(log.mounted).toEqual([])
+        expect(banner()).toBeNull()
+      })
+    }
+  }
+
+  it('loads no tag when sign-in hands on to onboarding that names the link', () => {
+    at('/sign-in', `?next=${encodeURIComponent(`/account/onboarding?next=${encodeURIComponent(JOIN)}`)}`)
+    render(<SiteTracking />)
+    expect(log.rendered).toEqual([])
+  })
+
+  it('still mounts all five on sign-in with an ordinary ?next, or none', () => {
+    at('/sign-in', `?next=${encodeURIComponent('/community/events')}`)
+    render(<SiteTracking />)
+    expect([...log.mounted].sort()).toEqual(ALL)
+    cleanup()
+    log.mounted.length = 0
+    at('/account/onboarding', '')
+    render(<SiteTracking />)
+    expect([...log.mounted].sort()).toEqual(ALL)
+  })
+
+  it('drops an analytics event whose URL carries a private ?next', () => {
+    at('/about', '')
+    render(<SiteTracking />)
+    for (const send of [log.beforeSend.analytics, log.beforeSend.speedInsights]) {
+      expect(send?.({ url: `https://www.stellreducation.org/sign-in?next=${encodeURIComponent(JOIN)}` })).toBeNull()
+      const open = { url: `https://www.stellreducation.org/sign-in?next=${encodeURIComponent('/home')}` }
+      expect(send?.(open)).toBe(open)
+    }
+  })
+
+  it('sends no tag in the server markup for a sign-in page, before the query can be read', () => {
+    pathname = '/sign-in'
+    vi.stubGlobal('location', new URL(`https://www.stellreducation.org/sign-in?next=${encodeURIComponent(JOIN)}`))
+    const html = renderToString(<SiteTracking />)
+    expect(html).not.toContain('data-cookie-banner')
+    expect(log.rendered).toEqual([])
+  })
+})
+
+describe('hydrating a sign-in page', () => {
+  const page = (
+    <>
+      <SiteTracking />
+      <p>next in the body</p>
+    </>
+  )
+
+  async function hydrateAt(search: string) {
+    pathname = '/sign-in'
+    vi.stubGlobal('location', new URL('https://www.stellreducation.org/sign-in'))
+    const html = renderToString(page)
+    log.rendered.length = 0
+    vi.stubGlobal('location', new URL(`https://www.stellreducation.org/sign-in${search}`))
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    container.innerHTML = html
+    const recoverable: string[] = []
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+    let root: ReturnType<typeof hydrateRoot> | undefined
+    await act(async () => {
+      root = hydrateRoot(container, page, { onRecoverableError: (e) => { recoverable.push(String(e)) } })
+    })
+    return { recoverable, errors: consoleError.mock.calls, unmount: () => act(async () => root?.unmount()) }
+  }
+
+  it('mounts all five after hydration when ?next is ordinary, with no mismatch', async () => {
+    const { recoverable, errors, unmount } = await hydrateAt(`?next=${encodeURIComponent('/home')}`)
+    expect([...log.mounted].sort()).toEqual(ALL)
+    expect(recoverable).toEqual([])
+    expect(errors).toEqual([])
+    await unmount()
+  })
+
+  it('never mounts a tracker when ?next is a join link, not even for the hydration pass', async () => {
+    const { recoverable, errors, unmount } = await hydrateAt(`?next=${encodeURIComponent('/register/sample-event/join/sampletoken')}`)
+    expect(log.mounted).toEqual([])
+    expect(recoverable).toEqual([])
+    expect(errors).toEqual([])
+    await unmount()
+  })
+})

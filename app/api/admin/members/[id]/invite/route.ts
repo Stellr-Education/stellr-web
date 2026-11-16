@@ -6,15 +6,9 @@ import { supabaseServer } from '@/lib/supabase'
 import { getSignedInMember } from '@/lib/community'
 import { sendAccountInvite } from '@/lib/member-invite'
 import { withAudit } from '@/lib/audit/route'
+import { memberIdOf } from '@/lib/audit-route-helpers'
 
 type Ctx = { params: Promise<{ id: string }> }
-
-/** The member in the URL, /api/admin/members/<id>/…: the event's target. */
-function memberIdOf(req: Request): string | null {
-  const parts = new URL(req.url).pathname.split('/')
-  const at = parts.indexOf('members')
-  return at < 0 ? null : (parts[at + 1] ?? null)
-}
 
 // Platform audit (docs/TENANCY-S5.md, C7). A refusal (not found, complete, cooldown) is
 // a 4xx and records nothing; a send that failed is a 502 and is recorded.

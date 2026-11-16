@@ -89,5 +89,8 @@ Norwester system is retired.
 - Storybook (`npm run storybook`) is the living component reference.
 - The V2 handoff package (`Stellr — Design System.dc.html`, `Competitions —
   Redesign v2.dc.html`) is not in the repo; `design/tokens.json` and Storybook
-  are the source of truth. The June member-app IA package is archived at
+  are the source of truth. Standalone Claude Design closes by 14 Dec 2026; the
+  handoff files survive only in the owner's private export
+  (`account-migration.3`), and `.design-sync/NOTES.md` says whether syncs to
+  Claude Design still run. The June member-app IA package is archived at
   `docs/archive/design-handoff-app-redesign/` (tokens superseded, flows still valid).

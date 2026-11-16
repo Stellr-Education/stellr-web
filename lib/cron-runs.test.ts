@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { lastCronResult, startCronRun, startTenantRun, type CronRun } from '@/lib/cron-runs'
+import { cronRunState, distinctFailures, lastCronResult, REPORTED_FAILURES_PER_RUN, startCronRun, startTenantRun, type CronRun } from '@/lib/cron-runs'
 
 // lastCronResult is how a cron carries a cursor between runs (apollo-reconcile's
 // nextOffset). It must read only FINISHED runs — a killed run has no result —
@@ -170,5 +170,46 @@ describe('startTenantRun', () => {
     const thrown = await startTenantRun(fakeWriteDb({ throws: true }).db, parent('p'), 'surveys', 'tenant-b')
     expect(thrown.id).toBeNull()
     spy.mockRestore()
+  })
+})
+
+// S5 B26: the helpers the cron ledger (lib/cron-ledger.ts) shares with the
+// app_errors report, so the two read a run the same way.
+describe('distinctFailures', () => {
+  it('keeps the first of each (where, message) pair, in order, up to the cap', () => {
+    const errors = [
+      { where: 'a', message: 'x' },
+      { where: 'a', message: 'x' },
+      { where: 'b', message: 'x' },
+      { where: 'a', message: 'y' },
+    ]
+    expect(distinctFailures(errors)).toEqual([
+      { where: 'a', message: 'x' },
+      { where: 'b', message: 'x' },
+      { where: 'a', message: 'y' },
+    ])
+    expect(distinctFailures(errors, 2)).toHaveLength(2)
+    expect(distinctFailures(Array.from({ length: 9 }, (_, i) => ({ where: `w${i}`, message: 'm' })))).toHaveLength(REPORTED_FAILURES_PER_RUN)
+  })
+
+  it('reads a stored errors value of the wrong shape as no failures', () => {
+    expect(distinctFailures(null)).toEqual([])
+    expect(distinctFailures('boom')).toEqual([])
+    expect(distinctFailures([null, 3, { where: 'w' }])).toEqual([{ where: 'w', message: '' }])
+  })
+})
+
+describe('cronRunState', () => {
+  const now = new Date('2026-11-15T12:00:00Z')
+  it('finished: ok only when ok is true', () => {
+    expect(cronRunState({ started_at: '2026-11-15T11:00:00Z', finished_at: '2026-11-15T11:01:00Z', ok: true }, now, 60_000)).toBe('ok')
+    expect(cronRunState({ started_at: '2026-11-15T11:00:00Z', finished_at: '2026-11-15T11:01:00Z', ok: false }, now, 60_000)).toBe('failed')
+    expect(cronRunState({ started_at: '2026-11-15T11:00:00Z', finished_at: '2026-11-15T11:01:00Z', ok: null }, now, 60_000)).toBe('failed')
+  })
+
+  it('unfinished: running inside the limit, dead past it (a killed run never finishes)', () => {
+    expect(cronRunState({ started_at: '2026-11-15T11:59:30Z', finished_at: null, ok: null }, now, 60_000)).toBe('running')
+    expect(cronRunState({ started_at: '2026-11-15T11:58:59Z', finished_at: null, ok: null }, now, 60_000)).toBe('dead')
+    expect(cronRunState({ started_at: 'not a date', finished_at: null, ok: null }, now, 60_000)).toBe('dead')
   })
 })

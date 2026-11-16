@@ -1,3 +1,4 @@
+// Hand-written types; the generated schema types are in lib/database.generated.ts (CI-checked; adoption is a later batch).
 export type Json = string | number | boolean | null | { [key: string]: Json | undefined } | Json[]
 
 export interface RegistrationRow {

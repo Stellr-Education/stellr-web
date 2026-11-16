@@ -7,7 +7,7 @@ import { withAudit } from '@/lib/audit/route'
 import { stellrOnlyDb } from '@/lib/events/admin-records'
 import { memberIdForClerkUser } from '@/lib/events/admin-config'
 import { commitEventBatch, getEventBatchSummary, type ShipTo } from '@/lib/store/event-batch'
-import { refuseOutsideStellr, refuseUnlessStellrEvent } from '@/lib/tenancy/load-scoped'
+import { stellrOnlyEvent } from '@/lib/tenancy/load-scoped'
 
 export const dynamic = 'force-dynamic'
 
@@ -18,14 +18,12 @@ const ROUTE = '/api/admin/events/[slug]/merch/commit'
 // GET  — how many items await a batch + current batch status.
 // POST — commit one bulk Printful order to the venue (body: ship_to address).
 // Stellr's store and Printful account, so a tenant's staff are refused, and a tenant's
-// event is refused for everyone (refuseUnlessStellrEvent).
+// event is refused for everyone (stellrOnlyEvent).
 export async function GET(_req: Request, { params }: Ctx) {
   const { slug } = await params
   const crew = await requireEventRoute(slug, { route: ROUTE })
   if (!crew.ok) return crew.response
-  const refused = refuseOutsideStellr(crew.scope)
-  if (refused) return refused
-  const foreign = await refuseUnlessStellrEvent(supabaseServer(), slug, ROUTE)
+  const foreign = await stellrOnlyEvent(crew.scope, supabaseServer(), slug, ROUTE)
   if (foreign) return foreign
   const summary = await getEventBatchSummary(stellrOnlyDb(crew.scope, supabaseServer()), slug)
   return NextResponse.json(summary)
@@ -41,9 +39,7 @@ async function commitBatch(req: Request, { params }: Ctx) {
   const crew = await requireEventRoute(slug, { route: ROUTE })
   if (!crew.ok) return crew.response
   noteAuditSubject(req, { userId: crew.userId, tenantId: crew.tenantId, eventSlug: slug })
-  const refused = refuseOutsideStellr(crew.scope)
-  if (refused) return refused
-  const foreign = await refuseUnlessStellrEvent(supabaseServer(), slug, ROUTE)
+  const foreign = await stellrOnlyEvent(crew.scope, supabaseServer(), slug, ROUTE)
   if (foreign) return foreign
 
   const body = await req.json().catch(() => ({}))
