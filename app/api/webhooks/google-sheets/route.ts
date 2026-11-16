@@ -97,7 +97,11 @@ export async function POST(req: NextRequest) {
       actor: { webhook: 'google-sheets' },
       tenant: { owner: { rowTenantId: registration.tenant_id ?? null } },
       target: { table: 'registrations', id: registration.id },
-      metadata: { verified: true, sync_failed: syncFailed },
+      // A channel registered before tokens has none to check: it is honoured until it
+      // expires, but nothing about this delivery was verified, so the row says so. The
+      // key is legacy_tokenless, not legacy_token: sanitizeMetadata drops any key with
+      // the word 'token' in it.
+      metadata: channel.token == null ? { verified: false, legacy_tokenless: true, sync_failed: syncFailed } : { verified: true, sync_failed: syncFailed },
     },
     { afterResponse: true },
   )

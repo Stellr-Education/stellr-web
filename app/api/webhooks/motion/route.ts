@@ -3,7 +3,7 @@ import { createHmac, timingSafeEqual } from 'node:crypto'
 import { HS } from '@/lib/hubspot-fields'
 import { createNote, getContactByEmail, upsertContact } from '@/lib/hubspot'
 import { withAudit } from '@/lib/audit/route'
-import { noteWebhook, webhookEvent } from '@/lib/audit/webhook'
+import { noteWebhook, webhookAudit, webhookEvent } from '@/lib/audit/webhook'
 
 /**
  * Motion booking confirmation → HubSpot.
@@ -64,7 +64,7 @@ function findWhen(payload: unknown): string | undefined {
 // S5 A13a: one audit event per delivery, by webhook:motion, on Stellr's chain.
 // Off unless PLATFORM_AUDIT_ENABLED is on (lib/audit/webhook.ts).
 export const POST = withAudit(
-  ({ args: [req] }: { args: [Request] }) => ({ action: 'webhook.event.process', ...webhookEvent('motion', req) }),
+  ({ args: [req] }: { args: [Request] }) => webhookAudit('webhook.event.process', webhookEvent('motion', req)),
   handleBooking,
 )
 

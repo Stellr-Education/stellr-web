@@ -4,7 +4,7 @@ import { supabaseServer } from '@/lib/supabase'
 import { getBackgroundProvider } from '@/lib/background-provider'
 import { applyCheckOutcome, type CheckOutcome } from '@/lib/background-sync'
 import { withAudit } from '@/lib/audit/route'
-import { noteWebhook, webhookEvent } from '@/lib/audit/webhook'
+import { noteWebhook, webhookAudit, webhookEvent } from '@/lib/audit/webhook'
 
 // Background-check provider webhook (currently Checkr). Configure the endpoint
 // URL in the provider's developer settings. The provider adapter owns signature
@@ -20,7 +20,7 @@ export async function GET() {
 // S5 A13a: one audit event per delivery, by webhook:background, on Stellr's chain.
 // Off unless PLATFORM_AUDIT_ENABLED is on (lib/audit/webhook.ts).
 export const POST = withAudit(
-  ({ args: [req] }: { args: [Request] }) => ({ action: 'webhook.event.process', ...webhookEvent('background', req) }),
+  ({ args: [req] }: { args: [Request] }) => webhookAudit('webhook.event.process', webhookEvent('background', req)),
   handleCheckEvent,
 )
 

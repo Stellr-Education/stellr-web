@@ -228,6 +228,14 @@ export async function auditMutation(m: AuditMutation, opts: AuditMutationOptions
   }
 }
 
+/**
+ * What a withAudit spec function returns to record nothing for this answer: a webhook
+ * delivery nobody verified (S5 A13a), since anyone can POST to its URL and the chain
+ * is append-only. Deliberate and explicit: a spec that returns null or undefined by
+ * mistake is still a recorded failure, never a silent skip.
+ */
+export const AUDIT_SKIP: unique symbol = Symbol('audit-skip')
+
 /** What withAudit's spec can see, for an event that depends on the request or its answer. */
 export interface AuditedOutcome<Args extends unknown[]> {
   args: Args
@@ -259,14 +267,15 @@ function thrownStatus(err: unknown): number {
  * too, with the status. A notFound() or redirect() counts as the status it answers with.
  *
  * The handler's answer and error always pass through unchanged, and a spec
- * function that throws costs the event, never the request. A 4xx after a partial
+ * function that throws costs the event, never the request. A spec function that
+ * returns AUDIT_SKIP records nothing for that answer. A 4xx after a partial
  * write is not recorded: a handler that can do that should report it as a 5xx.
  *
  * A cron's guardCron stays the first statement of the handler given here: that is
  * where test/route-manifest.test.ts reads it.
  */
 export function withAudit<Args extends unknown[], R extends Response>(
-  spec: AuditMutation | ((outcome: AuditedOutcome<Args>) => AuditMutation),
+  spec: AuditMutation | ((outcome: AuditedOutcome<Args>) => AuditMutation | typeof AUDIT_SKIP),
   handler: (...args: Args) => Promise<R> | R,
   callerOpts: AuditMutationOptions = {},
 ): (...args: Args) => Promise<R> {
@@ -275,6 +284,7 @@ export function withAudit<Args extends unknown[], R extends Response>(
     try {
       if (!(opts.enabled ?? auditEnabled())) return
       const m = typeof spec === 'function' ? spec({ args, response }) : spec
+      if (m === AUDIT_SKIP) return
       await auditMutation({ ...m, metadata: { ...m.metadata, status } }, opts)
     } catch (err) {
       await recordAuditFailure(err, typeof spec === 'function' ? 'with_audit' : spec.action, opts.db)

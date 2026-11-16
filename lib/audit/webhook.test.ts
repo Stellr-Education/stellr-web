@@ -9,8 +9,8 @@ import { STELLR_TENANT_ID } from '@/lib/tenancy/constants'
 
 vi.mock('@/lib/supabase', () => ({ supabaseServer: () => { throw new Error('no ambient client in these tests') } }))
 
-const { noteWebhook, ownerChain, stripeEventNote, stripeEventOwner, webhookEvent } = await import('./webhook')
-const { resolveTenant } = await import('./route')
+const { noteWebhook, ownerChain, stripeEventNote, stripeEventOwner, webhookAudit, webhookEvent } = await import('./webhook')
+const { AUDIT_SKIP, resolveTenant } = await import('./route')
 
 const TENANT_B = 'bbbbbbbb-0000-4000-8000-00000000000b'
 const REG = 'cccccccc-0000-4000-8000-00000000000c'
@@ -121,12 +121,20 @@ describe('ownerChain: the stored row gives the tenant', () => {
 })
 
 describe('webhookEvent', () => {
-  it("a delivery nobody verified says so, on Stellr's chain, with no target", () => {
-    expect(webhookEvent('resend', new Request('https://www.test/x'))).toEqual({
+  it('a delivery nobody verified is no event at all', () => {
+    expect(webhookEvent('resend', new Request('https://www.test/x'))).toBeNull()
+    expect(webhookAudit('webhook.event.process', null)).toBe(AUDIT_SKIP)
+  })
+
+  it('a delivery with nothing but a note is verified, on Stellr\'s chain, with no target', () => {
+    const req = new Request('https://www.test/x')
+    noteWebhook(req)
+    expect(webhookAudit('webhook.event.process', webhookEvent('resend', req))).toEqual({
+      action: 'webhook.event.process',
       actor: { webhook: 'resend' },
       tenant: { stellr: true },
       target: undefined,
-      metadata: { verified: false },
+      metadata: { verified: true },
     })
   })
 
@@ -141,6 +149,6 @@ describe('webhookEvent', () => {
       target: { table: 'agreements', id: AGREEMENT },
       metadata: { event_type: 'envelope-completed', verified: true },
     })
-    expect(webhookEvent('docusign', other).metadata).toEqual({ verified: false })
+    expect(webhookEvent('docusign', other)).toBeNull()
   })
 })

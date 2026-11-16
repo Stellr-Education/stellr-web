@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from 'next/server'
 import { revalidateTag } from 'next/cache'
 import { parseBody } from 'next-sanity/webhook'
 import { withAudit } from '@/lib/audit/route'
-import { noteWebhook, webhookEvent } from '@/lib/audit/webhook'
+import { noteWebhook, webhookAudit, webhookEvent } from '@/lib/audit/webhook'
 
 // POST /api/webhooks/sanity — Sanity's publish webhook. The public pages are
 // cached for up to 6 hours, and every Sanity read carries the 'sanity' tag
@@ -17,7 +17,7 @@ import { noteWebhook, webhookEvent } from '@/lib/audit/webhook'
 // S5 A13a: one audit event per delivery, by webhook:sanity, on Stellr's chain.
 // Off unless PLATFORM_AUDIT_ENABLED is on (lib/audit/webhook.ts).
 export const POST = withAudit(
-  ({ args: [req] }: { args: [NextRequest] }) => ({ action: 'webhook.event.process', ...webhookEvent('sanity', req) }),
+  ({ args: [req] }: { args: [NextRequest] }) => webhookAudit('webhook.event.process', webhookEvent('sanity', req)),
   handlePublish,
 )
 

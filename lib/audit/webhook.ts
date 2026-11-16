@@ -5,12 +5,14 @@
 // but a 4xx, and the handler notes what it verified (noteWebhook) as it goes:
 //
 //   export const POST = withAudit(
-//     ({ args: [req] }: { args: [Request] }) => ({ action: 'webhook.event.process', ...webhookEvent('stripe', req) }),
+//     ({ args: [req] }: { args: [Request] }) => webhookAudit('webhook.event.process', webhookEvent('stripe', req)),
 //     handle,
 //   )
 //
 // A delivery the handler never verified, which only a missing secret lets through
-// with a 5xx, is recorded with verified: false.
+// with a 5xx, records nothing: webhookEvent is null without a note, and webhookAudit
+// turns that into AUDIT_SKIP. Anyone can POST to a webhook URL, and the chain is
+// append-only.
 //
 // The tenant comes from the stored row an event names, never from the payload alone:
 // the payload gives the key, the row gives the tenant (ownerChain, below). Which chain
@@ -24,7 +26,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type Stripe from 'stripe'
 import { STELLR_TENANT_ID } from '@/lib/tenancy/constants'
-import type { AuditMutation } from './route'
+import { AUDIT_SKIP, type AuditMutation } from './route'
 
 /** The stored row whose tenant owns a provider's event. */
 export type OwnerRef =
@@ -55,15 +57,25 @@ export function noteWebhook(req: object, note: WebhookNote = {}): void {
   notes.set(req, { ...was, ...note, metadata: { ...was?.metadata, ...note.metadata } })
 }
 
-/** The event for one delivery, all but its action, which the route names as a literal. */
-export function webhookEvent(provider: string, req: object): Omit<AuditMutation, 'action'> {
+/**
+ * The event for one delivery, all but its action, which the route names as a literal.
+ * Null when the handler noted nothing, so verification never passed: that delivery is
+ * not recorded.
+ */
+export function webhookEvent(provider: string, req: object): Omit<AuditMutation, 'action'> | null {
   const note = notes.get(req)
+  if (!note) return null
   return {
     actor: { webhook: provider },
-    tenant: note?.owner ? { owner: note.owner } : { stellr: true },
-    target: note?.target,
-    metadata: { ...note?.metadata, verified: note !== undefined },
+    tenant: note.owner ? { owner: note.owner } : { stellr: true },
+    target: note.target,
+    metadata: { ...note.metadata, verified: true },
   }
+}
+
+/** withAudit's spec for a delivery: the event with its action, or AUDIT_SKIP to record nothing. */
+export function webhookAudit(action: AuditMutation['action'], event: Omit<AuditMutation, 'action'> | null): AuditMutation | typeof AUDIT_SKIP {
+  return event ? { action, ...event } : AUDIT_SKIP
 }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i

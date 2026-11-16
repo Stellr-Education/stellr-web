@@ -11,7 +11,7 @@ import { logActivity } from '@/lib/activity-log'
 import { isUnder13On, isValidDob } from '@/lib/age'
 import { purgeCrewCheckIns } from '@/lib/deletion/crew-check-ins'
 import { withAudit } from '@/lib/audit/route'
-import { noteWebhook, webhookEvent } from '@/lib/audit/webhook'
+import { noteWebhook, webhookAudit, webhookEvent } from '@/lib/audit/webhook'
 
 // Clerk sends user.created / user.updated / user.deleted events here.
 // This keeps the members table in sync with Clerk identity records. A new
@@ -43,7 +43,7 @@ interface ClerkEvent {
 // S5 A13a: one audit event per delivery, by webhook:clerk, on Stellr's chain.
 // Off unless PLATFORM_AUDIT_ENABLED is on (lib/audit/webhook.ts).
 export const POST = withAudit(
-  ({ args: [req] }: { args: [Request] }) => ({ action: 'webhook.event.process', ...webhookEvent('clerk', req) }),
+  ({ args: [req] }: { args: [Request] }) => webhookAudit('webhook.event.process', webhookEvent('clerk', req)),
   handleClerkEvent,
 )
 

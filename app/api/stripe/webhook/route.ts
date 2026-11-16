@@ -22,7 +22,7 @@ import { PRICE_CHANGE_EVENTS, revalidatePriceCaches } from '@/lib/price-cache'
 import { checkInCodeLink } from '@/lib/check-in-codes'
 import { reportError } from '@/lib/app-errors'
 import { withAudit } from '@/lib/audit/route'
-import { noteWebhook, stripeEventNote, webhookEvent } from '@/lib/audit/webhook'
+import { noteWebhook, stripeEventNote, webhookAudit, webhookEvent } from '@/lib/audit/webhook'
 
 // Formats a Stripe minor-unit amount as " ($60.00)" for activity-log summaries.
 function fmtMoney(amount: number | null | undefined, currency: string | null | undefined): string {
@@ -722,7 +722,7 @@ export const maxDuration = 60
 // registration or row the event's work lands on (lib/audit/webhook.ts; BF-4's
 // default puts a tenant's on Stellr's). Off unless PLATFORM_AUDIT_ENABLED is on.
 export const POST = withAudit(
-  ({ args: [req] }: { args: [NextRequest] }) => ({ action: 'webhook.event.process', ...webhookEvent('stripe', req) }),
+  ({ args: [req] }: { args: [NextRequest] }) => webhookAudit('webhook.event.process', webhookEvent('stripe', req)),
   handleStripeEvent,
 )
 

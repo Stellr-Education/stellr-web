@@ -10,7 +10,7 @@ import {
   type CompletedEnvelope,
 } from '@/lib/esign/completion'
 import { withAudit } from '@/lib/audit/route'
-import { noteWebhook, webhookEvent } from '@/lib/audit/webhook'
+import { noteWebhook, webhookAudit, webhookEvent } from '@/lib/audit/webhook'
 
 // DocuSign Connect delivers POST events when envelope status changes.
 // Configure Connect in the DocuSign admin console to send JSON to this URL,
@@ -44,7 +44,7 @@ export async function GET() {
 // S5 A13a: one audit event per delivery, by webhook:docusign, on the chain of the agreement it updates.
 // Off unless PLATFORM_AUDIT_ENABLED is on (lib/audit/webhook.ts).
 export const POST = withAudit(
-  ({ args: [req] }: { args: [Request] }) => ({ action: 'webhook.event.process', ...webhookEvent('docusign', req) }),
+  ({ args: [req] }: { args: [Request] }) => webhookAudit('webhook.event.process', webhookEvent('docusign', req)),
   handleConnectEvent,
 )
 

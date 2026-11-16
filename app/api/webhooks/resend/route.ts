@@ -4,7 +4,7 @@ import { supabaseServer } from '@/lib/supabase'
 import { handleResendEvent } from '@/lib/esign/bounces'
 import { handleSuppressionEvent, type ResendDeliveryEvent } from '@/lib/email/suppressions'
 import { withAudit } from '@/lib/audit/route'
-import { noteWebhook, webhookEvent } from '@/lib/audit/webhook'
+import { noteWebhook, webhookAudit, webhookEvent } from '@/lib/audit/webhook'
 
 // POST /api/webhooks/resend — Resend's delivery events, signed with svix.
 // Set up in Resend → Webhooks with the email.bounced and email.complained
@@ -22,7 +22,7 @@ import { noteWebhook, webhookEvent } from '@/lib/audit/webhook'
 // S5 A13a: one audit event per delivery, by webhook:resend, on Stellr's chain.
 // Off unless PLATFORM_AUDIT_ENABLED is on (lib/audit/webhook.ts).
 export const POST = withAudit(
-  ({ args: [req] }: { args: [Request] }) => ({ action: 'webhook.event.process', ...webhookEvent('resend', req) }),
+  ({ args: [req] }: { args: [Request] }) => webhookAudit('webhook.event.process', webhookEvent('resend', req)),
   handleDeliveryEvent,
 )
 

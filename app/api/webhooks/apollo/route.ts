@@ -17,7 +17,7 @@ import {
 } from '@/lib/hubspot-deals'
 import { associateDefault, ensureCompany } from '@/lib/hubspot-companies'
 import { withAudit } from '@/lib/audit/route'
-import { noteWebhook, webhookEvent } from '@/lib/audit/webhook'
+import { noteWebhook, webhookAudit, webhookEvent } from '@/lib/audit/webhook'
 
 /**
  * Apollo outbound engagement → HubSpot Participant Pipeline deal.
@@ -248,7 +248,7 @@ async function handleEvent(
 // S5 A13a: one audit event per delivery, by webhook:apollo, on Stellr's chain.
 // Off unless PLATFORM_AUDIT_ENABLED is on (lib/audit/webhook.ts).
 export const POST = withAudit(
-  ({ args: [req] }: { args: [Request] }) => ({ action: 'webhook.event.process', ...webhookEvent('apollo', req) }),
+  ({ args: [req] }: { args: [Request] }) => webhookAudit('webhook.event.process', webhookEvent('apollo', req)),
   handleApolloEvents,
 )
 
