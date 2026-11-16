@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import { upsertMember, fillBlanksFromStored } from '@/lib/member-sync'
+import { upsertMember, upsertMemberOutcome, fillBlanksFromStored } from '@/lib/member-sync'
 
 vi.mock('@/lib/member-roles', () => ({ syncMemberClassificationRole: vi.fn() }))
 
@@ -222,5 +222,85 @@ describe('upsertMember — personal and school email (4 Nov 2026)', () => {
     const id = await upsertMember(db, { email: 'sam@gmail.com', school_email: 'sam@nv.ccsd.net', first_name: 'Sam', last_name: 'S' }, { onExisting: 'skip' })
     expect(id).toBe('existing-3')
     expect(calls.updates).toHaveLength(0)
+  })
+})
+
+// Registration identity hardening: two first requests for the same new email
+// race. Both lookups run before either insert, so both see "no member". The
+// unique index lets one insert through; the other must come back as the SAME
+// member with inserted: false, never null and never a second "new member".
+describe('upsertMemberOutcome — concurrent first requests', () => {
+  function racingDb() {
+    const rows: { id: string; email: string; school_email: string | null }[] = []
+    let lookups = 0
+    let release!: () => void
+    const bothLooked = new Promise<void>((r) => { release = r })
+    let seq = 0
+    const db = {
+      from() {
+        const filters: [string, unknown][] = []
+        let insertPayload: Record<string, unknown> | null = null
+        const chain = {
+          select: () => chain,
+          eq: (col: string, val: unknown) => { filters.push([col, val]); return chain },
+          limit: () => chain,
+          update: () => ({ eq: async () => ({ error: null }) }),
+          insert: (payload: Record<string, unknown>) => { insertPayload = payload; return chain },
+          maybeSingle: async () => {
+            if (insertPayload) {
+              const p = insertPayload
+              if (rows.some((r) => r.email === p.email)) {
+                return { data: null, error: { code: '23505', message: 'duplicate key value violates unique constraint' } }
+              }
+              const row = { id: `m-${++seq}`, email: String(p.email), school_email: (p.school_email as string | null) ?? null }
+              rows.push(row)
+              return { data: { id: row.id }, error: null }
+            }
+            // The first primary-email lookup of each request waits for the other
+            // request's, so neither can see the other's insert.
+            if (filters[0]?.[0] === 'email' && lookups < 2) {
+              lookups++
+              if (lookups === 2) release()
+              await bothLooked
+            }
+            const found = rows.find((r) => filters.every(([c, v]) => (r as Record<string, unknown>)[c] === v)) ?? null
+            return { data: found, error: null }
+          },
+        }
+        return chain
+      },
+    }
+    return { db: db as never, rows }
+  }
+
+  const input = { email: 'first.timer@example.test', first_name: 'First', last_name: 'Timer' }
+
+  it.each(['skip', 'update'] as const)('reports exactly one insert and the same member to both callers (onExisting: %s)', async (onExisting) => {
+    const { db, rows } = racingDb()
+    const onCreated = vi.fn()
+    const [a, b] = await Promise.all([
+      upsertMemberOutcome(db, input, { onExisting, onCreated }),
+      upsertMemberOutcome(db, input, { onExisting, onCreated }),
+    ])
+    expect(rows).toHaveLength(1)
+    expect(a.member).toBe(rows[0].id)
+    expect(b.member).toBe(rows[0].id)
+    expect([a.inserted, b.inserted].filter(Boolean)).toHaveLength(1)
+    expect(onCreated).toHaveBeenCalledTimes(1)
+  })
+
+  it('the request that lost the race still gets the member id from upsertMember', async () => {
+    const { db, rows } = racingDb()
+    const ids = await Promise.all([
+      upsertMember(db, input, { onExisting: 'skip' }),
+      upsertMember(db, input, { onExisting: 'skip' }),
+    ])
+    expect(ids).toEqual([rows[0].id, rows[0].id])
+  })
+
+  it('a plain new email reports inserted: true; a matched one inserted: false', async () => {
+    expect(await upsertMemberOutcome(makeDb(null).db, input)).toEqual({ member: 'new-id', inserted: true })
+    expect(await upsertMemberOutcome(makeDb({ id: 'existing-1' }).db, input, { onExisting: 'skip' }))
+      .toEqual({ member: 'existing-1', inserted: false })
   })
 })

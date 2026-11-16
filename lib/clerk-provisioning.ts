@@ -83,6 +83,13 @@ export interface ProvisionedClerkUser {
   signInToken: string | null
   /** True when the Clerk user was created by this call (vs. already existed). */
   created: boolean
+  /**
+   * Revoke the minted ticket, best effort; never throws. Present only when one
+   * was minted. A caller whose login link is then refused (the member row got a
+   * login after the ticket was minted) withholds the ticket AND calls this, so
+   * a ticket minted before the refusal cannot be used either.
+   */
+  withdraw?: () => Promise<void>
 }
 
 /**
@@ -153,12 +160,20 @@ export async function ensureClerkUserAndSignInToken(
   // 1 hour is plenty for the registration → confirmation hop (and survives a
   // detour through Stripe checkout for card payments).
   const client = await clerkClient()
-  const { token } = await client.signInTokens.createSignInToken({
+  const minted = await client.signInTokens.createSignInToken({
     userId: clerkUserId,
     expiresInSeconds: 60 * 60,
   })
+  const withdraw = async () => {
+    if (!minted.id) return
+    try {
+      await client.signInTokens.revokeSignInToken(minted.id)
+    } catch (err) {
+      console.error('[clerk-provisioning] sign-in ticket not revoked (it expires within the hour):', err)
+    }
+  }
 
-  return { clerkUserId, signInToken: token, created }
+  return { clerkUserId, signInToken: minted.token, created, withdraw }
 }
 
 /**
