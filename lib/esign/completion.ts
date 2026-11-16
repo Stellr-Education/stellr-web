@@ -225,7 +225,12 @@ async function notifyNativeSigners(db: SupabaseClient, envelope: CompletedEnvelo
       accountUrl: r.member_id ? `${AUTH_APP_URL}/account?tab=profile` : null,
     })
     try {
-      await sendEmail({ to: r.email, ...content, ...(sender ? { from: sender.from, replyTo: sender.replyTo } : {}) })
+      // S5 B24: a tenant's completion email, if queued, waits in the outbox as that tenant's.
+      await sendEmail({
+        to: r.email,
+        ...content,
+        ...(sender && isTenantRow(envelope.tenant_id) ? { from: sender.from, replyTo: sender.replyTo, tenantId: envelope.tenant_id } : {}),
+      })
     } catch (err) {
       console.error('[esign-completion] completion email failed:', err)
     }

@@ -382,6 +382,8 @@ export async function deliver(
         text: content.text,
         attachments: opts.attachments,
         kind,
+        // S5 B24: a tenant's mail, if queued, waits in the outbox as that tenant's.
+        ...(isTenantRow(email.tenant_id) ? { tenantId: email.tenant_id } : {}),
       })
       results.push({ email: r.email, name: r.name, memberId: r.memberId ?? null, roles: r.roles, status: 'sent' })
     } catch (err) {
