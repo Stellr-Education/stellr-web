@@ -11,6 +11,7 @@
 // admin-only areas themselves.
 import ts from 'typescript'
 import { STAFF_CAPABILITIES, type Capability } from '@/lib/authz/capabilities'
+import { resolveModule } from '@/lib/security/route-ast'
 
 const CAP_CALL = new Set(['hasCapability', 'requireCapability', 'requireScholarshipAdmin', 'requireSurveyAdmin', 'canManageStoreCatalog', 'guard', 'requireAdmin'])
 const WRAPPER_DEFAULT: Record<string, Capability> = {
@@ -50,12 +51,47 @@ export function staffCapabilitiesIn(file: string, source: string): Capability[] 
 }
 
 /**
+ * The audit wrappers that call the handler they are given, first, and audit after: the same
+ * two lib/security/route-ast.ts reads through (wrappedHandlerOf). Each takes the handler as
+ * its second argument. No other wrapper is read through, because nothing says when it calls
+ * what it is given: a handler behind one reads as checking nothing, so Staff must be refused.
+ */
+const AUDIT_WRAPPERS: Record<string, string> = { withAudit: 'lib/audit/route', withCronAudit: 'lib/cron-audit' }
+
+/** Local names bound to an audit wrapper by an import (`import { withAudit as w } …`). */
+function auditWrappersIn(sf: ts.SourceFile, file: string): Set<string> {
+  const names = new Set<string>()
+  for (const st of sf.statements) {
+    if (!ts.isImportDeclaration(st) || !ts.isStringLiteral(st.moduleSpecifier)) continue
+    const bindings = st.importClause?.namedBindings
+    if (!bindings || !ts.isNamedImports(bindings)) continue
+    const module = resolveModule(file, st.moduleSpecifier.text)
+    for (const el of bindings.elements) {
+      const imported = (el.propertyName ?? el.name).text
+      if (AUDIT_WRAPPERS[imported] === module) names.add(el.name.text)
+    }
+  }
+  return names
+}
+
+/** `e` without the parentheses, `as` and `satisfies` around it. */
+function strip(e: ts.Expression): ts.Expression {
+  while (ts.isParenthesizedExpression(e) || ts.isAsExpression(e) || ts.isSatisfiesExpression(e) || ts.isNonNullExpression(e)) e = e.expression
+  return e
+}
+
+/**
  * The capabilities in STAFF_CAPABILITIES one exported handler checks: its own body, and
  * the same-file functions it calls (a local `guard()`), followed through. A file whose GET
  * reads with portal:read and whose writes are admin-only is admin-only for those writes.
+ *
+ * A handler written `export const POST = withAudit(spec, updateLicense)` (or withCronAudit)
+ * is read as `updateLicense`: the wrapper calls it with the request, so what it checks is
+ * what the route checks. An inline handler there is read where it stands.
  */
 export function staffCapabilitiesInHandler(file: string, source: string, method: string): Capability[] {
   const sf = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS)
+  const wrappers = auditWrappersIn(sf, file)
   const local = new Map<string, ts.Node>()
   let handler: ts.Node | undefined
   for (const st of sf.statements) {
@@ -73,14 +109,26 @@ export function staffCapabilitiesInHandler(file: string, source: string, method:
   if (!handler) throw new Error(`${file} exports no ${method} handler`)
   const out = new Set<Capability>()
   const seen = new Set<string>([method])
-  const follow = (n: ts.Node) =>
-    capsUnder(n, out, (name) => {
-      const fn = local.get(name)
-      if (fn && !seen.has(name)) {
-        seen.add(name)
-        follow(fn)
+  const followName = (name: string) => {
+    const fn = local.get(name)
+    if (fn && !seen.has(name)) {
+      seen.add(name)
+      follow(fn)
+    }
+  }
+  const follow = (n: ts.Node): void => {
+    capsUnder(n, out, followName)
+    // The handler an audit wrapper is given, by name. Inline, capsUnder has read it already.
+    const visit = (c: ts.Node) => {
+      if (ts.isCallExpression(c)) {
+        const callee = strip(c.expression)
+        const arg = c.arguments[1] && strip(c.arguments[1])
+        if (ts.isIdentifier(callee) && wrappers.has(callee.text) && arg && ts.isIdentifier(arg)) followName(arg.text)
       }
-    })
+      ts.forEachChild(c, visit)
+    }
+    visit(n)
+  }
   follow(handler)
   return [...out].filter((c) => STAFF_CAPABILITIES.includes(c)).sort()
 }
