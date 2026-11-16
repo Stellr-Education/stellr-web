@@ -1,0 +1,44 @@
+<!-- @dsCard height=288 -->
+<div class="cover">
+  <svg class="band" viewBox="0 0 960 112" width="960" height="112" aria-hidden="true">
+    <!--
+      blocks: color-midnight 448×112 (7×space-section), color-primary 192×112 (3×space-section), color-space-violet 128×112 (2×space-section), color-enviro-green 96×112 (3×space-gutter), color-star-gold 96×32 pill (3×space-gutter by space-gutter)
+      arrangement: a strip of unequal bands bleeding off the top and right edges, the midnight slab leading like the dark hero over a light body
+      pattern: literal motif (orbit) → three concentric orbit arcs in color-hero-dim cut across the midnight slab, with one color-star-gold node: the brand is "humanity expanding into the solar system" and its own icon set is Orbit, Satellite, Telescope
+      steps and radii: space-section 64, space-gutter 32, radius-panel 18 on band corners, the pill at half its short side (16)
+    -->
+    <rect class="mid tile" x="0" y="-18" width="448" height="130"/>
+    <defs><clipPath id="slab"><rect x="0" y="0" width="448" height="112" rx="18"/></clipPath></defs>
+    <g class="orbit" clip-path="url(#slab)">
+      <ellipse cx="256" cy="112" rx="96" ry="40"/>
+      <ellipse cx="256" cy="112" rx="160" ry="68"/>
+      <ellipse cx="256" cy="112" rx="224" ry="96"/>
+    </g>
+    <circle class="gold" cx="416" cy="62" r="8"/>
+    <rect class="pri tile" x="464" y="-18" width="192" height="130"/>
+    <rect class="vio tile" x="672" y="-18" width="128" height="98"/>
+    <rect class="grn tile" x="816" y="-18" width="96" height="130"/>
+    <rect class="gold" x="672" y="80" width="96" height="32" rx="16"/>
+    <rect class="mid tile" x="928" y="-18" width="64" height="66"/>
+  </svg>
+  <div class="text">
+    <div class="name">Stellr Design System</div>
+    <div class="tag">Dark hero, light body, and colour that always means something.</div>
+  </div>
+</div>
+<style>
+  html, body { margin: 0; background: var(--color-white); }
+  .cover { width: 960px; height: 288px; position: relative; overflow: hidden; background: var(--color-white); }
+  .band { position: absolute; top: 0; left: 0; display: block; }
+  .tile { rx: var(--radius-panel); }
+  .mid { fill: var(--color-midnight); }
+  .pri { fill: var(--color-primary); }
+  .vio { fill: var(--color-space-violet); }
+  .grn { fill: var(--color-enviro-green); }
+  .gold { fill: var(--color-star-gold); }
+  .orbit ellipse { fill: none; stroke: var(--color-hero-dim); stroke-width: 1.5; opacity: .55; }
+  .text { position: absolute; left: 40px; bottom: 36px; max-width: 880px; }
+  .name { font-family: var(--font-display); font-weight: 700; font-size: 64px; line-height: .95; letter-spacing: var(--letter-spacing-display, -0.025em); color: var(--color-ink); white-space: nowrap; }
+  .tag { margin-top: 12px; font-family: var(--font-body); font-size: 14px; color: var(--color-text-secondary); max-width: 440px; }
+</style>
+<script>void 0</script>

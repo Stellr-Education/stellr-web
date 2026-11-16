@@ -6,23 +6,50 @@ converter bundles `packages/web-ui/src/index.ts` directly with esbuild).
 
 ## Claude Design shutdown (standalone closes by 14 Dec 2026)
 Standalone Claude Design (claude.ai/design) closes by 14 Dec 2026 and moves into
-Claude. Once a project has moved, the sync tool refuses uploads to it, so the
-`projectId` in `config.json` stops being a sync target.
+Claude. Once a project has moved, the sync tool refuses uploads to it.
 
 - **No runtime impact.** The sites, the build and CI never call Claude Design.
   Tokens (`design/tokens.json`), `@stellr/web-ui`, `@stellr/icons` and Storybook
   are in the repo and remain the source of truth.
-- **No data loss from this project.** "Stellr Design System" is a copy built from
-  the repo; this folder can rebuild it.
-- **Before 14 Dec:** check where the project now lives in Claude and whether
-  syncs can still reach it (run `/design-sync`, which calls `get_project` and
-  shows any move `notice`). Record the result here and in tracker row
-  `claude-design-sync.4`.
-- **If syncing cannot continue:** mark this folder retired at the top of this
-  file and stop running `/design-sync`. Leave the folder in place as a record of
-  the converter fixes until someone decides to delete it.
+- **Migrated 16 Nov 2026.** The design system now lives in a Claude Design
+  System artifact, "Stellr Design System",
+  https://claude.ai/artifact/5M33PXBayD6Cr8eXTnbNCh (private to the owner until
+  shared), built from `dev@b49831db`. See "Design System artifact" below.
+- **The old project** (`projectId` in `config.json`) is redundant. On 16 Nov it
+  had not moved (`get_project` returned no `moveState`). Leave it to close with
+  standalone Claude Design; nothing reads it. `config.json` still names it only
+  because the converter reads that file for its other settings.
 - **Design files that exist only in Claude Design** (handoffs, not this project)
-  are covered by tracker row `account-migration.3` and `claude-design-sync.7`.
+  are covered by tracker rows `account-migration.3` and `claude-design-sync.7`.
+
+## Design System artifact
+The artifact is a Design System type artifact kept in files under `project/`,
+marked `"editing": "code"`, so its page is read-only: change the repo, then
+rebuild and republish. It holds 30 components (live previews, README, types),
+`tokens.json` (the `styles/tokens.css` names: 57 colours, 8 type styles, radii,
+spacing, shadows, focus ring), the Norwester and Aileron files (Space Grotesk and
+Hanken Grotesk load from Google Fonts), four logo uploads, React 19.3.1 in
+`components/lib/`, and a cover.
+
+Rebuild:
+1. `npm run build:tokens`, then a Storybook build to a scratch folder.
+2. The converter (`.ds-sync/package-build.mjs`, see Setup) with
+   `--storybook-static <that folder> --out <conv-out>`.
+3. `python3 -I .design-sync/tools/to-design-system-artifact.py <checkout> <conv-out> <dest> <timestamp> <branch@sha>`.
+   It maps the converter output into `project/` and copies the hand-written
+   sources in `.design-sync/artifact/` (brand README, cover, logo notes): edit
+   those here, not on the page.
+4. Render-check: `node .design-sync/tools/artifact-render-check.mjs <dest>/project <png-dir>`
+   (run from `.ds-sync/` so it finds playwright). Dialog and ConfirmDialog show
+   0 grid cells by design: they mount full-frame.
+5. Publish `<dest>/project/` to the artifact url with the Artifact tool. Send
+   `.d.ts` files with `contentType: text/plain`. Read `project/design-system.json`
+   back first and keep its keys (title, logo `assetGroups` with their blob ids,
+   `createdOnFiles`); send it last, with a new `lastChange`.
+
+Not verified on 16 Nov: the live page (checked by headless render and a
+read-back of the published files only), Hero breakpoints (all four stories
+render at one width), and card heights for tall previews.
 
 ## Setup (fresh clone)
 - Converter deps live in `.ds-sync/` (gitignored): stage the skill scripts, then

@@ -72,3 +72,14 @@ things remain: check the project's move and decide whether syncs continue
 (`claude-design-sync.4`), and save any design work that exists only in Claude
 Design (`claude-design-sync.7`). The plan is in `.design-sync/NOTES.md`,
 "Claude Design shutdown".
+
+## Update 16 Nov 2026: migrated to a Design System artifact
+The design system now lives in Claude as the Design System artifact "Stellr
+Design System" (https://claude.ai/artifact/5M33PXBayD6Cr8eXTnbNCh), built from
+`dev@b49831db`: 30 components (Collapsible is new since the first sync), tokens
+under the `styles/tokens.css` names, fonts, logos and a cover. All 30 previews
+rendered cleanly in a headless check; the live page has not been viewed
+(`claude-design-sync.8`). The old standalone project had not moved and is now
+redundant. The build script, render check and hand-written sources are in
+`.design-sync/tools/` and `.design-sync/artifact/`; the steps are in
+`.design-sync/NOTES.md`, "Design System artifact".
