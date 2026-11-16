@@ -49,7 +49,8 @@ const MANIFEST_CLASS_COUNTS: Record<RouteClass, number> = {
   public: 133,
   webhook: 12,
   cron: 24,
-  stellr_only: 164,
+  // -1 on 14 Nov 2026: the embedded Sanity Studio page left the app for Sanity's hosting.
+  stellr_only: 163,
 }
 // +3 on 9 Nov 2026: members/compliance/external-check (participant) and the
 // admin members/[id]/event-manager and members/[id]/external-check (stellr_only).
@@ -60,7 +61,8 @@ const MANIFEST_CLASS_COUNTS: Record<RouteClass, number> = {
 // +1 on 13 Nov 2026: admin members/[id]/staff, the Staff role (stellr_only, denied on tenant hosts like every admin route).
 // +1 on 14 Nov 2026: admin staff-settings, the Staff training module (stellr_only, denied on tenant hosts).
 // +1 on 14 Nov 2026: cq-lead, the Classroom Qualifier curriculum request (public, Stellr lead capture, denied on tenant hosts like lp-lead).
-const MANIFEST_TOTAL = 511
+// -1 on 14 Nov 2026: studio/[[...tool]] (stellr_only, denied on tenant hosts), gone: the Studio is hosted by Sanity.
+const MANIFEST_TOTAL = 510
 
 // The decisions. Moving a route between them is a deliberate diff here.
 const DECISION_COUNTS: Record<TenantSurfaceDecision, number> = {
@@ -70,7 +72,7 @@ const DECISION_COUNTS: Record<TenantSurfaceDecision, number> = {
   // files pinned under 'routes held back' below
   pending: 49,
   bypass: 4,
-  deny: 408,
+  deny: 407,
 }
 
 /** A concrete URL a manifest file serves, with sample values for its params. */
@@ -96,7 +98,7 @@ function sampleUrl(file: string): string {
 }
 
 describe('the manifest this classifies', () => {
-  it('has the measured class counts, 511 in total', () => {
+  it('has the measured class counts, 510 in total', () => {
     expect(FILES).toHaveLength(MANIFEST_TOTAL)
     const counts = Object.fromEntries(Object.keys(MANIFEST_CLASS_COUNTS).map((c) => [c, 0])) as Record<
       RouteClass,
@@ -257,7 +259,6 @@ describe('proxy-bypass routes', () => {
     '/admin/competitions/x.png/check-in',
     '/events/nevada.html',
     '/join/x.png',
-    '/studio/a.js',
   ])('reaches the proxy on a tenant host for %s, which denies it', (url) => {
     expect(proxyMatchesOn('canary-academy.localhost', url)).toBe(true)
     expect(tenantHostRoute(url)).toBe('denied')

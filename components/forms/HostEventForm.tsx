@@ -7,18 +7,27 @@ import { z } from 'zod'
 import { Choice, Field, Fieldset, Input, Textarea } from '@stellr/web-ui'
 import { SchoolSearchInput, type SchoolSelection } from '@/components/member/SchoolSearchInput'
 import { usePrefillForm } from '@/components/forms/useMemberPrefill'
+import { useSpamGuard } from '@/components/forms/useSpamGuard'
+import { SpamGuardFields } from '@/components/forms/SpamGuardFields'
 import { trackLeadSubmitted } from '@/lib/analytics'
+import { HOST_EVENT_LIMITS, hostEventFields as f } from '@/app/api/host-event/schema'
 
+// The route's fields (same caps), less the organization the picker supplies,
+// with the stricter phone minimum a person is asked for here.
 const schema = z.object({
-  firstName: z.string().min(1, 'First name is required'),
-  lastName: z.string().min(1, 'Last name is required'),
-  email: z.string().email('Please enter a valid email address'),
-  phone: z.string().min(7, 'Please enter a valid phone number'),
-  venueCapacity: z.string().min(1, 'Please provide an approximate capacity'),
-  preferredTiming: z.string().min(1, 'Please indicate your preferred timing'),
-  preferredDuration: z.string().min(1, 'Please indicate your preferred event duration'),
-  funding: z.string().optional(),
-  facilityOverheads: z.string().optional(),
+  firstName: f.firstName,
+  lastName: f.lastName,
+  email: f.email,
+  phone: z
+    .string()
+    .trim()
+    .min(7, 'Please enter a valid phone number')
+    .max(HOST_EVENT_LIMITS.phone, `Please keep this to ${HOST_EVENT_LIMITS.phone} characters or fewer`),
+  venueCapacity: f.venueCapacity,
+  preferredTiming: f.preferredTiming,
+  preferredDuration: f.preferredDuration,
+  funding: f.funding,
+  facilityOverheads: f.facilityOverheads,
   consent: z.literal(true, {
     error: 'You must agree to be contacted',
   }),
@@ -45,6 +54,7 @@ export function HostEventForm() {
   const [school, setSchool] = useState<SchoolSelection | null>(null)
   const [schoolError, setSchoolError] = useState('')
   const schoolRef = useRef<HTMLDivElement>(null)
+  const spam = useSpamGuard()
 
   const {
     register,
@@ -81,7 +91,7 @@ export function HostEventForm() {
       const res = await fetch('/api/host-event', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...data, companySchool, address }),
+        body: JSON.stringify({ ...data, companySchool, address, ...(await spam.values()) }),
       })
 
       if (res.ok) trackLeadSubmitted('host_event')
@@ -210,6 +220,8 @@ export function HostEventForm() {
           />
         </Field>
       </fieldset>
+
+      <SpamGuardFields {...spam.fields} />
 
       {/* Consent */}
       <div className="space-y-1.5">

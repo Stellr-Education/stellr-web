@@ -7,6 +7,7 @@ import { listMentoringTiers } from '@/lib/mentoring'
 import { CreateCohortForm } from '@/components/community/mentoring/CreateCohortForm'
 import { AdminMentoringNav } from '@/components/admin/mentoring/AdminMentoringNav'
 import { authz } from '@/lib/authz'
+import { AdminOnlyBanner, Can } from '@/components/admin/CapabilitiesContext'
 
 export const metadata = { title: 'Admin · New cohort' }
 
@@ -25,12 +26,15 @@ export default async function AdminNewCohortPage() {
           <ArrowLeft className="h-4 w-4" /> Cohorts
         </Link>
         <h1 className="font-display text-[28px] font-bold text-ink">Create a cohort</h1>
-        <CreateCohortForm
-          modules={modules.map((m) => ({ id: m.id, title: m.title }))}
-          isAdmin
-          tiers={tiers.map((t) => ({ id: t.id, name: t.name }))}
-          searchEndpoint="/api/admin/members/search"
-        />
+        {/* Creating a cohort is academy:manage, an admin's alone. */}
+        <Can cap="academy:manage" fallback={<AdminOnlyBanner>An admin creates mentoring cohorts.</AdminOnlyBanner>}>
+          <CreateCohortForm
+            modules={modules.map((m) => ({ id: m.id, title: m.title }))}
+            isAdmin
+            tiers={tiers.map((t) => ({ id: t.id, name: t.name }))}
+            searchEndpoint="/api/admin/members/search"
+          />
+        </Can>
       </div>
     </div>
   )

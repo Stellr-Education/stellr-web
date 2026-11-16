@@ -9,8 +9,10 @@ import { OPTIONAL_EVENT_TABLES, collectSources, measure, optionalEventWrites, su
 // it, so the app must write tenant_id itself before the enforce flip
 // (docs/TENANCY-S3.md, "How tenant_id is derived").
 //
-// REPORT MODE: the writers are listed, not failed. Lane C PRs set tenant_id
-// per area, and this test becomes enforcing once they have. The scan follows a
+// ENFORCING (S5 C20a): every writer the scan finds sets tenant_id itself, so this
+// fails on any writer whose tenant_id is `missing` or taken from the request. A
+// row carries Stellr's id where the area is Stellr-only (plan decision 12), or the
+// event owner's, read once (C20c, A8). Scanner limitations: the scan follows a
 // `.from('table').insert|upsert(…)` chain and reads the row literal, so a row
 // built elsewhere shows as `indirect`, and a query builder kept in a variable
 // is not seen. Treat the list as a floor, not a complete inventory.
@@ -18,14 +20,19 @@ import { OPTIONAL_EVENT_TABLES, collectSources, measure, optionalEventWrites, su
 // To read the list: run this file with --reporter=verbose (the default reporter
 // hides a passing test's logs), or `npx tsx scripts/s5-inventory.mjs --json`.
 
-describe('optional-event tenant_id (report mode)', () => {
-  it('lists the live writers', () => {
+type Writer = { file: string; line: number; table: string; op: string; tenantId: string }
+
+describe('optional-event tenant_id (enforcing)', () => {
+  it('every live writer sets tenant_id itself', () => {
     const m = measure(collectSources(process.cwd()))
     const s = summarize(m)
-    const rows = m.optionalWriters.map((w: { file: string; line: number; table: string; op: string; tenantId: string }) => `  ${w.table}.${w.op} ${w.tenantId} ${w.file}:${w.line}`)
-    console.info(`Optional-event writes: ${s.optionalEventWritesExplicit} of ${s.optionalEventWrites} set tenant_id explicitly.\n${rows.join('\n')}`)
+    const row = (w: Writer) => `  ${w.table}.${w.op} ${w.tenantId} ${w.file}:${w.line}`
+    console.info(`Optional-event writes: ${s.optionalEventWritesExplicit} of ${s.optionalEventWrites} set tenant_id explicitly.\n${m.optionalWriters.map(row).join('\n')}`)
     // A scan that found nothing has broken, not succeeded.
-    expect(m.optionalWriters.some((w: { table: string }) => w.table === 'store_orders')).toBe(true)
+    expect(m.optionalWriters.some((w: Writer) => w.table === 'store_orders')).toBe(true)
+    // A row with no tenant_id is refused by enforce; one from the request lets the caller pick the tenant.
+    const failing = m.optionalWriters.filter((w: Writer) => w.tenantId === 'missing' || w.tenantId === 'untrusted').map(row)
+    expect(failing, 'Set tenant_id on these writes: Stellr\'s id in a Stellr-only area, else the event owner\'s (docs/TENANCY-S3.md)').toEqual([])
   }, 120_000)
 
   it('the table list is the one the registry and the S3 doc name', () => {

@@ -12,6 +12,9 @@
 //     'awaiting_batch' + the order marked 'paid' (finalizeRegistrationMerch)
 
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { STELLR_TENANT_ID } from '@/lib/tenancy/constants'
+import { loadEventTenantId } from '@/lib/authz/principal'
+import { reportError } from '@/lib/app-errors'
 import { computeUnitPrice } from './pricing'
 
 const arr = <T>(x: T | T[] | null | undefined): T | undefined =>
@@ -97,6 +100,27 @@ async function ensureEventMerchOrder(db: SupabaseClient, registrationId: string)
   const r = reg as { event_slug: string | null; teacher_member_id: string | null; teacher_email: string | null } | null
   if (!r?.event_slug) return null
 
+  // S5 C20a: the store is Stellr-only in release 1 (plan decision 12). The order's
+  // tenant is its event's owner, read once here, before the order exists, by the rule
+  // C20c's refuseUnlessStellrEvent applies (loadEventTenantId: an unmirrored slug counts
+  // as Stellr's, a failed read is never Stellr's). That helper answers a route with a
+  // Response; this is a library step whose callers already treat null as "no order".
+  // So another tenant's event gets no event-merch order, and no add-on is persisted or
+  // charged (registration-checkout reads add-ons from this order); a failed owner read
+  // also creates nothing. What is left is Stellr's event, so the row carries Stellr's
+  // tenant_id, the value the S3 trigger derives for it today.
+  let owner: string
+  try {
+    owner = await loadEventTenantId(db, r.event_slug)
+  } catch (err) {
+    // Every event is Stellr's today, so a failed read here drops a registrant's chosen
+    // add-ons for a transient fault. Report it so staff see it in the error digest.
+    console.error('[store/event-merch] event owner lookup failed:', err instanceof Error ? err.message : err)
+    await reportError(err, { route: 'LIB store/event-merch owner lookup', db })
+    return null
+  }
+  if (owner !== STELLR_TENANT_ID) return null
+
   const { data: firstPart } = await db
     .from('participants')
     .select('member_id')
@@ -108,6 +132,7 @@ async function ensureEventMerchOrder(db: SupabaseClient, registrationId: string)
   const { data: order } = await db
     .from('store_orders')
     .insert({
+      tenant_id: STELLR_TENANT_ID,
       member_id: r.teacher_member_id ?? (firstPart as { member_id?: string } | null)?.member_id ?? null,
       email: r.teacher_email ?? '',
       status: 'pending',

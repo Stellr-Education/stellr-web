@@ -4,6 +4,8 @@ import { getSignedInMember } from '@/lib/community'
 import { ensureTrainingContainer } from '@/lib/container-sync'
 import { isStellrAdmin, hasCapability } from '@/lib/authz'
 import { withAudit } from '@/lib/audit/route'
+import { STELLR_TENANT_ID } from '@/lib/tenancy/constants'
+import { refuseUnlessStellrEvent } from '@/lib/tenancy/load-scoped'
 
 // What this request acted on, which withAudit's spec cannot read for itself: the body has gone.
 const auditedId = new WeakMap<Request, string>()
@@ -39,11 +41,25 @@ async function createModule(req: Request) {
   const title = (body.title as string | undefined)?.trim()
   if (!title) return NextResponse.json({ error: 'title required' }, { status: 400 })
 
-  const admin = await getSignedInMember()
   const db = supabaseServer()
+  // S5 C20a: training is Stellr-only in release 1 (plan decision 12), so the module
+  // carries Stellr's tenant_id itself: an academy module names no event, and the S3
+  // trigger would log `no_key`, which derivation enforce would refuse. A module tied to
+  // an event must be tied to one of Stellr's: another tenant's event is refused the way
+  // C20c refuses (404, or a retryable 503 when the owner read fails), before any write.
+  // The check reads the value the row stores, which the form asks for as a competition
+  // slug. A Sanity id of another tenant's event is refused by the
+  // training_modules_stellr_only CHECK, as before.
+  if (body.eventRef) {
+    const refused = await refuseUnlessStellrEvent(db, String(body.eventRef), 'training')
+    if (refused) return refused
+  }
+
+  const admin = await getSignedInMember()
   const { data, error } = await db
     .from('training_modules')
     .insert({
+      tenant_id: STELLR_TENANT_ID,
       title,
       description: body.description?.trim() || null,
       material_kind: body.materialKind ?? 'general',

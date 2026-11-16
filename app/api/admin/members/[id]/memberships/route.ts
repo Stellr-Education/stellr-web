@@ -5,6 +5,8 @@ import { grantTier, fireTierPurchased, type GrantTierOptions } from '@/lib/membe
 import { checkTierAllowedForMember } from '@/lib/tiers-server'
 import { supabaseServer } from '@/lib/supabase'
 import { actorFromAuth } from '@/lib/activity-log'
+import { storableId, withAudit } from '@/lib/audit/route'
+import { auditSubject, noteAuditSubject } from '@/lib/audit/route-subject'
 
 // POST /api/admin/members/[id]/memberships — admin assigns a tier to a member.
 //
@@ -18,10 +20,28 @@ import { actorFromAuth } from '@/lib/activity-log'
 // Delegates to grantTier() (source='manual') so it shares the idempotency,
 // replaces-free behaviour and activity logging of every other grant path.
 
-export async function POST(
-  req: Request,
-  { params }: { params: Promise<{ id: string }> },
-) {
+type Ctx = { params: Promise<{ id: string }> }
+
+/** The member in the URL, /api/admin/members/<id>/…: the event's target. */
+function memberIdOf(req: Request): string | null {
+  const parts = new URL(req.url).pathname.split('/')
+  const at = parts.indexOf('members')
+  return at < 0 ? null : (parts[at + 1] ?? null)
+}
+
+// Platform audit (docs/TENANCY-S5.md, C7): the member is the target, the tier's id in
+// the metadata.
+const grantAudit = ({ args: [req] }: { args: [Request, Ctx] }) => ({
+  action: 'membership.tier.grant' as const,
+  actor: { session: true } as const,
+  tenant: { stellr: true } as const,
+  target: { table: 'members', id: memberIdOf(req) },
+  metadata: auditSubject(req, 'member_memberships').metadata,
+})
+
+export const POST = withAudit(grantAudit, assignTier)
+
+async function assignTier(req: Request, { params }: Ctx) {
   const { sessionClaims } = await auth()
   if (!(await hasCapability('members:write'))) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
@@ -43,6 +63,7 @@ export async function POST(
   const bracketCheck = await checkTierAllowedForMember(memberId, tierId)
   if (!bracketCheck.ok) return NextResponse.json({ error: bracketCheck.reason }, { status: 400 })
 
+  noteAuditSubject(req, { detail: { tier_id: storableId(tierId) } })
   const logActor = await actorFromAuth()
 
   const opts: GrantTierOptions = {

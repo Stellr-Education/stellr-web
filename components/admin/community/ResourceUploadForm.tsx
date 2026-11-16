@@ -4,10 +4,18 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Field, Input, Textarea } from '@stellr/web-ui'
 import { postUpload, uploadDirectToStorage } from '@/lib/upload-client'
+import { AdminOnlyBanner, useCan } from '@/components/admin/CapabilitiesContext'
 
 type ResourceKind = 'file' | 'link'
 
 export function ResourceUploadForm() {
+  // Adding a resource is community:manage, an admin's alone.
+  const canWrite = useCan('community:manage')
+  if (!canWrite) return <AdminOnlyBanner>An admin adds, renames and deletes resources.</AdminOnlyBanner>
+  return <UploadForm />
+}
+
+function UploadForm() {
   const router = useRouter()
   const [kind, setKind] = useState<ResourceKind>('file')
   const [file, setFile] = useState<File | null>(null)

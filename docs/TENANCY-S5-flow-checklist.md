@@ -110,7 +110,7 @@ A monthly cron shows one run in 30 days, so read that one run closely.
 
 ## Steps owed from waves 4 to 6
 
-Sign-off steps the waves named (`docs/TENANCY-S5.md`, "Docs owed after wave 4", "after wave 5" and "after wave 6"), and dev proofs that no list carried after the account move, added on 14 Nov 2026. None has evidence yet. Production reads are the owner's (tracker `s5-programme.34`); `dev` proofs are Claude's (`s5-programme.35`).
+Sign-off steps the waves named (`docs/TENANCY-S5.md`, "Docs owed after wave 4", "after wave 5" and "after wave 6"), and dev proofs that no list carried after the account move, added on 14 Nov 2026. None has evidence yet. On 14 Nov 2026 the backlog's batch 3 took the `dev` proofs Claude can run (the C16 payment-method calls, B19's public page, the A8 roster round, the A16 check-in path and the shared-cost Stripe drill), as runs on `dev` rather than a code slice; each result is written in its row here. Production reads are the owner's (tracker `s5-programme.34`); `dev` proofs are Claude's (`s5-programme.35`).
 
 | Step | Where | Evidence source | Pass | What was seen (no personal data) | Owner sign-off |
 |---|---|---|---|---|---|
@@ -128,7 +128,10 @@ Sign-off steps the waves named (`docs/TENANCY-S5.md`, "Docs owed after wave 4", 
 | A tenant consent signed end to end | `dev`, at P12 | K8 S5 and S6; `tenant_guardian_consents` | Signed and declined both settle | | |
 | B14b's outbox read in `cron_runs` | production | `esign-maintenance` with its `outbox` step | Finishes ok, no `outbox` failure | | |
 | One A8 roster round on a Stellr group | `dev` | `participants` for the group, before and after | Add, edit and sheet import write correctly | | |
-| The A16 check-in path | `dev`, once batch 1 is there | The check-in desk and QR on a Stellr event | Stellr's check-in is unchanged; the tenant branch (a minor pending consent is refused) waits for P12 | | |
+| The A16 check-in path | `dev` (batch 1 is there since 14 Nov 2026) | The check-in desk and QR on a Stellr event | Stellr's check-in is unchanged; the tenant branch (a minor pending consent is refused) waits for P12 | | |
+| The payment-method route by role (C16) | `dev` | One admin and one event-manager call to `app/api/admin/registrations/[id]/payment-method` on a Stellr registration; the responses, and `app_errors` filtered by route and time | Each role gets the answer the route's tests assert; no error row | | |
+| B19's public event page | `dev` preview | A person opens one Stellr event's public page (its getters come from `lib/events/repo` since B19) | The page renders the event as before, with no error | | |
+| The shared-cost Stripe test-mode drill (`group-payment-options.2`) | `dev`, Stripe test mode | A group sharing the teacher's cost: the two-line checkout, the share recorded on each paid seat, a true-up refund; `participants` and the Stripe test dashboard | Each paid seat has its share recorded, and the true-up refunds the difference once | | |
 
 ## Closing it
 

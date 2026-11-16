@@ -46,6 +46,32 @@ function assertWritten(error: unknown, where: string): void {
   }
 }
 
+// legacy-12.4: every refund this webhook issues can be repeated by a Stripe retry
+// (the handler 500s on a later step, or the refund call itself times out after
+// Stripe took it). The idempotency key makes a retry within Stripe's 24-hour key
+// window a no-op; after that, Stripe answers charge_already_refunded, which means
+// the money is already back, so it is treated as done instead of failing the
+// webhook on every retry for the rest of Stripe's three-day schedule.
+async function refundOnce(
+  stripe: Stripe,
+  params: { payment_intent: string; metadata: Record<string, string> },
+  idempotencyKey: string,
+): Promise<'refunded' | 'already_refunded'> {
+  try {
+    await stripe.refunds.create(
+      { payment_intent: params.payment_intent, metadata: { ...params.metadata, source: 'stellr_app' } },
+      { idempotencyKey },
+    )
+    return 'refunded'
+  } catch (err) {
+    if ((err as { code?: unknown } | null)?.code === 'charge_already_refunded') {
+      console.warn('[stripe/webhook] refund already made; treating as done:', { paymentIntent: params.payment_intent, idempotencyKey })
+      return 'already_refunded'
+    }
+    throw err
+  }
+}
+
 // ── Event registration helpers ────────────────────────────────────────────────
 
 // A per-seat ("members pay individually") participant selector. deep review
@@ -423,13 +449,13 @@ async function refundDuplicateRegistrationPayment(
   // the guard exists for on the charge paths. No-op on real prod (live keys).
   assertLiveCredentials('stripe')
   // Fail safe on the money: refund the duplicate, keep the first intent of record.
-  await stripe.refunds.create(
-    {
-      payment_intent: newIntent,
-      metadata: { source: 'stellr_app', reason: 'duplicate_registration_payment', registrationId },
-    },
-    { idempotencyKey: `dup-${session.id}` },
+  const refunded = await refundOnce(
+    stripe,
+    { payment_intent: newIntent, metadata: { reason: 'duplicate_registration_payment', registrationId } },
+    `dup-${session.id}`,
   )
+  // A retry after the refund already went through: staff were told the first time.
+  if (refunded === 'already_refunded') return true
   await notifyCommunityAdmins({
     type: 'action',
     body: `Registration ${registrationId} was paid twice. The first payment (intent ${existingIntent}) stands; the duplicate (${newIntent}) was refunded automatically. No action needed unless the family disputes it.`,
@@ -468,13 +494,12 @@ async function refundDuplicateIndividualPayment(
   // deep review PAY-15: no-op on real prod; refuses a phantom test-mode refund on
   // a prod deployment misconfigured with TEST keys.
   assertLiveCredentials('stripe')
-  await stripe.refunds.create(
-    {
-      payment_intent: newIntent,
-      metadata: { source: 'stellr_app', reason: 'duplicate_individual_payment', registrationId: target.registrationId },
-    },
-    { idempotencyKey: `dup-${session.id}` },
+  const refunded = await refundOnce(
+    stripe,
+    { payment_intent: newIntent, metadata: { reason: 'duplicate_individual_payment', registrationId: target.registrationId } },
+    `dup-${session.id}`,
   )
+  if (refunded === 'already_refunded') return true
   await notifyCommunityAdmins({
     type: 'action',
     body: `A members-pay-individually seat on registration ${target.registrationId} was paid twice. The first payment (intent ${existingIntent}) stands; the duplicate (${newIntent}) was refunded automatically. No action needed unless the family disputes it.`,
@@ -587,9 +612,15 @@ async function fulfilCheckoutSession(session: Stripe.Checkout.Session, stripe: S
         console.error('[stripe/webhook] entitlement_booking confirm failed, refunding:', err)
         // deep review PAY-15: no-op on real prod; refuses a phantom test-mode
         // refund on a prod deployment misconfigured with TEST keys.
+        // legacy-12.4: keyed on the session, so a redelivery of this event (or a
+        // retry after a later step failed) never refunds twice.
         if (intent) {
           assertLiveCredentials('stripe')
-          await stripe.refunds.create({ payment_intent: intent })
+          await refundOnce(
+            stripe,
+            { payment_intent: intent, metadata: { reason: 'entitlement_booking_confirm_failed', offeringId, sessionId: session.id } },
+            `entitlement-refund-${session.id}`,
+          )
         }
       }
     }
@@ -647,7 +678,13 @@ async function fulfilCheckoutSession(session: Stripe.Checkout.Session, stripe: S
         await markIndividualPayment(registrationId, seat)
         await capturePaymentIntent(session, { registrationId, ...seat })
         // A group sharing the teacher's cost: what went to the place and the share.
-        await recordSeatShare(supabaseServer(), registrationId, participantId, session.metadata)
+        // group-payment-options.10: a failed write is reported to app_errors inside
+        // recordSeatShare and settlement recovers the split from this session, so
+        // the paid seat is not failed over it: no 500, the rest of the seat runs.
+        const share = await recordSeatShare(supabaseServer(), registrationId, participantId, session.metadata)
+        if (share.status === 'failed') {
+          console.error('[stripe/webhook] seat paid but its share was not recorded (reported); continuing', { registrationId, participantId })
+        }
         await persistStripeCustomer(session)
         await logEventPayment(session, registrationId, seat)
         await notePaymentAfterMethodChange(supabaseServer(), registrationId, 'seat')

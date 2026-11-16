@@ -5,6 +5,8 @@ import { BADGE_FORMATS, isBadgeFormat, placementFromLine } from '@/lib/badge-lay
 import { isArtworkTheme } from '@/lib/artwork-theme'
 import { BADGE_PLACEMENT_RANGES, badgePlacementFromArtwork, claimArtwork, placementInput } from '@/lib/artwork-template-input'
 import { fillPlacements, loadDefaultBadgeTemplate, loadDefaultBadgeTemplates, prepareTemplate } from '@/lib/event-badges'
+import { withAudit } from '@/lib/audit/route'
+import { auditSubject, noteAuditSubject } from '@/lib/audit/route-subject'
 
 export const dynamic = 'force-dynamic'
 
@@ -19,6 +21,24 @@ type Ctx = { params: Promise<{ theme: string }> }
 const AUDIENCES = ['everyone', 'mentors'] as const
 type DefaultAudience = (typeof AUDIENCES)[number]
 
+// Platform audit (docs/TENANCY-S5.md, C7): a theme's default is Stellr's. The template
+// row is the target; the theme, format and audience (all enums) the metadata.
+const saveAudit = ({ args: [req] }: { args: [Request, Ctx] }) => ({
+  action: 'artwork.default_badge.save' as const,
+  ...auditSubject(req, 'default_badge_templates'),
+  actor: { session: true } as const,
+  tenant: { stellr: true } as const,
+})
+const deleteAudit = ({ args: [req] }: { args: [Request, Ctx] }) => ({
+  action: 'artwork.default_badge.delete' as const,
+  ...auditSubject(req, 'default_badge_templates'),
+  actor: { session: true } as const,
+  tenant: { stellr: true } as const,
+})
+
+export const PUT = withAudit(saveAudit, saveDefaultBadge)
+export const DELETE = withAudit(deleteAudit, deleteDefaultBadge)
+
 export async function GET(_req: Request, { params }: Ctx) {
   if (!(await hasCapability('portal:read'))) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   const { theme } = await params
@@ -28,7 +48,7 @@ export async function GET(_req: Request, { params }: Ctx) {
 }
 
 // PUT { format, audience, storagePath?, fileType?, name_x?, name_y?, name_max_width?, name_size?, reset? }
-export async function PUT(req: Request, { params }: Ctx) {
+async function saveDefaultBadge(req: Request, { params }: Ctx) {
   if (!(await hasCapability('competitions:write'))) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   const { theme } = await params
   if (!isArtworkTheme(theme)) return NextResponse.json({ error: 'Unknown theme' }, { status: 404 })
@@ -40,6 +60,7 @@ export async function PUT(req: Request, { params }: Ctx) {
     return NextResponse.json({ error: 'format and audience (everyone or mentors) are required' }, { status: 400 })
   }
 
+  noteAuditSubject(req, { detail: { theme, format, audience } })
   const db = supabaseServer()
   const { data: existing } = await db
     .from('default_badge_templates')
@@ -86,16 +107,18 @@ export async function PUT(req: Request, { params }: Ctx) {
     console.error('[default badge templates] save error:', error)
     return NextResponse.json({ error: 'Database error' }, { status: 500 })
   }
+  noteAuditSubject(req, { id: saved.id })
   return NextResponse.json({ ok: true, lineFound, template: await loadDefaultBadgeTemplate(db, theme, saved.id) })
 }
 
 // DELETE ?id= — events without their own background for that slot fall back
 // to the next one down (mentors → everyone → plain).
-export async function DELETE(req: Request, { params }: Ctx) {
+async function deleteDefaultBadge(req: Request, { params }: Ctx) {
   if (!(await hasCapability('competitions:write'))) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   const { theme } = await params
   if (!isArtworkTheme(theme)) return NextResponse.json({ error: 'Unknown theme' }, { status: 404 })
   const id = new URL(req.url).searchParams.get('id') ?? ''
+  noteAuditSubject(req, { id, detail: { theme } })
   const { error } = await supabaseServer().from('default_badge_templates').delete().eq('theme', theme).eq('id', id)
   if (error) {
     console.error('[default badge templates] delete error:', error)

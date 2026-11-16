@@ -8,6 +8,8 @@ import { type StellarEvent } from '@/lib/sanity'
 import { formatDate } from '@/lib/utils'
 import { requireEventAccess } from '@/lib/event-access'
 import { getEventRoster } from '@/lib/event-admin'
+import { heldOptOuts, rosterOptOuts, type RosterOptOut } from '@/lib/roster-optouts'
+import { pendingConsentParticipantIds } from '@/lib/registration/tenant-guardian-consent'
 import EventRoster from '@/components/admin/EventRoster'
 import { Collapsible, CollapsibleGroup, CollapseAllControls } from '@stellr/web-ui'
 import { MemberLink } from '@/components/admin/RecordLinks'
@@ -84,6 +86,32 @@ export default async function AdminEventDetailPage({
   // The roster tab lists minors' details: log the view, with how many people it showed (Staff role phase 4).
   if (tab === 'roster' && roster) {
     await logRecordAccess({ action: 'roster_view', route: '/admin/competitions/[slug]', eventSlug: slug, rowCount: roster.groups.reduce((n, g) => n + g.participants.length, 0) })
+  }
+
+  // ── Paperwork on the roster tab: each participant's opt-outs, read back from
+  //    the signed agreement (esign-native-engine.9), and who waits on a guardian's
+  //    consent on another organiser's event (T-23; Stellr's events have none). A
+  //    failed read leaves the roster as it was rather than failing the page.
+  let optOuts: Record<string, RosterOptOut[]> = {}
+  let consentPending: string[] = []
+  if (tab === 'roster' && roster) {
+    const people = roster.groups.flatMap((g) => g.participants)
+    const [answers, pending] = await Promise.all([
+      rosterOptOuts(db, people).catch((err) => {
+        console.error('[competitions] roster opt-outs not read:', err instanceof Error ? err.message : err)
+        return null
+      }),
+      pendingConsentParticipantIds(db, people.map((p) => p.id)).catch((err) => {
+        console.error('[competitions] roster guardian consents not read:', err instanceof Error ? err.message : err)
+        return null
+      }),
+    ])
+    if (answers) {
+      optOuts = Object.fromEntries(
+        [...answers].map(([id, a]) => [id, heldOptOuts(a)] as const).filter(([, held]) => held.length > 0),
+      )
+    }
+    if (pending) consentPending = [...pending]
   }
 
   // ── Company rows (roster tab, live events only) ───────────────────────────
@@ -348,6 +376,8 @@ export default async function AdminEventDetailPage({
               eventSlug={slug}
               companies={companies}
               isAdmin={access.isAdmin}
+              optOuts={optOuts}
+              consentPending={consentPending}
             />
           )}
         </div>

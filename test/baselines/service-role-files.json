@@ -1689,6 +1689,10 @@
       "class": "script",
       "reason": "auto: operator script, run by hand; tables: agreements"
     },
+    "scripts/backfill-graduation-year.ts": {
+      "class": "script",
+      "reason": "Operator script, run by hand (alumni.mentor-upgrade, REG-23): reads members (id, grade, age_bracket) across every tenant and fills graduation_year only where it is still NULL, which RLS would hide and refuse. Report-only unless --apply; refuses to run without an explicit --env-file and refuses the production project without --production. No browser or request reaches it."
+    },
     "scripts/canary-tenant-flow.ts": {
       "class": "script",
       "reason": "Operator script, run by hand (S5 wave 7 K8, the dev canary runner): SELECTs only, reading back the evidence its HTTP requests left (registrations, participants, tenant_guardian_consents, agreements, event_email_sends, events, app_errors) across dev-canary and Stellr, which RLS would hide. Refuses any database but the dev project or loopback (K3 assertCanaryFlowTarget). No browser or request reaches it."

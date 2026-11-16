@@ -6,26 +6,37 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { Choice, Field, Input, Select, Textarea } from '@stellr/web-ui'
 import { usePrefillForm } from '@/components/forms/useMemberPrefill'
+import { useSpamGuard } from '@/components/forms/useSpamGuard'
+import { SpamGuardFields } from '@/components/forms/SpamGuardFields'
 import { trackLeadSubmitted } from '@/lib/analytics'
+import { CONTACT_LIMITS, CONTACT_TYPES, contactFields } from '@/app/api/contact/schema'
 
+// The route's fields (same caps, same inquiry types), with the stricter
+// minimums a person is asked for here.
 const schema = z.object({
-  name: z.string().min(2, 'Name must be at least 2 characters'),
-  email: z.string().email('Please enter a valid email address'),
-  type: z.string().min(1, 'Please select an inquiry type'),
-  message: z.string().min(10, 'Message must be at least 10 characters'),
+  name: z
+    .string()
+    .trim()
+    .min(2, 'Name must be at least 2 characters')
+    .max(CONTACT_LIMITS.name, `Please keep your name to ${CONTACT_LIMITS.name} characters or fewer`),
+  email: contactFields.email,
+  // The select starts empty, so the form holds a string; submit receives one of
+  // the six types.
+  type: z.string().min(1, 'Please select an inquiry type').pipe(contactFields.typeChoice),
+  message: z
+    .string()
+    .trim()
+    .min(10, 'Message must be at least 10 characters')
+    .max(CONTACT_LIMITS.message, 'Please keep your message to 5,000 characters or fewer'),
   consent: z.literal(true, { error: 'You must agree to be contacted' }),
 })
 
-type FormData = z.infer<typeof schema>
+type FormInput = z.input<typeof schema>
+type FormData = z.output<typeof schema>
 
 const ENQUIRY_TYPES = [
   { value: '', label: 'Select inquiry type…' },
-  { value: 'General', label: 'General' },
-  { value: 'Event Registration Help', label: 'Event Registration Help' },
-  { value: 'Sponsorship / Donation', label: 'Sponsorship / Donation' },
-  { value: 'Volunteer / Mentor', label: 'Volunteer / Mentor' },
-  { value: 'Media', label: 'Media' },
-  { value: 'Other', label: 'Other' },
+  ...CONTACT_TYPES.map((t) => ({ value: t, label: t })),
 ]
 
 // `/contact?type=mentor` and `?type=sponsorship` deep links pick the inquiry
@@ -37,6 +48,7 @@ const TYPE_FROM_QUERY: Record<string, string> = {
 
 export function ContactForm({ prefillType }: { prefillType?: string }) {
   const [status, setStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle')
+  const spam = useSpamGuard()
 
   const {
     register,
@@ -45,7 +57,7 @@ export function ContactForm({ prefillType }: { prefillType?: string }) {
     getValues,
     setValue,
     formState: { errors },
-  } = useForm<FormData>({
+  } = useForm<FormInput, unknown, FormData>({
     resolver: zodResolver(schema),
     defaultValues: { type: prefillType ?? '' },
   })
@@ -68,7 +80,7 @@ export function ContactForm({ prefillType }: { prefillType?: string }) {
       const res = await fetch('/api/contact', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data),
+        body: JSON.stringify({ ...data, ...(await spam.values()) }),
       })
       if (res.ok) trackLeadSubmitted('contact')
       setStatus(res.ok ? 'success' : 'error')
@@ -122,6 +134,8 @@ export function ContactForm({ prefillType }: { prefillType?: string }) {
       <Field label="Message" required error={errors.message?.message}>
         <Textarea id="message" rows={5} {...register('message')} className="resize-none" placeholder="How can we help?" />
       </Field>
+
+      <SpamGuardFields {...spam.fields} />
 
       <div className="space-y-1.5">
         <Choice

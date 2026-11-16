@@ -15,9 +15,11 @@
  *     Members (member records, schools, volunteers).
  *   - Staff exports as an admin does; every export is logged.
  *   - Admin only, to keep duties apart: clearing people (background-check
- *     adjudication, verifying external checks and teaching licences), deleting
- *     or merging members, granting Staff or Admin, Duties, scholarships, the
- *     store catalogue, the access console, view-as, privacy requests.
+ *     adjudication, verifying external checks and teaching licences, re-polling
+ *     open checks), deleting or merging members, granting Staff or Admin, Duties,
+ *     scholarships, the store catalogue, the access console, view-as, privacy
+ *     requests; and what is not named for Staff: Community, Academy, admin
+ *     email and the e-sign documents.
  *
  * Event Managers are not here: their access is per event (decideEventAccess).
  * DB-free and Clerk-free, like lib/authz/decide.ts, so proxy.ts and tests can
@@ -50,6 +52,13 @@ export const CAPABILITIES = [
   'members:delete',
   'impersonate',
   'privacy:read',
+  // Admin only, named for the admin layout to hide controls (staff-role.9). Their
+  // routes still check the admin role directly (isAdminClaims, requireStellrAdmin);
+  // each names what those routes already refuse Staff.
+  'community:manage', // Community: moderation, resources, Spaces
+  'academy:manage', // Academy: coaching, mentoring, training
+  'email:manage', // Admin email: campaigns and templates
+  'esign:manage', // E-sign: agreement documents, approving a version, the engine settings
 ] as const
 
 export type Capability = (typeof CAPABILITIES)[number]

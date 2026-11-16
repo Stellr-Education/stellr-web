@@ -55,12 +55,14 @@ export async function runIndividualHooks(
       // included: the registrant is not told it did.
       const { invitation, out: invitationOut } = guardianInvitationOutcome(invite)
       if (!invitationOut) console.error(`[register/individual] guardian invitation not sent: ${invitation}`)
-      // The platform audit is where staff see an invitation that did not go.
+      // The platform audit is where staff see an invitation that did not go. The
+      // client lets the staff alert read the consent row, so it names the
+      // registration and the envelope (s5-programme.52).
       await recordConsentAudit(
         'registration.guardian_consent.request',
         { id: row.consent.consentId, tenant_id: tenantId },
         { invitation },
-        { afterResponse: true },
+        { afterResponse: true, db },
       )
       await sendConsentPendingNotice(db, { tenantId, to: email, firstName: first_name ?? '', eventTitle, invitationSent: invitationOut })
       return { signInToken: null, guardianInvited: invitationOut }

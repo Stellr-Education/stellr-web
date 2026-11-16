@@ -1,11 +1,29 @@
 import { NextResponse } from 'next/server'
+import { z } from 'zod'
 import { sendEmail } from '@/lib/email'
 import { LEAD_SOURCE_LIFECYCLE } from '@/lib/hubspot-fields'
 import { captureLead, logLine, readHubspotCookie } from '@/lib/hubspot'
 import { rateLimitGuard, HOUR_MS } from '@/lib/rate-limit'
+import { checkSpamSignals } from '@/lib/spam-guard'
+import { hostEventFields as f, numberAsText } from './schema'
 
 const CONTACT_EMAIL = process.env.CONTACT_EMAIL ?? 'hello@stellreducation.org'
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://www.stellreducation.org'
+
+/** Server-side validation, with caps (docs/REC-form-spam-hardening.md §5). */
+const hostEventSchema = z.object({
+  firstName: f.firstName,
+  lastName: f.lastName,
+  email: f.email,
+  phone: f.phone,
+  companySchool: f.companySchool,
+  address: f.address,
+  venueCapacity: numberAsText(f.venueCapacity),
+  preferredTiming: numberAsText(f.preferredTiming),
+  preferredDuration: numberAsText(f.preferredDuration),
+  funding: f.funding,
+  facilityOverheads: f.facilityOverheads,
+})
 
 // deep review PUB-2: this is an unauthenticated public form whose values are
 // interpolated into a Stellr-branded HTML email to staff. Escape every value
@@ -24,16 +42,19 @@ export async function POST(req: Request) {
   const limited = rateLimitGuard(req, 'host-event', { limit: 3, windowMs: HOUR_MS })
   if (limited) return limited
   try {
+    const body: unknown = await req.json()
+    const parsed = hostEventSchema.safeParse(body)
+    if (!parsed.success) {
+      return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
+    }
+    const spam = checkSpamSignals(body, req, 'host-event')
+    if (spam) return spam
     const {
       firstName, lastName, email, phone,
       companySchool, address, venueCapacity,
       preferredTiming, preferredDuration,
       funding, facilityOverheads,
-    } = await req.json()
-
-    if (!firstName || !lastName || !email || !phone || !companySchool || !venueCapacity || !preferredTiming || !preferredDuration) {
-      return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
-    }
+    } = parsed.data
 
     const name = `${firstName} ${lastName}`
     const rows: [string, string][] = [

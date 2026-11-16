@@ -17,6 +17,7 @@ import { UNSECTIONED, buildLayout, canStep, layoutMoves, moveLesson, sectionKey,
 import type { RecordingPhase } from '@/lib/recording-view'
 import type { TrainableObject } from '@/lib/training-admin'
 import type { AdminModule, AdminSection, AdminLesson } from '@/components/admin/community/TrainingManager'
+import { AdminOnlyBanner, ReadOnlyFieldset, useCan } from '@/components/admin/CapabilitiesContext'
 
 // Course builder — design-faithful single-course editor: course selector, meta
 // card (inline title · Theme · Type · Certificate · Delete/Save draft/Publish),
@@ -64,6 +65,9 @@ export function CourseBuilder({
   const pathname = usePathname()
   const searchParams = useSearchParams()
   const courseSelectId = useId()
+  // Building courses is academy:manage, an admin's alone. Staff pick a course and
+  // see it, with every control disabled.
+  const canWrite = useCan('academy:manage')
   const [selectedId, setSelectedId] = useState<string>(
     initialCourseId && courses.some((c) => c.id === initialCourseId) ? initialCourseId : courses[0]?.id ?? ''
   )
@@ -119,7 +123,9 @@ export function CourseBuilder({
         </div>
       </div>
 
-      {creating && (
+      {!canWrite && <AdminOnlyBanner>An admin builds and edits courses. You can see each course here.</AdminOnlyBanner>}
+
+      {canWrite && creating && (
         <CreateCourse
           onCancel={() => setCreating(false)}
           onCreated={(id) => {
@@ -132,10 +138,10 @@ export function CourseBuilder({
 
       {!course ? (
         <p className="rounded-2xl border border-dashed border-brand-border bg-white p-8 text-center text-sm text-brand-muted-soft">
-          {creating ? '' : 'No course selected — create one to start building.'}
+          {creating && canWrite ? '' : canWrite ? 'No course selected — create one to start building.' : 'No courses yet.'}
         </p>
       ) : (
-        <>
+        <ReadOnlyFieldset readOnly={!canWrite} className="space-y-5">
           <CourseMetaCard key={course.id} course={course} onDone={() => router.refresh()} />
           <ObjectAssignments
             key={`assign-${course.id}`}
@@ -145,7 +151,7 @@ export function CourseBuilder({
             tiers={tiers}
           />
           <Curriculum key={`curr-${course.id}`} course={course} recordingPhases={recordingPhases} onDone={() => router.refresh()} />
-        </>
+        </ReadOnlyFieldset>
       )}
     </div>
   )
@@ -359,6 +365,9 @@ function Curriculum({ course: m, recordingPhases, onDone }: { course: AdminModul
   const [orderIds, setOrderIds] = useState<string[]>(sections.map((s) => s.id))
   const [dragId, setDragId] = useState<string | null>(null)
   const [moveStatus, setMoveStatus] = useState('')
+  // Drag reorder sits outside the read-only fieldset's reach: Staff (no
+  // academy:manage) cannot start one, and nothing is saved without it.
+  const canWrite = useCan('academy:manage')
 
   const idsKey = sections.map((s) => s.id).join(',')
   useEffect(() => setOrderIds(sections.map((s) => s.id)), [idsKey]) // eslint-disable-line react-hooks/exhaustive-deps -- `sections` is rebuilt every render; the joined id string is the stable identity
@@ -408,6 +417,7 @@ function Curriculum({ course: m, recordingPhases, onDone }: { course: AdminModul
   const layoutKeys = [...ordered.map((s) => s.id), ...(unsectioned.length > 0 ? [UNSECTIONED] : [])]
 
   const saveLessons = async (next: LessonLayout) => {
+    if (!canWrite) return
     const moves = layoutMoves(next, savedLessons.current)
     if (moves.length === 0) return
     for (const move of moves) savedLessons.current.set(move.id, { sectionId: move.sectionId, displayOrder: move.displayOrder })
@@ -489,7 +499,7 @@ function Curriculum({ course: m, recordingPhases, onDone }: { course: AdminModul
     lessonDragId,
     lessonDrop,
     onStepLesson: stepLessonBy,
-    onLessonDragStart: setLessonDragId,
+    onLessonDragStart: (id: string) => { if (canWrite) setLessonDragId(id) },
     onLessonDragOverCard: dragLessonOverCard,
     onLessonDragEnd: cancelLessonDrag,
   }
@@ -526,6 +536,7 @@ function Curriculum({ course: m, recordingPhases, onDone }: { course: AdminModul
     onDone()
   }
   const persistOrder = async () => {
+    if (!canWrite) return
     if (lessonDragId) { dropLesson(); return }
     const ids = orderIds; setDragId(null)
     await persist(ids)
@@ -561,12 +572,12 @@ function Curriculum({ course: m, recordingPhases, onDone }: { course: AdminModul
               section={s}
               lessons={lessonsIn(s.id)}
               selectedLessonId={editing?.lesson?.id ?? null}
-              reorderable={ordered.length > 1}
+              reorderable={canWrite && ordered.length > 1}
               isFirst={idx === 0}
               isLast={idx === ordered.length - 1}
               onMove={(dir) => move(s.id, dir)}
               dragging={dragId === s.id}
-              onDragStart={() => setDragId(s.id)}
+              onDragStart={() => { if (canWrite) setDragId(s.id) }}
               onDragEnter={() => reorderOver(s.id)}
               onDrop={persistOrder}
               onDragEnd={() => setDragId(null)}

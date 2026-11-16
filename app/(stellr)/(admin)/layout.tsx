@@ -4,10 +4,11 @@ import { ClerkProvider } from '@clerk/nextjs'
 import { AdminUserButton } from '@/components/admin/AdminUserButton'
 import { clerkAppearance } from '@/lib/clerk-appearance'
 import { requestNonce } from '@/lib/request-nonce'
-import { hasCapability, hasPortalAccess, isStellrAdmin } from '@/lib/authz'
+import { currentCapabilities, hasCapability, hasPortalAccess, isStellrAdmin } from '@/lib/authz'
 import { AdminSidebar } from '@/components/admin/AdminSidebar'
 import { SiteFooter } from '@/components/layout/SiteFooter'
 import { RecordLinksProvider } from '@/components/admin/RecordLinks'
+import { CapabilitiesProvider } from '@/components/admin/CapabilitiesContext'
 
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
   const { userId } = await auth()
@@ -20,6 +21,9 @@ export default async function AdminLayout({ children }: { children: React.ReactN
   const isAdmin = await isStellrAdmin({ route: '/admin' })
   const role = isAdmin ? 'admin' : (await hasCapability('portal:read', { route: '/admin' })) ? 'staff' : 'event_manager'
   const ROLE_LABEL = { admin: 'Admin', staff: 'Staff', event_manager: 'Event Manager' } as const
+  // What the viewer may change, so pages can hide the controls the API would
+  // refuse them. Hiding only: every route still decides for itself.
+  const capabilities = await currentCapabilities()
 
   // The nonce puts clerk-js under the CSP (lib/csp.ts).
   return (
@@ -44,7 +48,9 @@ export default async function AdminLayout({ children }: { children: React.ReactN
 
           <main id="main" className="mx-auto w-full max-w-7xl flex-1 px-4 py-8 pb-24 lg:px-8 lg:pb-10">
             {/* Names link to member and school records for admins and Staff. */}
-            <RecordLinksProvider enabled={role !== 'event_manager'}>{children}</RecordLinksProvider>
+            <CapabilitiesProvider capabilities={capabilities}>
+              <RecordLinksProvider enabled={role !== 'event_manager'}>{children}</RecordLinksProvider>
+            </CapabilitiesProvider>
           </main>
 
           {/* Footer hidden on mobile — bottom tab bar serves that role */}
