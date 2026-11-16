@@ -621,6 +621,10 @@
       "class": "convert",
       "reason": "auto: reaches tables it does not name (dynamic .from, rpc, or a client passed to a helper); review before converting"
     },
+    "app/api/admin/events/[slug]/participants/[pid]/guardian-consent/resend/route.ts": {
+      "class": "convert",
+      "reason": "Staff resend of a tenant guardian consent (wave 8 CONSENT (c)). Reads tenant_guardian_consents, which only service_role may read (TENANT_APP_NO_ACCESS_TABLES), and sends through the signing engine, which writes agreement_recipients and the envelope audit. The participant and the envelope are loaded through loadRecord in the crew's scope; convert those reads with the rest of the events admin routes."
+    },
     "app/api/admin/events/[slug]/participants/[pid]/guardian/route.ts": {
       "class": "convert",
       "reason": "auto: reaches tables it does not name (dynamic .from, rpc, or a client passed to a helper); review before converting"

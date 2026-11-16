@@ -758,3 +758,46 @@ describe('the staff alert text', () => {
     errors.mockRestore()
   })
 })
+
+const { pendingConsentForParticipant, tenantGuardianConsentWorkWaiting } = await import('./tenant-guardian-consent')
+
+describe('the staff resend’s consent read (wave 8 CONSENT (c))', () => {
+  const row = { id: 'c-1', tenant_id: CANARY, registration_id: 'reg-1', agreement_id: 'agr-1' }
+
+  it('reads the participant’s pending consent, ids only', async () => {
+    rec.respond((c) => (c.table === 'tenant_guardian_consents' && c.single === 'maybe' ? { data: row, error: null } : undefined))
+    expect(await pendingConsentForParticipant(db, 'p-1')).toEqual(row)
+    expect(rec.calls).toHaveLength(1)
+    expect(rec.calls[0].filters).toEqual([['eq', 'participant_id', 'p-1'], ['eq', 'status', 'pending']])
+  })
+
+  it('none, or a Stellr row, is null', async () => {
+    expect(await pendingConsentForParticipant(db, 'p-1')).toBeNull()
+    rec.respond((c) => (c.table === 'tenant_guardian_consents' ? { data: { ...row, tenant_id: STELLR_TENANT_ID }, error: null } : undefined))
+    expect(await pendingConsentForParticipant(db, 'p-1')).toBeNull()
+  })
+
+  it('a failed read throws', async () => {
+    rec.respond(() => ({ data: null, error: { message: 'down' } }))
+    await expect(pendingConsentForParticipant(db, 'p-1')).rejects.toThrow('down')
+  })
+})
+
+describe('the sweep’s gate: any unsigned consent (wave 8 CONSENT (b), s5-programme.26)', () => {
+  it('none: false, from one read that excludes signed rows', async () => {
+    expect(await tenantGuardianConsentWorkWaiting(db)).toBe(false)
+    expect(rec.calls).toHaveLength(1)
+    expect(rec.calls[0].table).toBe('tenant_guardian_consents')
+    expect(rec.calls[0].filters).toEqual([['neq', 'status', 'signed']])
+  })
+
+  it('one: true', async () => {
+    rec.respond((c) => (c.table === 'tenant_guardian_consents' ? { data: [{ id: 'c-1' }], error: null } : undefined))
+    expect(await tenantGuardianConsentWorkWaiting(db)).toBe(true)
+  })
+
+  it('a failed read throws', async () => {
+    rec.respond(() => ({ data: null, error: { message: 'down' } }))
+    await expect(tenantGuardianConsentWorkWaiting(db)).rejects.toThrow('down')
+  })
+})

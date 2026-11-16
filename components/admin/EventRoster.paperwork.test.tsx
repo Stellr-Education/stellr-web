@@ -186,8 +186,32 @@ describe('EventRoster: pending guardian consent marker (T-23)', () => {
       expect(marker).toHaveClass('rounded-pill', 'bg-pathway-amber-bg', 'text-gold-ink')
       expect(within(scope).queryByText('Registered')).not.toBeInTheDocument()
     }
-    // No resend or desk action in this slice.
-    expect(screen.queryByRole('button', { name: /resend/i })).not.toBeInTheDocument()
+    // Wave 8 CONSENT (c): staff can resend the guardian's form, in the card and the table.
+    for (const scope of [card(), row()]) {
+      expect(within(scope).getByRole('button', { name: 'Resend consent form' })).toBeInTheDocument()
+    }
+  })
+
+  it('the resend posts for that participant, with no body, and says what happened', async () => {
+    const fetchMock = vi.fn(async (..._a: unknown[]) => new Response(JSON.stringify({ ok: true, outcome: 'reminded' }), { status: 200 }))
+    vi.stubGlobal('fetch', fetchMock)
+    renderRoster({ consentPending: ['p-1'] })
+    open()
+    fireEvent.click(within(card()).getByRole('button', { name: 'Resend consent form' }))
+    await waitFor(() => expect(within(card()).getByRole('status')).toHaveTextContent('Reminder sent to the guardian.'))
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+    expect(url).toMatch(/\/participants\/p-1\/guardian-consent\/resend$/)
+    expect(init).toEqual({ method: 'POST' })
+    vi.unstubAllGlobals()
+  })
+
+  it("a refused resend shows the server's reason", async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ error: 'The consent form was sent recently. Try again later.' }), { status: 429 })))
+    renderRoster({ consentPending: ['p-1'] })
+    open()
+    fireEvent.click(within(row()).getByRole('button', { name: 'Resend consent form' }))
+    await waitFor(() => expect(within(row()).getByRole('status')).toHaveTextContent('The consent form was sent recently. Try again later.'))
+    vi.unstubAllGlobals()
   })
 
   it("a Stellr event: no pending consent exists, so the roster is unchanged", () => {
@@ -197,11 +221,13 @@ describe('EventRoster: pending guardian consent marker (T-23)', () => {
     expect(screen.queryByText('Waiting for guardian consent')).not.toBeInTheDocument()
     expect(within(card()).getByText('Registered')).toBeInTheDocument()
     expect(within(row()).getByText('Registered')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Resend consent form' })).not.toBeInTheDocument()
   })
 
   it('another participant pending does not mark this one', () => {
     renderRoster({ consentPending: ['p-other'] })
     open()
     expect(screen.queryByText('Waiting for guardian consent')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Resend consent form' })).not.toBeInTheDocument()
   })
 })

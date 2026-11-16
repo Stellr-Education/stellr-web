@@ -41,6 +41,8 @@ export const AUDIT_ACTIONS = [
   'registration.guardian_consent.lift',
   // A consent envelope from an earlier registration was voided.
   'registration.guardian_consent.void',
+  // Staff resent a pending consent's invitation, or chased the guardian (wave 8 CONSENT (c)).
+  'registration.guardian_consent.resend',
 
   // Consent and uploads (A14)
   'consent.request.send',

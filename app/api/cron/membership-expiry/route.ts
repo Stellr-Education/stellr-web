@@ -7,14 +7,18 @@ import { withCronAudit } from '@/lib/cron-audit'
 import { startCronRun } from '@/lib/cron-runs'
 import { sweepEventManagers, type SweepResult } from '@/lib/event-manager'
 import { sweepStaffGrants } from '@/lib/staff'
-import { tenantGuardianConsentEnabled } from '@/lib/registration/eligibility'
-import { sweepTenantGuardianConsents } from '@/lib/registration/tenant-guardian-consent'
+import {
+  TENANT_GUARDIAN_CONSENT_FLAG,
+  tenantGuardianConsentEnabled,
+  tenantGuardianConsentMissingPreconditions,
+} from '@/lib/registration/eligibility'
+import { sweepTenantGuardianConsents, tenantGuardianConsentWorkWaiting } from '@/lib/registration/tenant-guardian-consent'
 import { devCronOptInFor } from '@/lib/cron-dev-opt-in'
 import { appEnv, isProd } from '@/lib/env'
 
 // GET /api/cron/membership-expiry — runs daily (see vercel.json). Four steps
-// (the third, Event Manager expiry, and the fourth, tenant guardian consents
-// behind TENANT_GUARDIAN_CONSENT_ENABLED, are described where they run below):
+// (the third, Event Manager expiry, and the fourth, tenant guardian consents,
+// are described where they run below):
 //
 //   1. Flips complimentary / rule-granted memberships to 'expired' once their
 //      expires_at has passed (the downgrade side of the grant engine). Paid
@@ -44,16 +48,36 @@ function declineOffProd() {
 
 // 4. S5 wave 6: tenant guardian consents. A consent-pending registration whose
 //    window closed is removed (lib/registration/tenant-guardian-consent), and a
-//    removal that failed is retried. Only with TENANT_GUARDIAN_CONSENT_ENABLED,
-//    so with it off this step reads nothing and adds no result key.
+//    removal that failed is retried, up to MAX_REMOVAL_ATTEMPTS, then escalated to
+//    Stellr's platform staff (WD-5, BF-45).
+//
+//    Wave 8 CONSENT (b), tracker s5-programme.26: the participant trigger opens a
+//    pending row whatever TENANT_GUARDIAN_CONSENT_ENABLED says, so the sweep runs
+//    whenever an unsigned row exists, flag or no flag. Settling only expires, removes
+//    and voids; it never admits anyone. With the flag off and no unsigned row (every
+//    event Stellr's, as on production today) this step reads one id at most and adds
+//    no result key, so the run's result is as before.
+//
+//    Readiness guard (s5-programme.20): a flag that is on while a precondition is
+//    missing admits nobody (tenantGuardianConsentReady). The run records that as a
+//    failure, so it reaches app_errors and the daily error email (lib/cron-runs):
+//    the precondition names only, never a value.
 async function tenantGuardianConsentStep(db: ReturnType<typeof supabaseServer>, run: CronRunHandle): Promise<Record<string, unknown> | undefined> {
-  if (!tenantGuardianConsentEnabled()) return undefined
+  const flagOn = tenantGuardianConsentEnabled()
+  if (flagOn) {
+    const missing = tenantGuardianConsentMissingPreconditions()
+    if (missing.length) {
+      run.fail('tenant-guardian-consent:not-ready', new Error(`${TENANT_GUARDIAN_CONSENT_FLAG} is on but minors are refused; missing preconditions: ${missing.join(', ')}`))
+    }
+  }
   try {
+    if (!flagOn && !(await tenantGuardianConsentWorkWaiting(db))) return undefined
     const r = await sweepTenantGuardianConsents(db)
     for (const e of r.errors) run.fail(`tenant-guardian-consent:${e.consentId}`, e.error)
     return {
       scanned: r.scanned, signed: r.signed.length, expired: r.expired.length,
-      removed: r.removed.length, held: r.held.length, voided: r.voided.length, errors: r.errors.length,
+      removed: r.removed.length, held: r.held.length, voided: r.voided.length,
+      escalated: r.escalated.length, errors: r.errors.length,
     }
   } catch (err) {
     run.fail('tenant-guardian-consent', err)
@@ -75,7 +99,7 @@ export const GET = withCronAudit('membership-expiry', async (req: NextRequest) =
     const db = supabaseServer()
     const run = await startCronRun(db, 'membership-expiry')
     const tenantGuardianConsent =
-      (await tenantGuardianConsentStep(db, run)) ?? { skipped: true, reason: 'TENANT_GUARDIAN_CONSENT_ENABLED is off' }
+      (await tenantGuardianConsentStep(db, run)) ?? { skipped: true, reason: 'No unsigned guardian consents' }
     const body = { only: 'tenant-consent', tenantGuardianConsent }
     await run.finish(body)
     return NextResponse.json(body, { status: 'error' in tenantGuardianConsent ? 500 : 200 })
