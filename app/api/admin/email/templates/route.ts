@@ -4,6 +4,8 @@ import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import { supabaseServer } from '@/lib/supabase'
 import { isAdminClaims } from '@/lib/admin-auth'
+import { withAudit } from '@/lib/audit/route'
+import { adminAuditSubject, noteAuditSubject } from '@/lib/audit/route-subject'
 import { tiptapToEmailHtml } from '@/lib/email-render'
 import { unknownTokens } from '@/lib/email-tokens'
 import { tiptapToPlainText } from '@/lib/community'
@@ -34,7 +36,15 @@ export async function GET() {
 }
 
 // POST /api/admin/email/templates — create a reusable template.
-export async function POST(req: Request) {
+//
+// Platform audit (docs/TENANCY-S5.md, C7): the new template is the target; its key the
+// metadata. Never its name, subject or body.
+export const POST = withAudit(
+  ({ args: [req] }: { args: [Request] }) => ({ action: 'email.template.create', ...adminAuditSubject(req, 'email_templates') }),
+  createTemplate,
+)
+
+async function createTemplate(req: Request) {
   const { sessionClaims } = await auth()
   if (!isAdminClaims(sessionClaims)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
@@ -61,6 +71,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'Failed to create template' }, { status: 500 })
   }
 
+  noteAuditSubject(req, { id: data.id as string, detail: { template_key: key } })
   // Return a preview so the UI can confirm the body rendered.
   return NextResponse.json({ id: data.id, previewHtml: tiptapToEmailHtml(bodyJson) })
 }

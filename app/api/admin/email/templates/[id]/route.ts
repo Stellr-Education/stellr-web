@@ -3,6 +3,8 @@ import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import { supabaseServer } from '@/lib/supabase'
 import { isAdminClaims } from '@/lib/admin-auth'
+import { storableId, withAudit } from '@/lib/audit/route'
+import { adminAuditSubject, noteAuditSubject } from '@/lib/audit/route-subject'
 import { unknownTokens } from '@/lib/email-tokens'
 import { tiptapToPlainText } from '@/lib/community'
 
@@ -12,8 +14,21 @@ const patchSchema = z.object({
   bodyJson: z.unknown().optional(),
 })
 
+type Ctx = { params: Promise<{ id: string }> }
+
+// Platform audit (docs/TENANCY-S5.md, C7): the template is the target; which fields were
+// edited (names, never values) the metadata.
+export const PATCH = withAudit(
+  ({ args: [req] }: { args: [Request, Ctx] }) => ({ action: 'email.template.update', ...adminAuditSubject(req, 'email_templates') }),
+  updateTemplate,
+)
+export const DELETE = withAudit(
+  ({ args: [req] }: { args: [Request, Ctx] }) => ({ action: 'email.template.archive', ...adminAuditSubject(req, 'email_templates') }),
+  archiveTemplate,
+)
+
 // PATCH /api/admin/email/templates/[id] — edit a template.
-export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
+async function updateTemplate(req: Request, { params }: Ctx) {
   const { sessionClaims } = await auth()
   if (!isAdminClaims(sessionClaims)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   const { id } = await params
@@ -32,6 +47,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   if (subject !== undefined) update.subject = subject
   if (bodyJson !== undefined) update.body_json = bodyJson
 
+  noteAuditSubject(req, { id: storableId(id), detail: { fields: Object.keys(update).filter((k) => k !== 'updated_at') } })
   const db = supabaseServer()
   const { error } = await db.from('email_templates').update(update).eq('id', id)
   if (error) return NextResponse.json({ error: 'Failed to update' }, { status: 500 })
@@ -40,10 +56,11 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
 
 // DELETE /api/admin/email/templates/[id] — soft-delete (archive). Blocked if a
 // non-archived campaign still references it (FK is RESTRICT anyway).
-export async function DELETE(_req: Request, { params }: { params: Promise<{ id: string }> }) {
+async function archiveTemplate(req: Request, { params }: Ctx) {
   const { sessionClaims } = await auth()
   if (!isAdminClaims(sessionClaims)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   const { id } = await params
+  noteAuditSubject(req, { id: storableId(id) })
 
   const db = supabaseServer()
   const { count } = await db

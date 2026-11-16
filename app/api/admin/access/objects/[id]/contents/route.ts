@@ -12,6 +12,9 @@ import {
 import { getSignedInMember } from '@/lib/community'
 import { getAllEvents, getAllCampaigns } from '@/lib/events/repo'
 import { isAdminClaims } from '@/lib/admin-auth'
+import { withAudit } from '@/lib/audit/route'
+import { adminAuditSubject } from '@/lib/audit/route-subject'
+import { noteAccessObject } from '../../../audit'
 
 // /api/admin/access/objects/[id]/contents — the Contents tab of the unified
 // container detail. Contents live in two stores:
@@ -159,7 +162,20 @@ const postSchema = z.object({
   dueAt: z.string().nullable().optional(),
 })
 
-export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
+type Ctx = { params: Promise<{ id: string }> }
+
+// Platform audit (docs/TENANCY-S5.md, C7): the object is the target; what was attached or
+// detached (its type and id) the metadata.
+export const POST = withAudit(
+  ({ args: [req] }: { args: [Request, Ctx] }) => ({ action: 'access.object_content.attach', ...adminAuditSubject(req, 'mentoring_cohorts') }),
+  attachContent,
+)
+export const DELETE = withAudit(
+  ({ args: [req] }: { args: [Request, Ctx] }) => ({ action: 'access.object_content.detach', ...adminAuditSubject(req, 'mentoring_cohorts') }),
+  detachContent,
+)
+
+async function attachContent(req: Request, { params }: Ctx) {
   const { sessionClaims } = await auth()
   if (!isAdminClaims(sessionClaims)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
@@ -170,6 +186,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   const parsed = postSchema.safeParse(await req.json().catch(() => null))
   if (!parsed.success) return NextResponse.json({ error: 'Invalid request' }, { status: 400 })
   const { ref, contentType, mandatory, dueAt } = parsed.data
+  noteAccessObject(req, object, { content_type: contentType, content_ref: ref })
 
   // Relationship-matrix gate — the single validator for every attach.
   const toType: AccessObjectType = contentType === 'space' ? 'space' : (CONTENT_TYPE_TO_OBJECT[contentType] ?? 'resource')
@@ -228,7 +245,7 @@ const deleteSchema = z.object({
   contentType: z.enum(['training_module', 'resource', 'recording', 'announcement', 'product', 'space']),
 })
 
-export async function DELETE(req: Request, { params }: { params: Promise<{ id: string }> }) {
+async function detachContent(req: Request, { params }: Ctx) {
   const { sessionClaims } = await auth()
   if (!isAdminClaims(sessionClaims)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
@@ -239,6 +256,7 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ id: s
   const parsed = deleteSchema.safeParse(await req.json().catch(() => null))
   if (!parsed.success) return NextResponse.json({ error: 'Invalid request' }, { status: 400 })
   const { ref, contentType } = parsed.data
+  noteAccessObject(req, object, { content_type: contentType, content_ref: ref })
 
   const db = supabaseServer()
   if (contentType === 'space') {

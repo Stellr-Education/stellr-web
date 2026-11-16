@@ -2,8 +2,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 // PATCH /api/admin/members/[id] — graduation_year (alumni.mentor-upgrade).
-// Staff can set and clear the year the July-1 Alumni upgrade reads; a new value
-// gets the onboarding range check, an unchanged one is saved as it was.
+// Staff can set and clear the year the July-1 Alumni upgrade reads. Whenever the
+// field is sent, changed or not, it is checked: a whole year from 1950 to eight
+// school years on. A past year is allowed, since a former student's is behind
+// them (backlog-batch2.10).
 
 const MEMBER = '11111111-1111-4111-8111-111111111111'
 
@@ -92,14 +94,22 @@ describe('PATCH /api/admin/members/[id] — graduation year', () => {
   })
 
   it.each([
-    ['before this school year', () => min - 1],
     ['past the eight-year window', () => max + 1],
+    ['before 1950', () => 1949],
     ['not a year', () => 'next year'],
-  ])('refuses a new year %s with a 400, before writing', async (_label, value) => {
+    ['a fraction', () => '2027.5'],
+  ])('refuses a year %s with a 400, before writing', async (_label, value) => {
     const res = await save(studentForm(value()))
     expect(res.status).toBe(400)
-    expect(await res.json()).toEqual({ error: `Graduation year must be a year from ${min} to ${max}.` })
+    expect(await res.json()).toEqual({ error: `Graduation year must be a year from 1950 to ${max}.` })
     expect(state.updates).toEqual([])
+  })
+
+  it('sets a past year for a former student', async () => {
+    const res = await save(studentForm(String(min - 5)))
+    expect(res.status).toBe(200)
+    expect(state.updates[0].graduation_year).toBe(min - 5)
+    expect(state.logs[0]).toMatchObject({ metadata: { fields: ['graduation_year'] } })
   })
 
   it('an unchanged year on file saves as it was, even one now in the past (a graduate)', async () => {
@@ -108,6 +118,13 @@ describe('PATCH /api/admin/members/[id] — graduation year', () => {
     expect(res.status).toBe(200)
     expect(state.updates[0].graduation_year).toBe(min - 3)
     expect(state.logs[0]).toMatchObject({ metadata: { fields: ['first_name'] } })
+  })
+
+  it('checks the year even when it has not changed', async () => {
+    state.before!.graduation_year = max + 4
+    const res = await save({ ...studentForm(String(max + 4)), first_name: 'Renamed' })
+    expect(res.status).toBe(400)
+    expect(state.updates).toEqual([])
   })
 
   it('a save that does not send the field leaves it alone', async () => {

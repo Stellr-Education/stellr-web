@@ -15,6 +15,7 @@ vi.mock('@/lib/admin-auth', () => ({ isAdminClaims: () => true }))
 vi.mock('@/lib/member-roles', () => ({
   addGlobalRole: (...a: unknown[]) => addGlobalRole(...a),
   getGlobalRoleNames: async () => [],
+  ROLE_LABELS: { member: 'Member', mentor: 'Mentor' },
   ROLES_BY_BRACKET: {},
 }))
 vi.mock('@/lib/member-access', () => ({ getMemberAccessSummary: async () => ({ rows: [] }) }))

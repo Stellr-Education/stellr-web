@@ -5,6 +5,8 @@ import { isAdminClaims } from '@/lib/admin-auth'
 import { actorFromAuth, logActivity } from '@/lib/activity-log'
 import { BC_VALIDITY_YEARS } from '@/lib/compliance'
 import { recheckEventManagerClearance } from '@/lib/event-manager'
+import { storableId, withAudit } from '@/lib/audit/route'
+import { adminAuditSubject, noteAuditSubject } from '@/lib/audit/route-subject'
 
 // POST /api/admin/members/[id]/background-check/adjudicate
 // Record the decision on a flagged ("Consider") report.
@@ -19,7 +21,17 @@ import { recheckEventManagerClearance } from '@/lib/event-manager'
 // The check's `status` is deliberately NOT changed: it mirrors the vendor's
 // report status, which is what the provider's certification compares against.
 // deriveCompliance reads the adjudication alongside it.
-export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
+//
+// Platform audit (docs/TENANCY-S5.md, C7): the member is the target; the check and the
+// outcome the metadata. The rationale is free text and stays in the activity log.
+type Ctx = { params: Promise<{ id: string }> }
+
+export const POST = withAudit(
+  ({ args: [req] }: { args: [Request, Ctx] }) => ({ action: 'compliance.background_check.adjudicate', ...adminAuditSubject(req, 'members') }),
+  adjudicate,
+)
+
+async function adjudicate(req: Request, { params }: Ctx) {
   const { sessionClaims } = await auth()
   if (!isAdminClaims(sessionClaims)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
@@ -66,6 +78,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     return NextResponse.json({ error: 'This check has changed — reload and try again' }, { status: 409 })
   }
 
+  noteAuditSubject(req, { id: storableId(id), detail: { check_id: storableId(check.id), outcome } })
   const actor = await actorFromAuth()
   const now = new Date().toISOString()
 
