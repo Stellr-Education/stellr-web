@@ -4,7 +4,7 @@ One list of the owner decisions that S5 wave 7 depends on, grouped by the gate e
 
 This is a new file so that it never collides with `docs/TENANCY-S5.md`, which stays the plan of record. Decisions already written up elsewhere are linked, not copied (see [Settled elsewhere](#settled-elsewhere)). Open questions go to the owner about 5 at a time, each with its default. Tracker row `s5-programme.41` points here. Batch 2 was answered on 12 Nov 2026, with the merges of A10a (#655) and A10b (#660). Batch 3 (`W7-14` and `W7-17` to `W7-32`) and the remaining questions from wave 7 PR bodies were answered on 13 Nov 2026. The row stays open until the rest of the decisions are added.
 
-Started 12 Nov 2026; batch 2, `W7-16` and the PR-review answers recorded on 12 Nov 2026 (docs train D2); batch 3, the dev canary zone and the rest of the PR-review answers recorded on 13 Nov 2026 (docs train D3); the open questions from backlog batch 1's S5 PRs recorded on 14 Nov 2026. People are named by role only: "the owner" is the programme's owner.
+Started 12 Nov 2026; batch 2, `W7-16` and the PR-review answers recorded on 12 Nov 2026 (docs train D2); batch 3, the dev canary zone and the rest of the PR-review answers recorded on 13 Nov 2026 (docs train D3); the open questions from backlog batch 1's and batch 2's S5 PRs recorded on 14 Nov 2026. People are named by role only: "the owner" is the programme's owner.
 
 ## How to read an entry
 
@@ -113,7 +113,7 @@ Smaller questions a code PR asked, answered by the owner in chat when approving 
 
 ## Open: backlog batch 1 PR review (14 Nov 2026)
 
-Raised by the reviews of batch 1's S5 PRs, none merged on 14 Nov 2026 (`docs/handovers/tracker/2026-11-14-backlog-batch1.md`). Each is open; the default is what the PR builds, and nothing changes until the owner answers or merges.
+Raised by the reviews of batch 1's S5 PRs (`docs/handovers/tracker/2026-11-14-backlog-batch1.md`), all of which merged into `dev` later on 14 Nov 2026. Each question is still open; the default is what the PR built, and it stands until the owner answers.
 
 | Id | Question | Recommended default | Answer | Answered |
 |---|---|---|---|---|
@@ -122,6 +122,18 @@ Raised by the reviews of batch 1's S5 PRs, none merged on 14 Nov 2026 (`docs/han
 | PR705-1 | **#705 and #708:** add `test/stellr-only-lists-ratchet.test.ts` and `test/registration/tenant-guardian-consent-edges-sql.test.ts` to `.github/CODEOWNERS`, as their sibling ratchets and tests are | Yes, in a slice that may edit `.github/CODEOWNERS` | Open | open |
 | PR708-1 | **#708's readiness guard** is a new `tenantGuardianConsentReady()`, which every admission path reads. `tenantGuardianConsentEnabled()` still reads the flag alone and still gates the consent sweep, so with the flag on and a precondition missing, minors are refused but the sweep keeps settling held rows | Keep the split: refusing admission is the safety property, and letting the sweep settle beats stranding held rows | Open | open |
 | PR708-2 | **#708's migration** (`20261114072142`) must reach a database before or with the code wherever the consent flag is on, because the sweep's retry read names the new column. The flag is unset everywhere today | Apply it to the `dev` database once #708 merges and its `db` job passes, before the flag is set there; to production through the Production migration Action before the code is promoted | Open | open |
+
+## Open: backlog batch 2 PR review (14 Nov 2026)
+
+Raised by the reviews of batch 2's S5 PRs, none merged on 14 Nov 2026 (`docs/handovers/tracker/2026-11-14-backlog-batch2.md`). Each is open; the default is what the PR builds unless it says otherwise, and nothing changes until the owner answers or merges. Platform audit is off everywhere, so `PR721-1` gates `PLATFORM_AUDIT_ENABLED`, not the merge.
+
+| Id | Question | Recommended default | Answer | Answered |
+|---|---|---|---|---|
+| PR720-1 | **#720, the Staff persona:** Staff may edit `public.schools` through `app/api/admin/schools/[id]` PATCH, the one platform route that lets Staff in (`schools:write`), and the harness records it as a leak. Accept it in `test/idor/staff-accepted.ts`, since `public.schools` is the tenantless school directory (`lib/tenancy/registry.ts`), so the honey school is a shared row, not another tenant's record? | Accept, as built. An acceptance covers only Staff, on a platform route that checks a capability Staff holds, with the exact outcome it names, and tests pin those limits | Open | open |
+| PR720-2 | **#720, the two community snapshot reasons** (the coaching request and training item-flag routes) were rewritten from `TODO(S5)` by the builder and checked by the reviewer, not the owner: the mentoring-cohort and training-module rows are Stellr-only by database checks (migration `20261106234759`), and training items are covered through their parent module | Accept the rewritten reasons | Open | open |
+| PR721-1 | **#721, "Not you?" on check-in:** `DELETE /api/check-in` is unauthenticated and not rate-limited. With platform audit on, each request appends one row to the append-only chain, with an anonymous actor, no tenant and no target, so anyone could flood a table that is never erased | Drop the audit event from that handler (the row carries no information); rate-limiting it is the alternative. Decide before `PLATFORM_AUDIT_ENABLED` is set anywhere | Open | open |
+| PR725-1 | **#725, C20a:** a failed `events` read in `ensureEventMerchOrder` now returns quietly. At registration, a registrant's chosen add-ons are dropped and only the fee is charged; with a full scholarship plus add-ons, the registration is left unconfirmed. Ignored errors on this path already behaved this way | Accept for the merge, and make that read fail loudly in the registration path in a follow-up slice | Open | open |
+| PR728-1 | **#728, the roster opt-out pill:** on a tenant event, the pill and the CSV columns fall back to the member's newest Stellr agreement, which can be from a form signed for another event. Only Stellr staff see it (the page and export are Stellr-scoped), so nothing crosses tenants | Accept for now: every event is Stellr's today; revisit when tenant agreements exist | Open | open |
 
 ## Settled elsewhere
 
@@ -136,5 +148,5 @@ Linked, not copied. The wording that counts is at the link.
 
 - The decisions that gate a production consent flip, listed in `docs/TENANCY-S5.md` under "Owner decisions wave 6 raised" (the consent document's wording, guardian identity assurance, invitation caps, the consent window, the new wording, and the rest). They do not gate wave 7, which uses a placeholder document on `dev` only (W7-6).
 - The decisions held in tracker `s5-programme.42` (B15, B5d, B20, the C0b composite foreign key, the C14 remainder), which wave 7 leaves out of scope.
-- The rest of the 46 to 60 decisions across the earlier wave tables (`s5-programme.41`). Each is added here, under the gate it blocks, before it is brought to the owner. PR #706 (open on 14 Nov 2026) drafts 72 of them in `docs/S5-DECISION-BACKFILL-DRAFT.md`; they move here once that draft is reviewed.
+- The rest of the 46 to 60 decisions across the earlier wave tables (`s5-programme.41`). Each is added here, under the gate it blocks, before it is brought to the owner. PR #706 (merged into `dev` on 14 Nov 2026) drafts 72 of them in `docs/S5-DECISION-BACKFILL-DRAFT.md`; they move here once that draft is reviewed.
 - B17's staff alert contact per tenant (`AMD-NOTIFY-TENANT`), which gates the first non-owner tenant's alerts.
