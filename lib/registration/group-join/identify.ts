@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { ensureClerkUserAndSignInToken } from '@/lib/clerk-provisioning'
 import { AUTH_APP_URL } from '@/lib/env'
-import { upsertMember } from '@/lib/member-sync'
+import { upsertMemberOutcome } from '@/lib/member-sync'
 import { childAwaitingConsentBlock } from '@/lib/pending-consent'
 import { assertEligible } from '../eligibility'
 import type { DeferredEventContext } from '../event-context'
@@ -150,7 +150,12 @@ export async function identifyNewParticipant(
   // an existing member's profile (deep review C-3, finding REG-2). 'skip' stays as
   // the backstop for a row created since the reads above: the guarded login link
   // below will not overwrite one that already has a login.
-  const memberId = await upsertMember(db, {
+  //
+  // `inserted` says whether THIS request made the row. A request that lost the
+  // insert race to another one with the same email is handed the winner's row
+  // (the participant still attaches to it), but it did not create that member,
+  // so it runs none of the "new member" steps: no login, no ticket, no link.
+  const outcome = await upsertMemberOutcome(db, {
     email: person.email,
     school_email: person.school_email,
     first_name: person.first_name,
@@ -170,6 +175,7 @@ export async function identifyNewParticipant(
     ec_phone: person.ec_phone,
     ec_relationship: person.ec_relationship,
   }, { onExisting: 'skip' })
+  const memberId = outcome.member
 
   if (!memberId) {
     console.error('Group join member upsert failed for', person.email)
@@ -184,7 +190,7 @@ export async function identifyNewParticipant(
   let signInToken: string | null = null
   try {
     const provisioned = await ensureClerkUserAndSignInToken(person.email, person.first_name, person.last_name, {
-      memberIsNew: true,
+      memberIsNew: outcome.inserted,
       age: { dateOfBirth: person.date_of_birth },
     })
     signInToken = provisioned.signInToken
@@ -197,10 +203,24 @@ export async function identifyNewParticipant(
         .update({ clerk_user_id: provisioned.clerkUserId }, { count: 'exact' })
         .eq('id', memberId)
         .is('clerk_user_id', null)
-      // The guarded link was refused (the row has a login by now) or failed:
-      // the ticket was minted before that was known, so it does not go out,
-      // and it is revoked. They sign in through the normal flow instead.
-      if (error || count === 0) {
+      // The guarded link changed no row: the row has a login by now. That is
+      // still this request's login when the Clerk user.created webhook linked
+      // it first (it links by email, and Clerk emails are unique, so it can only
+      // link the user made above), so the row is read back and the ticket goes
+      // out when the row names this login.
+      let linked = !error && count !== 0
+      if (!error && count === 0) {
+        const { data: row, error: readError } = await db
+          .from('members')
+          .select('clerk_user_id')
+          .eq('id', memberId)
+          .maybeSingle()
+        linked = !readError && (row as { clerk_user_id: string | null } | null)?.clerk_user_id === provisioned.clerkUserId
+      }
+      // The row belongs to another login, or the write or the read failed: the
+      // ticket was minted before that was known, so it does not go out, and it
+      // is revoked. They sign in through the normal flow instead.
+      if (!linked) {
         signInToken = null
         await provisioned.withdraw?.()
       }
