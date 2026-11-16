@@ -26,6 +26,11 @@ export function ObjectPicker({
 }) {
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
+  const searchInputRef = useRef<HTMLInputElement>(null)
+  // Focus the field when a click opens it (no autoFocus: jsx-a11y/no-autofocus).
+  useEffect(() => {
+    if (open) searchInputRef.current?.focus()
+  }, [open])
   const ref = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -59,7 +64,7 @@ export function ObjectPicker({
           <div className="relative border-b border-brand-hairline p-2">
             <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-brand-muted-soft" />
             <input
-              autoFocus
+              ref={searchInputRef}
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Search Objects"

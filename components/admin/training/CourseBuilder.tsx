@@ -361,6 +361,11 @@ function Curriculum({ course: m, recordingPhases, onDone }: { course: AdminModul
   // Editor target: a lesson id (edit) or { sectionId } (create) or null.
   const [editing, setEditing] = useState<{ lesson?: AdminLesson; sectionId: string | null } | null>(null)
   const [addingSection, setAddingSection] = useState(false)
+  const sectionInputRef = useRef<HTMLInputElement>(null)
+  // Focus the field when a click opens it (no autoFocus: jsx-a11y/no-autofocus).
+  useEffect(() => {
+    if (addingSection) sectionInputRef.current?.focus()
+  }, [addingSection])
   const [sectionTitle, setSectionTitle] = useState('')
   const [orderIds, setOrderIds] = useState<string[]>(sections.map((s) => s.id))
   const [dragId, setDragId] = useState<string | null>(null)
@@ -612,7 +617,7 @@ function Curriculum({ course: m, recordingPhases, onDone }: { course: AdminModul
           {addingSection ? (
             <div className="flex items-center gap-2">
               <div className="min-w-0 flex-1">
-                <Input value={sectionTitle} onChange={(e) => setSectionTitle(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && createSection()} placeholder="Section name" aria-label="Section name" autoFocus />
+                <Input value={sectionTitle} onChange={(e) => setSectionTitle(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && createSection()} placeholder="Section name" aria-label="Section name" ref={sectionInputRef} />
               </div>
               <button onClick={createSection} disabled={!sectionTitle.trim()} className="rounded-md bg-brand-blue px-3 py-2 text-sm font-semibold text-white disabled:opacity-50">Add</button>
               <button onClick={() => setAddingSection(false)} className="px-2 py-2 text-sm text-brand-muted-soft">Cancel</button>
@@ -737,6 +742,11 @@ function SectionCard({
 }) {
   const [open, setOpen] = useState(true)
   const [editingTitle, setEditingTitle] = useState(false)
+  const renameInputRef = useRef<HTMLInputElement>(null)
+  // Focus the field when a click opens it (no autoFocus: jsx-a11y/no-autofocus).
+  useEffect(() => {
+    if (editingTitle) renameInputRef.current?.focus()
+  }, [editingTitle])
   const [title, setTitle] = useState(s.title)
   // Keep focus on the arrow that was pressed as the card moves (or on the
   // other one once it reaches an end and the pressed one is disabled).
@@ -781,7 +791,7 @@ function SectionCard({
         </button>
         {editingTitle ? (
           <div className="min-w-0 flex-1">
-            <Input value={title} onChange={(e) => setTitle(e.target.value)} onBlur={rename} onKeyDown={(e) => { if (e.key === 'Enter') rename(); if (e.key === 'Escape') { setTitle(s.title); setEditingTitle(false) } }} aria-label={`Rename section ${s.title}`} autoFocus />
+            <Input value={title} onChange={(e) => setTitle(e.target.value)} onBlur={rename} onKeyDown={(e) => { if (e.key === 'Enter') rename(); if (e.key === 'Escape') { setTitle(s.title); setEditingTitle(false) } }} aria-label={`Rename section ${s.title}`} ref={renameInputRef} />
           </div>
         ) : (
           <button onClick={() => setEditingTitle(true)} className="min-w-0 flex-1 truncate text-left text-sm font-bold text-brand-blue-dark">{s.title}</button>
@@ -840,6 +850,11 @@ function LessonEditor({
   const existing = target?.lesson
   const [contentKind, setContentKind] = useState<ContentKey>(existing?.content_kind ?? 'live')
   const [title, setTitle] = useState(existing?.title ?? '')
+  const titleInputRef = useRef<HTMLInputElement>(null)
+  // The editor mounts when a click opens it: focus the title (no autoFocus: jsx-a11y/no-autofocus).
+  useEffect(() => {
+    titleInputRef.current?.focus()
+  }, [])
   const [url, setUrl] = useState(existing?.external_url ?? '')
   const [interactiveKey, setInteractiveKey] = useState(existing?.interactive_key ?? '')
   const [file, setFile] = useState<File | null>(null)
@@ -987,7 +1002,7 @@ function LessonEditor({
       </div>
 
       <Field label="Lesson title" labelSize="small">
-        <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Lesson title" autoFocus />
+        <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Lesson title" ref={titleInputRef} />
       </Field>
 
       {/* Content-type picker */}
@@ -1103,6 +1118,11 @@ function LessonEditor({
 
 function CreateCourse({ onCancel, onCreated }: { onCancel: () => void; onCreated: (id: string) => void }) {
   const [title, setTitle] = useState('')
+  const titleInputRef = useRef<HTMLInputElement>(null)
+  // The editor mounts when a click opens it: focus the title (no autoFocus: jsx-a11y/no-autofocus).
+  useEffect(() => {
+    titleInputRef.current?.focus()
+  }, [])
   const [busy, setBusy] = useState(false)
 
   const create = async () => {
@@ -1129,7 +1149,7 @@ function CreateCourse({ onCancel, onCreated }: { onCancel: () => void; onCreated
       </div>
       <div className="flex flex-wrap items-center gap-2">
         <div className="min-w-0 flex-1">
-          <Input value={title} onChange={(e) => setTitle(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && create()} placeholder="Course title" aria-label="Course title" autoFocus />
+          <Input value={title} onChange={(e) => setTitle(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && create()} placeholder="Course title" aria-label="Course title" ref={titleInputRef} />
         </div>
         <button onClick={create} disabled={busy || !title.trim()} className="rounded-lg bg-brand-blue px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">
           {busy ? 'Creating…' : 'Create'}

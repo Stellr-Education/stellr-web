@@ -45,8 +45,11 @@ export function Avatar({
   const ringClass = ring ? 'ring-2 ring-white' : ''
 
   if (src) {
-    // eslint-disable-next-line @next/next/no-img-element -- avatar hosts vary (Clerk, Supabase storage); a 40px image is not worth the optimizer hop
     return (
+      // Plain <img> on purpose: avatar hosts vary (Clerk, Supabase storage) and
+      // sit outside next.config's remotePatterns, and a 24-48px image is not
+      // worth the optimizer hop. The disable sits on the element it covers.
+      // eslint-disable-next-line @next/next/no-img-element
       <img
         src={src}
         alt={name}

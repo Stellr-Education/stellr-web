@@ -102,9 +102,9 @@ export default async function CommunitySearchPage({
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-brand-muted-soft" />
           <input
             name="q"
+            aria-label="Search posts and resources"
             defaultValue={trimmedQ}
             placeholder="Search posts and resources…"
-            autoFocus
             className="w-full rounded-md border border-line-strong py-2 pl-9 pr-3 text-input mouse:text-sm focus:border-brand-border focus:outline-hidden"
           />
         </div>

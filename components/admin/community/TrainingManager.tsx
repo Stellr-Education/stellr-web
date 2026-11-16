@@ -234,6 +234,11 @@ export function TrainingManager({
 
 function CourseSettings({ module: m, onDone }: { module: AdminModule; onDone: () => void }) {
   const [editing, setEditing] = useState(false)
+  const titleInputRef = useRef<HTMLInputElement>(null)
+  // Focus the field when a click opens it (no autoFocus: jsx-a11y/no-autofocus).
+  useEffect(() => {
+    if (editing) titleInputRef.current?.focus()
+  }, [editing])
   const [title, setTitle] = useState(m.title)
   const [description, setDescription] = useState(m.description ?? '')
   const [busy, setBusy] = useState(false)
@@ -317,7 +322,7 @@ function CourseSettings({ module: m, onDone }: { module: AdminModule; onDone: ()
           value={title}
           onChange={(e) => setTitle(e.target.value)}
           placeholder="Course title"
-          autoFocus
+          ref={titleInputRef}
           className="w-full rounded-md border border-line-strong px-3 py-2 text-input mouse:text-sm"
         />
         <textarea
@@ -471,6 +476,11 @@ function CertTemplateControl({ module: m, onDone }: { module: AdminModule; onDon
 
 function CreateModule({ onDone }: { onDone: () => void }) {
   const [step, setStep] = useState<'idle' | 'type' | 'details'>('idle')
+  const titleInputRef = useRef<HTMLInputElement>(null)
+  // Focus the field when a click opens it (no autoFocus: jsx-a11y/no-autofocus).
+  useEffect(() => {
+    if (step === 'details') titleInputRef.current?.focus()
+  }, [step])
   const [courseType, setCourseType] = useState<CourseType>('self_paced')
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
@@ -581,7 +591,7 @@ function CreateModule({ onDone }: { onDone: () => void }) {
             value={title}
             onChange={(e) => setTitle(e.target.value)}
             placeholder="Course title"
-            autoFocus
+            ref={titleInputRef}
             className="w-full rounded-md border border-line-strong px-3 py-2 text-input mouse:text-sm"
           />
           <textarea
@@ -659,6 +669,11 @@ function Curriculum({
   onDone: () => void
 }) {
   const [addingSection, setAddingSection] = useState(false)
+  const sectionInputRef = useRef<HTMLInputElement>(null)
+  // Focus the field when a click opens it (no autoFocus: jsx-a11y/no-autofocus).
+  useEffect(() => {
+    if (addingSection) sectionInputRef.current?.focus()
+  }, [addingSection])
   const [sectionTitle, setSectionTitle] = useState('')
   const [busy, setBusy] = useState(false)
   // Local section order for drag-and-drop; resynced when the server set changes.
@@ -821,7 +836,7 @@ function Curriculum({
             onChange={(e) => setSectionTitle(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && createSection()}
             placeholder="Section name"
-            autoFocus
+            ref={sectionInputRef}
             className="flex-1 rounded-md border border-line-strong px-3 py-2 text-input mouse:text-sm"
           />
           <button
@@ -886,6 +901,11 @@ function SectionCard({
 }) {
   const [busy, setBusy] = useState(false)
   const [editing, setEditing] = useState(false)
+  const renameInputRef = useRef<HTMLInputElement>(null)
+  // Focus the field when a click opens it (no autoFocus: jsx-a11y/no-autofocus).
+  useEffect(() => {
+    if (editing) renameInputRef.current?.focus()
+  }, [editing])
   const [title, setTitle] = useState(s.title)
   // Keep focus on the arrow that was pressed as the card moves (or on the
   // other one once it reaches an end and the pressed one is disabled).
@@ -973,7 +993,7 @@ function SectionCard({
                 }
               }}
               disabled={busy}
-              autoFocus
+              ref={renameInputRef}
               className="min-w-0 flex-1 rounded-md border border-line-strong px-2 py-1 text-input mouse:text-sm"
             />
           ) : (
@@ -1200,6 +1220,11 @@ function AddLessonForm({
   onDone: () => void
 }) {
   const [openForm, setOpenForm] = useState(false)
+  const titleInputRef = useRef<HTMLInputElement>(null)
+  // Focus the field when a click opens it (no autoFocus: jsx-a11y/no-autofocus).
+  useEffect(() => {
+    if (openForm) titleInputRef.current?.focus()
+  }, [openForm])
   const [contentKind, setContentKind] = useState<(typeof CONTENT_KINDS)[number]>('video')
   const [title, setTitle] = useState('')
   const [externalUrl, setExternalUrl] = useState('')
@@ -1294,7 +1319,7 @@ function AddLessonForm({
           value={title}
           onChange={(e) => setTitle(e.target.value)}
           placeholder="Lesson title"
-          autoFocus
+          ref={titleInputRef}
           className="rounded-md border border-line-strong px-3 py-2 text-input mouse:text-sm"
         />
         <select
