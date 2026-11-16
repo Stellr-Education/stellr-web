@@ -13,6 +13,7 @@ import { SendPayLinkButton } from '@/components/admin/SendPayLinkButton'
 import { ReissueDocusignButton } from '@/components/admin/ReissueDocusignButton'
 import { CorrectSignerEmailButton } from '@/components/admin/CorrectSignerEmailButton'
 import { FixGuardianEmailButton } from '@/components/admin/FixGuardianEmailButton'
+import { ResendGuardianConsentButton } from '@/components/admin/ResendGuardianConsentButton'
 import { FinishSetupButton } from '@/components/admin/FinishSetupButton'
 import { GroupInvoiceButton } from '@/components/admin/GroupInvoiceButton'
 import { GroupPaymentMethod } from '@/components/registration/GroupPaymentMethod'
@@ -278,6 +279,10 @@ export default function EventRoster({
           emphasise={p.docusign_pill === 'bounced'}
           className={card ? TAP : undefined}
         />
+      )}
+      {/* Another organiser's event: the guardian's consent form, resent or chased. */}
+      {pending.has(p.id) && !p.checked_in_at && (
+        <ResendGuardianConsentButton eventSlug={eventSlug} participantId={p.id} className={card ? TAP_WRAPPED : undefined} />
       )}
       {p.minor && GUARDIAN_FIXABLE_PILLS.has(p.docusign_pill) && (
         <FixGuardianEmailButton
