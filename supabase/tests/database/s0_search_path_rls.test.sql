@@ -11,7 +11,7 @@
 BEGIN;
 SET LOCAL search_path = extensions, public;
 
-SELECT plan(75);
+SELECT plan(73);
 
 -- The two S0-3 checks, unconditional (security_checks.sql arms them on the
 -- deny marker; here the database has both migrations, so they always run).
@@ -91,11 +91,11 @@ SELECT is_empty((SELECT query FROM s0_checks WHERE name = 'search_path_mutable')
   'every function in public and entitlements (not extension-owned) sets its own search_path');
 
 -- ── 2. RLS: a policy or the explicit deny ────────────────────────────────────
--- The 22 tables S0-3 recorded as service_role only: RLS still on, still no
+-- The 21 tables S0-3 recorded as service_role only (22 until account credits were retired, 17 Nov 2026): RLS still on, still no
 -- policy (anon and authenticated stay refused), and the marker comment.
 WITH tbls(name) AS (
   VALUES
-    ('entitlements.account_credit_ledger'), ('entitlements.bookings'),
+    ('entitlements.bookings'),
     ('entitlements.coupon_redemptions'), ('entitlements.discounts'),
     ('entitlements.entitlements'), ('entitlements.member_grant_runs'),
     ('entitlements.offerings'), ('entitlements.prices'),
@@ -123,7 +123,7 @@ ORDER BY tbls.name;
 -- USAGE, and it bypasses RLS, so no policy is needed for it.
 WITH tbls(name) AS (
   VALUES
-    ('entitlements.account_credit_ledger'), ('entitlements.bookings'),
+    ('entitlements.bookings'),
     ('entitlements.coupon_redemptions'), ('entitlements.discounts'),
     ('entitlements.entitlements'), ('entitlements.member_grant_runs'),
     ('entitlements.offerings'), ('entitlements.prices'),
