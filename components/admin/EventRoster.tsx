@@ -13,6 +13,7 @@ import { SendPayLinkButton } from '@/components/admin/SendPayLinkButton'
 import { ReissueDocusignButton } from '@/components/admin/ReissueDocusignButton'
 import { CorrectSignerEmailButton } from '@/components/admin/CorrectSignerEmailButton'
 import { FixGuardianEmailButton } from '@/components/admin/FixGuardianEmailButton'
+import { ResendGuardianConsentButton } from '@/components/admin/ResendGuardianConsentButton'
 import { FinishSetupButton } from '@/components/admin/FinishSetupButton'
 import { GroupInvoiceButton } from '@/components/admin/GroupInvoiceButton'
 import { GroupPaymentMethod } from '@/components/registration/GroupPaymentMethod'
@@ -279,6 +280,10 @@ export default function EventRoster({
           className={card ? TAP : undefined}
         />
       )}
+      {/* Another organiser's event: the guardian's consent form, resent or chased. */}
+      {pending.has(p.id) && !p.checked_in_at && (
+        <ResendGuardianConsentButton eventSlug={eventSlug} participantId={p.id} className={card ? TAP_WRAPPED : undefined} />
+      )}
       {p.minor && GUARDIAN_FIXABLE_PILLS.has(p.docusign_pill) && (
         <FixGuardianEmailButton
           eventSlug={eventSlug}
@@ -359,14 +364,14 @@ export default function EventRoster({
           {shown} of {roster.summary.totalParticipants} participants
           {roster.summary.scholarshipHolders > 0 && ` · ${roster.summary.scholarshipHolders} on scholarship`}
         </span>
-        {/* Bulk reminders moved to the Email Reminders tab (editable copy,
+        {/* Bulk reminders moved to the Email Engagement tab (editable copy,
             attachments, scheduling, history). The old one-click route,
             /api/admin/events/[slug]/remind, is left in place for now. */}
         <Link
           href={`/admin/competitions/${eventSlug}?tab=emails`}
           className="ml-auto text-sm font-medium text-white bg-brand-blue hover:bg-brand-blue-dark rounded-lg px-3 py-1.5"
         >
-          Email Reminders
+          Email Engagement
         </Link>
         <a
           href={exportHref}

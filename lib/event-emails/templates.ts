@@ -1,5 +1,5 @@
 // Saved event email templates: an email written for one event, saved from its
-// Email Reminders tab and offered as a starting point on every event of the
+// Email Engagement tab and offered as a starting point on every event of the
 // same tenant. Admins and event managers save, update and delete them.
 //
 // What is kept is the reusable part of the email. Attachments are not: they

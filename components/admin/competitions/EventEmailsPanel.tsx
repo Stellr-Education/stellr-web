@@ -22,7 +22,7 @@ function shortDate(ymd: string): string {
   return new Date(`${ymd}T00:00:00Z`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' })
 }
 
-// The event's "Email Reminders" tab: compose, schedule and send merge-field
+// The event's "Email Engagement" tab: compose, schedule and send merge-field
 // emails to groups on this event's roster, and see what has been sent.
 export function EventEmailsPanel({ eventSlug, eventDate }: { eventSlug: string; eventDate: string | null }) {
   const [emails, setEmails] = useState<EventEmailRow[]>([])

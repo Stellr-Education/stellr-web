@@ -9,6 +9,8 @@ import { loadSurveyEvent } from '@/lib/survey/events'
 import { isRealProductionApp } from '@/lib/env-guards'
 import { syncEventOptions } from '@/lib/hubspot-event-options'
 import { fetchSanityEvent, syncEventMirrorSafe } from '@/lib/events/sync'
+import { withAudit } from '@/lib/audit/route'
+import { adminAuditSubject, noteAuditSubject } from '@/lib/audit/route-subject'
 
 // POST /api/admin/sanity/event-sync — Sanity → Supabase access-structure sync
 // (HANDOFF-CODE-REVIEW §7). Sanity is the source of truth for event CONTENT;
@@ -75,7 +77,16 @@ async function authorise(req: Request, raw: string, secret: string): Promise<Aut
   return signature ? 'bad-signature' : 'none'
 }
 
-export async function POST(req: Request) {
+// Platform audit (docs/TENANCY-S5.md, C7): actor webhook:sanity. The slug is the one
+// re-read from Sanity, never the payload's, so the event goes on the chain of the
+// tenant that owns it; the container and Space are the target and metadata. A 503 that
+// asks Sanity to retry is recorded with its status.
+export const POST = withAudit(
+  ({ args: [req] }: { args: [Request] }) => ({ action: 'event.access.sync', ...adminAuditSubject(req, 'mentoring_cohorts'), actor: { webhook: 'sanity' } }),
+  syncEvent,
+)
+
+async function syncEvent(req: Request) {
   // Fails closed when the secret is unset: it is the only guard on this route
   // (there is no admin session), for both paths.
   const secret = process.env.SANITY_WEBHOOK_SECRET
@@ -128,7 +139,12 @@ export async function POST(req: Request) {
 
   // Container + Space + event link + roster backfill, and a slug repair across
   // every table if the slug has moved since we last saw this _id.
+  noteAuditSubject(req, { eventSlug: slug, detail: { object_type: objectType } })
   const sync = await syncEventSpace(db, { sanityId, slug, title })
+  noteAuditSubject(req, {
+    id: sync.containerId ?? null,
+    detail: { space_id: sync.spaceId ?? null, created: Boolean(sync.created), other_tenant: Boolean(sync.skippedOtherTenant) },
+  })
 
   // Fire object_created rules (auto-attach configured spaces/courses/resources).
   // Not for another tenant's event: a Space rule needs no container, so it would link a

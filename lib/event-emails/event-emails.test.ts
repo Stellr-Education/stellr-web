@@ -73,7 +73,7 @@ describe('merge fields', () => {
   })
 
   it('writes a pay link, an invoice note, or nothing', () => {
-    const r = (payments: never[] | { participantName: string; payUrl: string | null; method: 'link' | 'invoice' | 'individual' }[]) =>
+    const r = (payments: never[] | { participantName: string; payUrl: string | null; method: 'link' | 'invoice' | 'individual' | 'member' }[]) =>
       recipientMergeVars({ email: 'p@example.com', firstName: 'Pat', roles: [], isParticipant: false, participantNames: [], payments }).payment_instructions
     expect(r([{ participantName: 'Lily', payUrl: 'https://www.stellreducation.org/register/x/pay/tok', method: 'link' }]))
       .toBe('You can pay securely here: https://www.stellreducation.org/register/x/pay/tok')
@@ -217,6 +217,102 @@ describe('buildRecipients', () => {
     const out = buildRecipients(r, [], ['payment_outstanding'], () => 'https://pay/r')
     expect(out.recipients.map((x) => x.email).sort()).toEqual(['pat@example.com', 'sam@example.com'])
     expect(out.recipients.every((x) => x.payments[0]?.payUrl === 'https://pay/r')).toBe(true)
+  })
+
+  describe('Outstanding payments', () => {
+    const invoiceGroup = (over: Record<string, unknown>, people: ReturnType<typeof participant>[]) => group(
+      { type: 'group', registrationId: 'g1', teacherEmail: 'teach@example.com', teacherFirstName: 'Ms K', teacherMemberId: 'm-t', registrantRole: 'teacher', invoiceRequested: true, ...over },
+      people,
+    )
+    const emails = (out: ReturnType<typeof buildRecipients>) => out.recipients.map((x) => x.email).sort()
+
+    it('an unpaid invoice reaches only the teacher who registered, never students or parents', () => {
+      const r = roster(invoiceGroup({}, [
+        participant({ id: 'p1', paid: false }),
+        participant({ id: 'p2', paid: false, email: 'x@example.com', emergency_contact_email: 'xp@example.com' }),
+      ]))
+      const out = buildRecipients(r, [], ['payment_outstanding'], noPay)
+      expect(emails(out)).toEqual(['teach@example.com'])
+      expect(out.recipients[0]).toMatchObject({ roles: ['teacher'], memberId: 'm-t', payments: [{ participantName: 'your group', payUrl: null, method: 'invoice' }] })
+    })
+
+    it('a student manager’s invoiced group reaches the student manager and their teacher contact, not the student manager’s parent', () => {
+      const r = roster(invoiceGroup(
+        { teacherEmail: 'sm@example.com', teacherFirstName: 'Ana', registrantRole: 'student_manager', teacherPocEmail: 'poc@example.com', teacherPocFirstName: 'Mr P' },
+        [
+          participant({ id: 'p0', first_name: 'Ana', email: 'sm@example.com', emergency_contact_email: 'ana.parent@example.com', event_role: 'school_student_manager', paid: false }),
+          participant({ id: 'p1', paid: false }),
+        ],
+      ))
+      const out = buildRecipients(r, [], ['payment_outstanding'], noPay)
+      expect(emails(out)).toEqual(['poc@example.com', 'sm@example.com'])
+      expect(Object.fromEntries(out.recipients.map((x) => [x.email, x.roles]))).toEqual({ 'sm@example.com': ['student_manager'], 'poc@example.com': ['teacher'] })
+    })
+
+    it('a paid invoice chases no one', () => {
+      const r = roster(invoiceGroup({ invoicePaidAt: '2026-11-01' }, [participant({ id: 'p1', paid: true })]))
+      expect(buildRecipients(r, [], ['payment_outstanding'], noPay).recipients).toEqual([])
+    })
+
+    it('“Invoice for some”: people paying their own way are chased with their parents, and the organiser is told who owes', () => {
+      const r = roster(invoiceGroup({ lateJoinerPayer: 'self', invoicePaidAt: '2026-11-01' }, [
+        participant({ id: 't', first_name: 'Terry', email: 'teach@example.com', event_role: 'teacher', minor: false, payer: 'group', paid: true }),
+        participant({ id: 'p1', first_name: 'Sam', last_name: 'Lee', payer: 'self', individual_payment_status: 'pending', paid: false }),
+      ]))
+      const out = buildRecipients(r, [], ['payment_outstanding'], noPay)
+      expect(emails(out)).toEqual(['pat@example.com', 'sam@example.com', 'teach@example.com'])
+      const teacher = out.recipients.find((x) => x.email === 'teach@example.com')!
+      // The invoice itself is paid: only the member line, and no link of the student's.
+      expect(teacher.payments).toEqual([{ participantName: 'Sam Lee', payUrl: null, method: 'member' }])
+      expect(out.recipients.find((x) => x.email === 'sam@example.com')!.payments).toEqual([{ participantName: 'Sam', payUrl: null, method: 'individual' }])
+    })
+
+    it('“Invoice for some” with the invoice unpaid: invoiced students’ families are left out', () => {
+      const r = roster(invoiceGroup({ lateJoinerPayer: 'self' }, [
+        participant({ id: 'p1', payer: 'group', paid: false }),
+        participant({ id: 'p2', first_name: 'Jo', email: 'jo@example.com', emergency_contact_email: 'jop@example.com', payer: 'self', individual_payment_status: 'pending', paid: false }),
+      ]))
+      const out = buildRecipients(r, [], ['payment_outstanding'], noPay)
+      expect(emails(out)).toEqual(['jo@example.com', 'jop@example.com', 'teach@example.com'])
+      expect(out.recipients.find((x) => x.email === 'teach@example.com')!.payments.map((l) => l.method)).toEqual(['invoice', 'member'])
+    })
+
+    it('members paying individually: each payer and parent, plus the organiser with a list of who owes', () => {
+      const r = roster(group(
+        { type: 'group', registrationId: 'g2', teacherEmail: 'teach@example.com', teacherFirstName: 'Ms K', memberPaysIndividually: true },
+        [
+          participant({ id: 't', first_name: 'Terry', email: 'teach@example.com', event_role: 'teacher', minor: false, individual_payment_status: 'pending', paid: false }),
+          participant({ id: 'p1', first_name: 'Sam', individual_payment_status: 'pending', paid: false }),
+          participant({ id: 'p2', first_name: 'Jo', last_name: 'Ng', email: 'jo@example.com', emergency_contact_email: 'jop@example.com', individual_payment_status: 'pending', paid: false }),
+        ],
+      ))
+      const out = buildRecipients(r, [], ['payment_outstanding'], noPay)
+      expect(emails(out)).toEqual(['jo@example.com', 'jop@example.com', 'pat@example.com', 'sam@example.com', 'teach@example.com'])
+      const teacher = out.recipients.find((x) => x.email === 'teach@example.com')!
+      // Their own place, then the others' names: not themselves twice.
+      expect(teacher.payments).toEqual([
+        { participantName: 'Terry', payUrl: null, method: 'individual' },
+        { participantName: 'Sam Lee', payUrl: null, method: 'member' },
+        { participantName: 'Jo Ng', payUrl: null, method: 'member' },
+      ])
+      expect(recipientMergeVars(teacher).payment_instructions).toBe(
+        'Your payment link was emailed to you separately. Reply here if you need it re-sent.\n' +
+        'Still to pay for their own place: Sam Lee and Jo Ng. Each was sent their own payment link; reply here if one needs re-sending.',
+      )
+    })
+
+    it('“Students share the teacher’s cost”: covered teachers owe nothing; students owe their share', () => {
+      const r = roster(group(
+        { type: 'group', registrationId: 'g3', teacherEmail: 'teach@example.com', teacherFirstName: 'Ms K', shareEstimate: 10 },
+        [
+          participant({ id: 't', email: 'teach@example.com', event_role: 'teacher', minor: false, payer: 'shared', individual_payment_status: 'covered', paid: true }),
+          participant({ id: 'p1', first_name: 'Sam', payer: 'self', individual_payment_status: 'pending', paid: false }),
+        ],
+      ))
+      const out = buildRecipients(r, [], ['payment_outstanding'], noPay)
+      expect(emails(out)).toEqual(['pat@example.com', 'sam@example.com', 'teach@example.com'])
+      expect(out.recipients.find((x) => x.email === 'teach@example.com')!.payments.map((l) => l.method)).toEqual(['member'])
+    })
   })
 
   it('mentors are volunteers plus event managers', () => {

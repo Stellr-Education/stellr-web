@@ -30,10 +30,13 @@ const { onEnvelopeCompleted, state } = vi.hoisted(() => ({
   },
 }))
 
+const rpc = vi.fn(async (..._a: unknown[]) => ({ data: { id: 1, chain_seq: 1 }, error: null }))
 const from = vi.fn((_table: string) => {
   const chain: Record<string, unknown> = {}
   chain.select = () => chain
   chain.eq = () => chain
+  // The audit owner lookup (lib/audit/webhook.ts) reads select().eq().limit().maybeSingle().
+  chain.limit = () => chain
   // The envelope lookup: select(...).eq(...).eq(...).maybeSingle().
   chain.maybeSingle = async () => ({ data: state.current, error: null })
   chain.update = (payload: Record<string, unknown>) => {
@@ -51,7 +54,7 @@ const from = vi.fn((_table: string) => {
 })
 
 vi.mock('next/headers', () => ({ headers: async () => ({ get: (k: string) => hdrs.get(k) ?? null }) }))
-vi.mock('@/lib/supabase', () => ({ supabaseServer: () => ({ from }) }))
+vi.mock('@/lib/supabase', () => ({ supabaseServer: () => ({ from, rpc }) }))
 // The recipient sync makes live DocuSign calls; stub it out (it has its own tests).
 vi.mock('@/lib/docusign-recipients', () => ({
   syncEnvelopeRecipients: vi.fn(async () => []),
@@ -88,6 +91,7 @@ async function signedEvent(event: string, envelopeId = 'env-1') {
 afterEach(() => {
   hdrs.clear()
   from.mockClear()
+  rpc.mockClear()
   onEnvelopeCompleted.mockClear()
   state.current = null
   state.updated = null
@@ -166,5 +170,41 @@ describe('POST /api/webhooks/docusign — event handling (DS-7)', () => {
     expect(res.status).toBe(200)
     expect(onEnvelopeCompleted).toHaveBeenCalledTimes(1)
     expect(onEnvelopeCompleted.mock.calls[0][1]).toMatchObject({ id: 'r1' })
+  })
+})
+
+// S5 A13a: with PLATFORM_AUDIT_ENABLED on, a verified delivery is recorded once, by
+// webhook:docusign, on the chain of the agreement it names: the handler's note says
+// which agreement, and the tenant comes from that stored row (BF-4's default: Stellr's
+// chain, with the owner in the metadata). An unsigned one adds nothing.
+describe('POST /api/webhooks/docusign: platform audit (S5 A13a)', () => {
+  const STELLR = '00000000-0000-4000-8000-000000000001'
+  const TENANT_B = 'bbbbbbbb-0000-4000-8000-00000000000b'
+  const AGREEMENT = 'dddddddd-0000-4000-8000-00000000000d'
+
+  it("records the agreement's owner from its stored row", async () => {
+    vi.stubEnv('PLATFORM_AUDIT_ENABLED', 'true')
+    state.current = { id: AGREEMENT, status: 'completed', tenant_id: TENANT_B }
+    const res = await signedEvent('envelope-sent')
+    expect(res.status).toBe(200)
+    await vi.waitFor(() => expect(rpc).toHaveBeenCalledTimes(1))
+    expect(rpc.mock.calls[0][0]).toBe('platform_audit_append')
+    expect(rpc.mock.calls[0][1]).toMatchObject({
+      p_tenant: STELLR,
+      p_actor: 'webhook:docusign',
+      p_actor_kind: 'webhook',
+      p_action: 'webhook.event.process',
+      p_target_table: 'agreements',
+      p_target_id: AGREEMENT,
+      p_metadata: { event_type: 'envelope-sent', owner_tenant_id: TENANT_B, verified: true, status: 200 },
+    })
+  })
+
+  it('an unsigned delivery records nothing', async () => {
+    const { POST } = await load('k'.repeat(32))
+    vi.stubEnv('PLATFORM_AUDIT_ENABLED', 'true')
+    expect((await post(POST)).status).toBe(401)
+    await new Promise((r) => setTimeout(r, 0))
+    expect(rpc).not.toHaveBeenCalled()
   })
 })

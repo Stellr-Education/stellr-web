@@ -9,13 +9,14 @@ import { appToday } from '@/lib/age'
 // signed event gets past the gate. CLERK_WEBHOOK_SECRET is read per request.
 
 const from = vi.fn()
+const rpc = vi.fn(async (..._a: unknown[]) => ({ data: { id: 1, chain_seq: 1 }, error: null }))
 const syncRole = vi.fn()
 const claimInvites = vi.fn(async (..._a: unknown[]) => {})
 const logActivity = vi.fn(async (..._a: unknown[]) => {})
 const startRetentionClock = vi.fn(async (..._a: unknown[]) => {})
 
 vi.mock('next/headers', () => ({ headers: async () => ({ get: (k: string) => hdrs.get(k) ?? null }) }))
-vi.mock('@/lib/supabase', () => ({ supabaseServer: () => ({ from }) }))
+vi.mock('@/lib/supabase', () => ({ supabaseServer: () => ({ from, rpc }) }))
 // Downstream helpers are irrelevant to the signature gate; a benign event type
 // never reaches them anyway.
 vi.mock('@/lib/member-enums', () => ({ normalizeEmail: (e: string) => e }))
@@ -51,6 +52,7 @@ const post = (POST: (r: Request) => Promise<Response>, payload = body) =>
 afterEach(() => {
   hdrs.clear()
   from.mockReset()
+  rpc.mockClear()
   syncRole.mockReset()
   claimInvites.mockClear()
   logActivity.mockClear()
@@ -84,6 +86,36 @@ describe('POST /api/webhooks/clerk', () => {
     const { POST } = await load(SECRET)
     sign(SECRET)
     expect((await post(POST)).status).toBe(200)
+  })
+})
+
+// S5 A13a: with PLATFORM_AUDIT_ENABLED on, a delivery that verification never passed
+// adds nothing to the append-only platform_audit_events chain, even when it is
+// answered with a 5xx (secret missing); a verified one is recorded once.
+describe('POST /api/webhooks/clerk: platform audit (S5 A13a)', () => {
+  it('an unverified delivery, answered 500 with the secret missing, records nothing', async () => {
+    const { POST } = await load('')
+    vi.stubEnv('PLATFORM_AUDIT_ENABLED', 'true')
+    sign(SECRET)
+    expect((await post(POST)).status).toBe(500)
+    await new Promise((r) => setTimeout(r, 0))
+    expect(rpc).not.toHaveBeenCalled()
+    expect(from).not.toHaveBeenCalled()
+  })
+
+  it('a verified delivery is recorded once, by webhook:clerk, on Stellr\'s chain', async () => {
+    const { POST } = await load(SECRET)
+    vi.stubEnv('PLATFORM_AUDIT_ENABLED', 'true')
+    sign(SECRET)
+    expect((await post(POST)).status).toBe(200)
+    await vi.waitFor(() => expect(rpc).toHaveBeenCalledTimes(1))
+    expect(rpc.mock.calls[0][0]).toBe('platform_audit_append')
+    expect(rpc.mock.calls[0][1]).toMatchObject({
+      p_actor: 'webhook:clerk',
+      p_actor_kind: 'webhook',
+      p_action: 'webhook.event.process',
+      p_metadata: { event_type: 'session.created', verified: true, status: 200 },
+    })
   })
 })
 

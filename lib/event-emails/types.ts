@@ -1,4 +1,4 @@
-// Shared vocabulary for the event "Email Reminders" tab. Pure — safe to import
+// Shared vocabulary for the event "Email Engagement" tab. Pure — safe to import
 // from client components.
 
 export const AUDIENCES = [
@@ -6,7 +6,7 @@ export const AUDIENCES = [
   { key: 'guardians',            label: 'Parents / legal guardians',    hint: 'The nominated parent or guardian of each minor' },
   { key: 'mentors',              label: 'Mentors',                      hint: 'Assigned volunteers and this event’s event managers' },
   { key: 'docusign_outstanding', label: 'Outstanding DocuSigns',        hint: 'The participant and their parent/guardian' },
-  { key: 'payment_outstanding',  label: 'Outstanding payments',         hint: 'The participant, their parent/guardian, and the teacher for group registrations' },
+  { key: 'payment_outstanding',  label: 'Outstanding payments',         hint: 'Invoiced or group-paid places: only the teacher or student manager who registered the group, and their teacher contact. Places paid by their own link: the person, their parent/guardian, and the group’s organiser' },
   { key: 'team_profile_outstanding', label: 'Outstanding team profiles', hint: 'Students whose forms are signed but who haven’t submitted a team profile, and their parent/guardian' },
   // After the event: whoever actually came (lib/event-emails/audiences.ts).
   { key: 'attendees',            label: 'All attendees',                hint: 'Everyone checked in at the event: students, student managers, teachers, mentors and event managers' },
@@ -18,12 +18,13 @@ export function isAudienceKey(v: unknown): v is AudienceKey {
   return typeof v === 'string' && AUDIENCES.some((a) => a.key === v)
 }
 
-export type RecipientRole = 'participant' | 'guardian' | 'teacher' | 'volunteer' | 'event_manager'
+export type RecipientRole = 'participant' | 'guardian' | 'teacher' | 'student_manager' | 'volunteer' | 'event_manager'
 
 export const ROLE_LABEL: Record<RecipientRole, string> = {
   participant:   'Participant',
   guardian:      'Parent/guardian',
   teacher:       'Teacher',
+  student_manager: 'Student manager',
   volunteer:     'Volunteer',
   event_manager: 'Event manager',
 }
