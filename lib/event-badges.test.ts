@@ -19,7 +19,7 @@ const person = (id: string, first: string, last: string, school: string, extra: 
 
 const REGS = [
   { id: 'r1', type: 'group', group_name: null, school_name: 'Westside High', participants: [person('11111111-1111-4111-8111-111111111111', 'Ann', 'Zed', 'westside hs'), person('22222222-2222-4222-8222-222222222222', 'Bo', 'Abel', 'Westside High')] },
-  { id: 'r2', type: 'group', group_name: null, school_name: 'Lincoln MS', participants: [person('33333333-3333-4333-8333-333333333333', 'Cy', 'Moss', 'Lincoln MS')] },
+  { id: 'r2', type: 'group', group_name: null, school_name: 'Lincoln MS', participants: [person('33333333-3333-4333-8333-333333333333', 'Cy', 'Moss', 'Lincoln MS'), person('55555555-5555-4555-8555-555555555555', 'Ed', 'Ford', 'Lincoln MS', { event_role: 'teacher' })] },
   { id: 'r3', type: 'individual', group_name: null, school_name: null, participants: [person('44444444-4444-4444-8444-444444444444', 'Di', 'Bell', 'Academy Charter')] },
 ]
 
@@ -46,7 +46,7 @@ afterEach(() => vi.unstubAllEnvs())
 describe('loadBadgeHolders', () => {
   it('sorts by surname by default, volunteer mentors among everyone', async () => {
     const holders = await loadBadgeHolders(fakeDb(), 'nevada')
-    expect(holders.map((h) => h.lastName)).toEqual(['Aaron', 'Abel', 'Bell', 'Moss', 'Zed'])
+    expect(holders.map((h) => h.lastName)).toEqual(['Aaron', 'Abel', 'Bell', 'Ford', 'Moss', 'Zed'])
     expect(holders.every((h) => !h.qr)).toBe(true)
   })
 
@@ -54,7 +54,7 @@ describe('loadBadgeHolders', () => {
     const holders = await loadBadgeHolders(fakeDb(), 'nevada', { order: 'school' })
     // Academy Charter (an individual's own school), Lincoln MS, Westside High
     // (both students, though one typed "westside hs"), then the mentor.
-    expect(holders.map((h) => h.lastName)).toEqual(['Bell', 'Moss', 'Abel', 'Zed', 'Aaron'])
+    expect(holders.map((h) => h.lastName)).toEqual(['Bell', 'Ford', 'Moss', 'Abel', 'Zed', 'Aaron'])
   })
 
   it('adds a check-in code link for registered people only', async () => {
@@ -62,5 +62,12 @@ describe('loadBadgeHolders', () => {
     const byName = Object.fromEntries(holders.map((h) => [h.lastName, h.qr]))
     expect(byName.Moss).toMatch(/\/check-in\/nevada\/code\?c=p\.33333333-3333-4333-8333-333333333333\./)
     expect(byName.Aaron).toBeFalsy()
+  })
+
+  it('marks teachers, and with who=teachers prints only them (no volunteer mentors)', async () => {
+    const all = await loadBadgeHolders(fakeDb(), 'nevada')
+    expect(all.filter((h) => h.teacher).map((h) => h.lastName)).toEqual(['Ford'])
+    const teachers = await loadBadgeHolders(fakeDb(), 'nevada', { who: 'teachers' })
+    expect(teachers.map((h) => [h.lastName, h.subtitle, h.teacher])).toEqual([['Ford', 'Teacher', true]])
   })
 })

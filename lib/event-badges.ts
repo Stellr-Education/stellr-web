@@ -14,8 +14,9 @@ import { checkInCodeLink } from '@/lib/check-in-codes'
 import type { ArtworkTheme } from '@/lib/artwork-theme'
 
 // ── Event name badges: database side ─────────────────────────────────────────
-// Templates (event_badge_templates: one artwork per format per audience, over
-// default_badge_templates: the theme's everyone/mentors defaults), who gets a
+// Templates (event_badge_templates: one artwork per format per audience —
+// everyone, mentors, teachers or one company — over default_badge_templates:
+// the theme's everyone/mentors defaults), who gets a
 // badge, and which template each badge uses. Layout and the rule finder:
 // lib/badge-layout.ts. Mirrors lib/event-certificates.ts.
 
@@ -180,6 +181,8 @@ type Named = { first_name: string | null; last_name: string | null }
 export interface BadgeHolder extends BadgePerson {
   companyId: string | null
   mentor: boolean
+  /** Registered as a teacher (event_role 'teacher'): the Teachers background. */
+  teacher: boolean
 }
 
 /**
@@ -192,16 +195,25 @@ export type BadgeOrder = 'surname' | 'school'
 export const isBadgeOrder = (v: unknown): v is BadgeOrder => v === 'surname' || v === 'school'
 
 /**
+ * Whose badges print (Nov 2026): everyone, or only teachers — a separate run on
+ * the Teachers background (else Everyone's) for the teachers' own packets.
+ */
+export type BadgeWho = 'all' | 'teachers'
+
+export const isBadgeWho = (v: unknown): v is BadgeWho => v === 'all' || v === 'teachers'
+
+/**
  * Everyone who gets a badge: each registered participant, and each active
  * volunteer mentor assigned to the event (volunteers are assigned to the
  * event's container, not registered — see ../volunteers), sorted by surname or
  * by school. With `codes`, each participant's badge carries their check-in code
  * (lib/check-in-codes.ts); volunteers aren't registered, so theirs don't.
+ * With `who: 'teachers'`, only participants registered as a teacher.
  */
 export async function loadBadgeHolders(
   db: SupabaseClient,
   slug: string,
-  opts: { order?: BadgeOrder; codes?: boolean } = {},
+  opts: { order?: BadgeOrder; codes?: boolean; who?: BadgeWho } = {},
 ): Promise<BadgeHolder[]> {
   const [{ data: regs }, { data: container }] = await Promise.all([
     db
@@ -220,6 +232,7 @@ export async function loadBadgeHolders(
 
   // A group's members share its school, so they print together even when a
   // student's own school field says something slightly different.
+  const teachersOnly = opts.who === 'teachers'
   const participants = (regs ?? []).flatMap((r) =>
     ((r.participants as Record<string, unknown>[]) ?? []).map(
       (p): Record<string, unknown> & { school: string } => ({
@@ -230,7 +243,7 @@ export async function loadBadgeHolders(
   )
   const bySchool = opts.order === 'school'
   type Sortable = BadgeHolder & { sortSchool: string; sortName: string }
-  const holders: Sortable[] = participants.map((p) => {
+  const holders: Sortable[] = participants.filter((p) => !teachersOnly || p.event_role === 'teacher').map((p) => {
     const company = p.event_companies as { number: number; name: string | null } | null
     const role = ROLE_LABELS[p.event_role as string] ?? 'Participant'
     return {
@@ -239,13 +252,15 @@ export async function loadBadgeHolders(
       subtitle: company ? (company.name ?? `Company ${company.number}`) : role,
       companyId: (p.company_id as string | null) ?? null,
       mentor: p.event_role === 'mentor',
+      teacher: p.event_role === 'teacher',
       qr: opts.codes ? checkInCodeLink(slug, 'p', p.id as string) : null,
       sortSchool: p.school,
       sortName: `${p.last_name} ${p.first_name}`,
     }
   })
 
-  if (container?.id) {
+  // Volunteer mentors are never teachers.
+  if (container?.id && !teachersOnly) {
     const { data: volunteers } = await db
       .from('cohort_members')
       .select('member_id, members(first_name, last_name)')
@@ -264,6 +279,7 @@ export async function loadBadgeHolders(
         subtitle: 'Mentor',
         companyId: null,
         mentor: true,
+        teacher: false,
         sortSchool: '',
         sortName: `${m.last_name} ${m.first_name}`,
       })
@@ -283,18 +299,19 @@ export async function loadBadgeHolders(
 /**
  * Every holder with the design of the most specific template they have (pass
  * effectiveBadgeTemplates, so defaults stand in). With `spares`, blank badges
- * follow on the Everyone background (plain without one): enough to fill the
- * last sheet and one sheet more (spareCount).
+ * follow on the Everyone background (plain without one) — the Teachers one
+ * (else Everyone's) when `spareTeacher` — enough to fill the last sheet and
+ * one sheet more (spareCount).
  */
 export async function resolveBadges(
   db: SupabaseClient,
   holders: BadgeHolder[],
   templates: BadgeTemplate[],
-  opts: { spares?: BadgeFormat } = {},
+  opts: { spares?: BadgeFormat; spareTeacher?: boolean } = {},
 ): Promise<Badge[]> {
   const refs = templates.map((t) => ({ t, audience: t.audience, companyId: t.company_id }))
   const designs = new Map<string, BadgeDesign | null>()
-  async function designFor(who: { companyId: string | null; mentor: boolean }): Promise<BadgeDesign | null> {
+  async function designFor(who: { companyId: string | null; mentor: boolean; teacher?: boolean }): Promise<BadgeDesign | null> {
     const ref = pickTemplate(refs, who)
     if (!ref) return null
     if (!designs.has(ref.t.id)) {
@@ -308,7 +325,7 @@ export async function resolveBadges(
   for (const h of holders) out.push({ person: h, design: await designFor(h) })
 
   if (opts.spares) {
-    const design = await designFor({ companyId: null, mentor: false })
+    const design = await designFor({ companyId: null, mentor: false, teacher: opts.spareTeacher === true })
     const blank: BadgePerson = { firstName: '', lastName: '', subtitle: '' }
     for (let i = spareCount(holders.length, opts.spares); i > 0; i--) out.push({ person: blank, design })
   }
