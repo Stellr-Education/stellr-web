@@ -6123,6 +6123,7 @@ export type Database = {
           booked_by_role: string | null
           cancel_reason: string | null
           cancelled_at: string | null
+          checked_at: string | null
           created_at: string
           currency: string
           group_invoice_id: string | null
@@ -6148,6 +6149,7 @@ export type Database = {
           booked_by_role?: string | null
           cancel_reason?: string | null
           cancelled_at?: string | null
+          checked_at?: string | null
           created_at?: string
           currency?: string
           group_invoice_id?: string | null
@@ -6173,6 +6175,7 @@ export type Database = {
           booked_by_role?: string | null
           cancel_reason?: string | null
           cancelled_at?: string | null
+          checked_at?: string | null
           created_at?: string
           currency?: string
           group_invoice_id?: string | null
@@ -9499,6 +9502,7 @@ export type Database = {
           booked_by_role: string | null
           cancel_reason: string | null
           cancelled_at: string | null
+          checked_at: string | null
           created_at: string
           currency: string
           group_invoice_id: string | null
