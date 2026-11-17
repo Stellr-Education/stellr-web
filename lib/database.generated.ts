@@ -69,6 +69,91 @@ export type Database = {
           },
         ]
       }
+      addon_orders: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          currency: string
+          event_slug: string
+          id: string
+          method: string
+          paid_at: string | null
+          pay_token: string | null
+          payer_kind: string
+          payer_participant_id: string | null
+          registration_id: string | null
+          reminder_sent_at: string | null
+          status: string
+          stripe_checkout_session_id: string | null
+          stripe_payment_intent_id: string | null
+          tenant_id: string | null
+          total_cents: number
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          currency?: string
+          event_slug: string
+          id?: string
+          method?: string
+          paid_at?: string | null
+          pay_token?: string | null
+          payer_kind: string
+          payer_participant_id?: string | null
+          registration_id?: string | null
+          reminder_sent_at?: string | null
+          status?: string
+          stripe_checkout_session_id?: string | null
+          stripe_payment_intent_id?: string | null
+          tenant_id?: string | null
+          total_cents: number
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          currency?: string
+          event_slug?: string
+          id?: string
+          method?: string
+          paid_at?: string | null
+          pay_token?: string | null
+          payer_kind?: string
+          payer_participant_id?: string | null
+          registration_id?: string | null
+          reminder_sent_at?: string | null
+          status?: string
+          stripe_checkout_session_id?: string | null
+          stripe_payment_intent_id?: string | null
+          tenant_id?: string | null
+          total_cents?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "addon_orders_payer_participant_id_fkey"
+            columns: ["payer_participant_id"]
+            isOneToOne: false
+            referencedRelation: "participants"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "addon_orders_registration_id_fkey"
+            columns: ["registration_id"]
+            isOneToOne: false
+            referencedRelation: "registrations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "addon_orders_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       admin_duties: {
         Row: {
           created_at: string
@@ -3002,6 +3087,152 @@ export type Database = {
         }
         Relationships: []
       }
+      event_addon_settings: {
+        Row: {
+          event_slug: string
+          inclusions: string[]
+          merch_upsell: boolean
+          tenant_id: string | null
+          updated_at: string
+          updated_by: string | null
+        }
+        Insert: {
+          event_slug: string
+          inclusions?: string[]
+          merch_upsell?: boolean
+          tenant_id?: string | null
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Update: {
+          event_slug?: string
+          inclusions?: string[]
+          merch_upsell?: boolean
+          tenant_id?: string | null
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "event_addon_settings_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      event_addons: {
+        Row: {
+          audience: string
+          capacity: number | null
+          created_at: string
+          created_by: string | null
+          currency: string
+          description: string
+          display_group: string | null
+          event_slug: string
+          id: string
+          includes: string[]
+          kind: string
+          max_per_person: number
+          minors_group_only: boolean
+          price_cents: number | null
+          refund_rule: string
+          refund_until: string | null
+          requires_addendum: boolean
+          sale_closes_at: string | null
+          sale_opens_at: string | null
+          service_date: string | null
+          service_end_date: string | null
+          sort: number
+          status: string
+          store_product_id: string | null
+          tenant_id: string | null
+          title: string
+          updated_at: string
+          updated_by: string | null
+          variant_ids: string[]
+        }
+        Insert: {
+          audience?: string
+          capacity?: number | null
+          created_at?: string
+          created_by?: string | null
+          currency?: string
+          description?: string
+          display_group?: string | null
+          event_slug: string
+          id?: string
+          includes?: string[]
+          kind: string
+          max_per_person?: number
+          minors_group_only?: boolean
+          price_cents?: number | null
+          refund_rule?: string
+          refund_until?: string | null
+          requires_addendum?: boolean
+          sale_closes_at?: string | null
+          sale_opens_at?: string | null
+          service_date?: string | null
+          service_end_date?: string | null
+          sort?: number
+          status?: string
+          store_product_id?: string | null
+          tenant_id?: string | null
+          title: string
+          updated_at?: string
+          updated_by?: string | null
+          variant_ids?: string[]
+        }
+        Update: {
+          audience?: string
+          capacity?: number | null
+          created_at?: string
+          created_by?: string | null
+          currency?: string
+          description?: string
+          display_group?: string | null
+          event_slug?: string
+          id?: string
+          includes?: string[]
+          kind?: string
+          max_per_person?: number
+          minors_group_only?: boolean
+          price_cents?: number | null
+          refund_rule?: string
+          refund_until?: string | null
+          requires_addendum?: boolean
+          sale_closes_at?: string | null
+          sale_opens_at?: string | null
+          service_date?: string | null
+          service_end_date?: string | null
+          sort?: number
+          status?: string
+          store_product_id?: string | null
+          tenant_id?: string | null
+          title?: string
+          updated_at?: string
+          updated_by?: string | null
+          variant_ids?: string[]
+        }
+        Relationships: [
+          {
+            foreignKeyName: "event_addons_store_product_id_fkey"
+            columns: ["store_product_id"]
+            isOneToOne: false
+            referencedRelation: "store_products"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "event_addons_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       event_award_assignments: {
         Row: {
           assigned_at: string
@@ -3569,6 +3800,7 @@ export type Database = {
       event_refunds: {
         Row: {
           account_credit_id: string | null
+          addon_line_id: string | null
           created_at: string
           credit_validity_days: number | null
           currency: string | null
@@ -3591,6 +3823,7 @@ export type Database = {
         }
         Insert: {
           account_credit_id?: string | null
+          addon_line_id?: string | null
           created_at?: string
           credit_validity_days?: number | null
           currency?: string | null
@@ -3613,6 +3846,7 @@ export type Database = {
         }
         Update: {
           account_credit_id?: string | null
+          addon_line_id?: string | null
           created_at?: string
           credit_validity_days?: number | null
           currency?: string | null
@@ -3639,6 +3873,13 @@ export type Database = {
             columns: ["account_credit_id"]
             isOneToOne: false
             referencedRelation: "account_credits"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "event_refunds_addon_line_id_fkey"
+            columns: ["addon_line_id"]
+            isOneToOne: false
+            referencedRelation: "registration_addons"
             referencedColumns: ["id"]
           },
           {
@@ -5868,6 +6109,148 @@ export type Database = {
             columns: ["updated_by"]
             isOneToOne: false
             referencedRelation: "members"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      registration_addons: {
+        Row: {
+          addon_id: string
+          booked_by_member_id: string | null
+          booked_by_role: string | null
+          cancel_reason: string | null
+          cancelled_at: string | null
+          created_at: string
+          currency: string
+          group_invoice_id: string | null
+          group_method: string | null
+          id: string
+          minor_rule_override: boolean
+          order_id: string | null
+          paid_at: string | null
+          participant_id: string
+          payer: string
+          quantity: number
+          registration_id: string
+          status: string
+          store_order_item_id: string | null
+          tenant_id: string | null
+          unit_price_cents: number
+          updated_at: string
+          variant_id: string | null
+        }
+        Insert: {
+          addon_id: string
+          booked_by_member_id?: string | null
+          booked_by_role?: string | null
+          cancel_reason?: string | null
+          cancelled_at?: string | null
+          created_at?: string
+          currency?: string
+          group_invoice_id?: string | null
+          group_method?: string | null
+          id?: string
+          minor_rule_override?: boolean
+          order_id?: string | null
+          paid_at?: string | null
+          participant_id: string
+          payer: string
+          quantity?: number
+          registration_id: string
+          status?: string
+          store_order_item_id?: string | null
+          tenant_id?: string | null
+          unit_price_cents: number
+          updated_at?: string
+          variant_id?: string | null
+        }
+        Update: {
+          addon_id?: string
+          booked_by_member_id?: string | null
+          booked_by_role?: string | null
+          cancel_reason?: string | null
+          cancelled_at?: string | null
+          created_at?: string
+          currency?: string
+          group_invoice_id?: string | null
+          group_method?: string | null
+          id?: string
+          minor_rule_override?: boolean
+          order_id?: string | null
+          paid_at?: string | null
+          participant_id?: string
+          payer?: string
+          quantity?: number
+          registration_id?: string
+          status?: string
+          store_order_item_id?: string | null
+          tenant_id?: string | null
+          unit_price_cents?: number
+          updated_at?: string
+          variant_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "registration_addons_addon_id_fkey"
+            columns: ["addon_id"]
+            isOneToOne: false
+            referencedRelation: "event_addons"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "registration_addons_booked_by_member_id_fkey"
+            columns: ["booked_by_member_id"]
+            isOneToOne: false
+            referencedRelation: "members"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "registration_addons_group_invoice_id_fkey"
+            columns: ["group_invoice_id"]
+            isOneToOne: false
+            referencedRelation: "group_invoices"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "registration_addons_order_id_fkey"
+            columns: ["order_id"]
+            isOneToOne: false
+            referencedRelation: "addon_orders"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "registration_addons_participant_id_fkey"
+            columns: ["participant_id"]
+            isOneToOne: false
+            referencedRelation: "participants"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "registration_addons_registration_id_fkey"
+            columns: ["registration_id"]
+            isOneToOne: false
+            referencedRelation: "registrations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "registration_addons_store_order_item_id_fkey"
+            columns: ["store_order_item_id"]
+            isOneToOne: false
+            referencedRelation: "store_order_items"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "registration_addons_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "registration_addons_variant_id_fkey"
+            columns: ["variant_id"]
+            isOneToOne: false
+            referencedRelation: "store_variants"
             referencedColumns: ["id"]
           },
         ]
@@ -9105,6 +9488,40 @@ export type Database = {
     }
     Functions: {
       app_tenant_id: { Args: never; Returns: string }
+      book_addon_lines: {
+        Args: { p_addon: string; p_lines: Json }
+        Returns: {
+          addon_id: string
+          booked_by_member_id: string | null
+          booked_by_role: string | null
+          cancel_reason: string | null
+          cancelled_at: string | null
+          created_at: string
+          currency: string
+          group_invoice_id: string | null
+          group_method: string | null
+          id: string
+          minor_rule_override: boolean
+          order_id: string | null
+          paid_at: string | null
+          participant_id: string
+          payer: string
+          quantity: number
+          registration_id: string
+          status: string
+          store_order_item_id: string | null
+          tenant_id: string | null
+          unit_price_cents: number
+          updated_at: string
+          variant_id: string | null
+        }[]
+        SetofOptions: {
+          from: "*"
+          to: "registration_addons"
+          isOneToOne: false
+          isSetofReturn: true
+        }
+      }
       bump_email_quota: { Args: { p_day: string }; Returns: number }
       can_read_chat_channel: {
         Args: { _channel_id: string; _clerk_sub: string }

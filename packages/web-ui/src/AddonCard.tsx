@@ -32,7 +32,7 @@ export function AddonCard({
 }) {
   const soldOut = availability === 'sold_out'
   return (
-    <article className={cn('flex h-full flex-col rounded-ds-card border border-line bg-white p-5', soldOut && 'opacity-75', className)}>
+    <article className={cn('flex h-full flex-col rounded-ds-card border bg-white p-5', soldOut ? 'border-line-light' : 'border-line', className)}>
       <div className="flex items-start justify-between gap-3">
         <Eyebrow>{kindLabel}</Eyebrow>
         {availability !== 'available' && (
