@@ -103,13 +103,6 @@ vi.mock('@/lib/auto-membership-grant', async () => {
   const { rec } = await import('@/test/registration/fixtures')
   return { autoGrantBaseMembership: async () => { rec.event('hook autoGrantBaseMembership') } }
 })
-vi.mock('@/lib/store/event-merch', async () => {
-  const { rec } = await import('@/test/registration/fixtures')
-  return {
-    prepareRegistrationAddons: async () => { rec.event('hook prepareRegistrationAddons'); return [] },
-    addRegistrationAddons: async () => { rec.event('hook addRegistrationAddons') },
-  }
-})
 vi.mock('@/lib/registration-confirm', () => ({ confirmRegistration: async () => {} }))
 vi.mock('@/lib/registration-pay-link', async () => {
   const { rec } = await import('@/test/registration/fixtures')

@@ -53,9 +53,8 @@ vi.mock('./pricing', () => ({ computeUnitPrice: async () => ({ unit_cents: 1500 
 const { reportError } = vi.hoisted(() => ({ reportError: vi.fn(async () => {}) }))
 vi.mock('@/lib/app-errors', () => ({ reportError }))
 
-import { addRegistrationAddons, EventMerchOwnerReadError, finalizeRegistrationMerch } from './event-merch'
+import { ensureEventMerchOrder, EventMerchOwnerReadError, finalizeRegistrationMerch } from './event-merch'
 
-const addon = { variantId: 'v-cap', sku: 'CAP', name: 'Cap', qty: 1, unitCents: 1500 }
 const orderInserts = () => inserts.filter((i) => i.table === 'store_orders')
 
 function seed(eventSlug: string, owner: string | null) {
@@ -79,7 +78,7 @@ beforeEach(() => {
 describe('ensureEventMerchOrder: explicit tenant_id (S5 C20a)', () => {
   it("writes Stellr's event's order with Stellr's tenant_id, after one events read", async () => {
     seed('stellr-comp', STELLR_TENANT_ID)
-    await addRegistrationAddons(db, 'reg-1', [addon], 'student-1')
+    await ensureEventMerchOrder(db, 'reg-1')
     expect(orderInserts()).toHaveLength(1)
     expect(orderInserts()[0].row).toMatchObject({
       tenant_id: STELLR_TENANT_ID,
@@ -89,36 +88,35 @@ describe('ensureEventMerchOrder: explicit tenant_id (S5 C20a)', () => {
       member_id: 'teacher-1',
     })
     expect(eventReads).toEqual(['stellr-comp'])
-    expect(inserts.some((i) => i.table === 'store_order_items')).toBe(true)
   })
 
   it("treats an event the mirror does not know as Stellr's", async () => {
     seed('not-mirrored', null)
-    await addRegistrationAddons(db, 'reg-1', [addon], 'student-1')
+    await ensureEventMerchOrder(db, 'reg-1')
     expect(orderInserts()[0]?.row).toMatchObject({ tenant_id: STELLR_TENANT_ID })
   })
 
   it('reads the owner only when it creates the order', async () => {
     seed('stellr-comp', STELLR_TENANT_ID)
     tables.store_orders.push({ id: 'order-existing', registration_id: 'reg-1', channel: 'event_registration' })
-    await addRegistrationAddons(db, 'reg-1', [addon], 'student-1')
+    await ensureEventMerchOrder(db, 'reg-1')
     expect(orderInserts()).toEqual([])
     expect(eventReads).toEqual([])
   })
 
-  it("creates no order, and persists no add-on, for another tenant's event", async () => {
+  it("creates no order for another tenant's event", async () => {
     seed('tenant-comp', OTHER_TENANT)
-    await addRegistrationAddons(db, 'reg-1', [addon], 'student-1')
+    await ensureEventMerchOrder(db, 'reg-1')
     expect(inserts).toEqual([])
   })
 
-  it('fails loudly when the owner read fails, rather than drop the chosen add-ons', async () => {
+  it('fails loudly when the owner read fails, rather than answer "no order" for a transient fault', async () => {
     seed('stellr-comp', STELLR_TENANT_ID)
     eventError = { message: 'boom' }
     const err = vi.spyOn(console, 'error').mockImplementation(() => {})
     try {
       // Thrown, the registration answers a 500 that its route records in app_errors.
-      await expect(addRegistrationAddons(db, 'reg-1', [addon], 'student-1')).rejects.toBeInstanceOf(EventMerchOwnerReadError)
+      await expect(ensureEventMerchOrder(db, 'reg-1')).rejects.toBeInstanceOf(EventMerchOwnerReadError)
     } finally {
       err.mockRestore()
     }

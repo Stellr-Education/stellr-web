@@ -2,7 +2,7 @@
 
 # Event add-ons: accommodation, experiences and merch
 
-**Status:** every owner question was answered on 17 Nov 2026. The plan awaits the owner's go-ahead to build. No code has been written.
+**Status, 17 Nov 2026:** every owner question is answered, and all phases are built as stacked PRs onto `dev`: Phase 1 #782, Phase 2 #783, Phase R #785, Phase 3 #786, Phase 4 #787, Phase 5 #789, Phase 6 (this file's last PR). Migrations are applied to the dev database only. Nothing is promoted. See "Build notes" at the end for where the build departed from this plan.
 - Written 17 Nov 2026 against `dev` at `6990b9de`.
 - Revision 2, same day: merch joins the plan; room and hotel management are out of scope; US-14 and US-15 are removed; US-20 is rewritten; nothing is built for other tenants.
 - Revision 3, same day: Q1 to Q10 answered; the minor-accommodation message and the overnight addendum hook added; account credits are removed (Phase R).
@@ -522,3 +522,26 @@ Accommodation for minors opens for sale only once the December overnight addendu
 | Minors overnight and off-site | High | Q9 and Q10 answered: group-only for minors, plus the overnight addendum (December). Sales to minors open only once it's live |
 | Removing account credits breaks membership or mentoring checkout, or strands a live balance | Medium | The owner checks balances first; code removal before the drop; the migration refuses while any balance remains; Stripe test-mode proofs |
 | Data shared with the hotel and SpaceX without notice | Medium | Collection notice; minimal exports; data map |
+
+---
+
+## Build notes (17 Nov 2026)
+
+Where the build departed from the plan above, and why:
+
+| Plan | Built | Why |
+|---|---|---|
+| `event_addon_variants` table for merch sizes | `event_addons.variant_ids uuid[]`, checked against the product by the app | One table fewer in the cross-tenant harness, which seeds every child table; no behaviour difference |
+| `registration_addons.refund_id` | Removed; `event_refunds.addon_line_id` points the other way | A circular foreign key between two tenant tables, which the isolation matrix cannot seed |
+| `group_invoice_lines` table (§2.2) | `group_invoices.addons_cents` plus `registration_addons.group_invoice_id` | Same guarantee (per-place maths and refunds read `total − addons_cents`) with no backfill of every existing invoice |
+| US-9: one Checkout for the place and its extras | Extras are paid right after the place, by their own link (emailed, and on the account); an invoiced group's go on its invoice | FR-9 / D1: most promotion codes and scholarship coupons are not product-restricted, so in one Checkout they would discount the extras (Q6, Q7) |
+| Phase R: one migration dropping the credit tables | Step 1 (expand, in #785) adds only what the new code calls; step 2 (contract) drops the tables, columns, old signatures and the `'credit'` refund type | Dropping first breaks the code already deployed: refunds write `account_credit_id`, and the webhook reads `credit_redemptions`. Step 2 ships in its own PR after #785 is on production |
+| Phase 6: remove the old merch path entirely | Writers removed; the reads that settle merch items written before the change (`pendingAddonLines`, the flip in `finalizeRegistrationMerch`) stay, marked legacy | A registration made before the deploy with unpaid merch must still be charged for it, and still reach the batch |
+| Group registration: organiser pays extras by card at registration | At registration: the school's invoice, or each person pays; card is on the account page | The registration's own Checkout is for the places (D1 above) |
+
+Still open:
+
+- **Phase R step 2** (the contract migration): its own PR, after #785 is on production.
+- **The December addendum:** set `ADDON_ADDENDUM_TEMPLATE` and wire `lib/addons/consent.ts` to that template's signed agreements. Until then a minor's accommodation and tour lines stay "Awaiting overnight consent", so do not open them to minors.
+- **Threat model, minors DPIA and data map** (§5.1): the code is built to them; the documents still need their update.
+- **Baylor set-up:** create the three add-ons on production (Friday night, Saturday night, SpaceX tour) once prices, places and cut-offs are known.
