@@ -63,11 +63,28 @@ fi
 # Production is deliberately left out. A docs-only push to `main` is how a
 # missing production deployment gets re-triggered (#197, 24 Sept).
 #
+# 17 Nov 2026: Function Storage hit 75% for the third time. The dev project held
+# 87 builds from one week (about 12 a day, ~64 MB each). Two more kinds of `dev`
+# push are now skipped:
+#   - test/CI/tooling-only: tests (`*.test.*`, `*.spec.*`, `__tests__/`, `e2e/`,
+#     `test/`), Storybook (`.storybook/`, `*.stories.*`), `.github/`, and the
+#     root test/scanner configs. `next build` never reads them, and nothing under
+#     app/, lib/, components/ or packages/ imports from test/ or e2e/.
+#   - an empty diff: the same tree as the last real build (a record merge that
+#     only re-points history). Before this it built, because `[ -n "$files" ]`
+#     failed.
+# Every reason to build is now logged, so a stray dev build says why.
+#
 # VERCEL_GIT_PREVIOUS_SHA is the last *successful* deployment on this branch.
 # Skipped builds don't count as successful, so the diff covers every change since
-# the last real build. If that commit is missing from Vercel's shallow clone, or
-# anything else fails to resolve, the build goes ahead. Put `[build]` in the
-# commit message to force a build.
+# the last real build. Vercel's clone is shallow; if that commit is missing, the
+# script tries to deepen the clone once, and builds if it still can't diff. Put
+# `[build]` in the commit message to force a build.
+SKIP_PATHS='^(docs/|\.claude/|\.github/|\.storybook/|e2e/|test/)'
+SKIP_PATHS="${SKIP_PATHS}"'|^[^/]+\.md$'
+SKIP_PATHS="${SKIP_PATHS}"'|\.(test|spec)\.(ts|tsx|js|mjs|cjs|mts)$|(^|/)__tests__/|\.stories\.(ts|tsx|mdx)$'
+SKIP_PATHS="${SKIP_PATHS}"'|^(playwright[^/]*\.config\.ts|vitest[^/]*\.(config\.mts|setup\.ts)|stryker\.config\.mjs|lighthouserc\.json|osv-scanner\.toml|\.gitleaks\.toml|\.semgrepignore)$|^\.semgrep/'
+
 if [ "$project" = "$DEV_PROJECT_ID" ]; then
   prev="${VERCEL_GIT_PREVIOUS_SHA:-}"
   case "${VERCEL_GIT_COMMIT_MESSAGE:-}" in
@@ -75,14 +92,33 @@ if [ "$project" = "$DEV_PROJECT_ID" ]; then
       echo "vercel-ignore-build: [build] in the commit message — building"
       exit 1 ;;
   esac
-  if [ -n "$prev" ] && git cat-file -e "${prev}^{commit}" 2>/dev/null \
-     && files=$(git diff --name-only --no-renames "$prev" HEAD 2>/dev/null) \
-     && [ -n "$files" ] \
-     && ! printf '%s\n' "$files" | grep -qvE '^(docs/|\.claude/)|^[^/]+\.md$'; then
-    echo "vercel-ignore-build: docs-only change since ${prev:0:7} — skipped"
+  if [ -z "$prev" ]; then
+    echo "vercel-ignore-build: no VERCEL_GIT_PREVIOUS_SHA — building"
+    exit 1
+  fi
+  if ! git cat-file -e "${prev}^{commit}" 2>/dev/null; then
+    git fetch --quiet --deepen=200 2>/dev/null \
+      || git fetch --quiet --depth=200 origin "$ref" 2>/dev/null || true
+  fi
+  if ! git cat-file -e "${prev}^{commit}" 2>/dev/null; then
+    echo "vercel-ignore-build: previous build ${prev:0:7} not in the clone — building"
+    exit 1
+  fi
+  if ! files=$(git diff --name-only --no-renames "$prev" HEAD 2>/dev/null); then
+    echo "vercel-ignore-build: git diff against ${prev:0:7} failed — building"
+    exit 1
+  fi
+  if [ -z "$files" ]; then
+    echo "vercel-ignore-build: same tree as the last build (${prev:0:7}) — skipped"
+    exit 0
+  fi
+  if ! printf '%s\n' "$files" | grep -qvE "$SKIP_PATHS"; then
+    echo "vercel-ignore-build: docs/test/CI-only change since ${prev:0:7} — skipped"
     printf '%s\n' "$files" | sed 's/^/  /'
     exit 0
   fi
+  echo "vercel-ignore-build: runtime files changed since ${prev:0:7}, e.g.:"
+  printf '%s\n' "$files" | grep -vE "$SKIP_PATHS" | head -5 | sed 's/^/  /'
 fi
 
 echo "vercel-ignore-build: ${ref} on this project — building"
