@@ -7,7 +7,7 @@ The Classroom Qualifier hub, both window pages, the curriculum library, teacher 
 
 | # | Item | State | Next | Done |
 |---|---|---|---|---|
-| classroom-qualifier.1 | Fall Qualifier deadlines in Sanity | Both Fall docs read deadline 2026-12-11 and 2026-12-15, grades unset (Sanity read 17 Nov). Site says 1/31/27; registration and upload close on the Sanity date. | Owner sets both deadlines to 2027-01-31 and grades 7–12 in Studio, or says yes to an agent patch. | ☐ |
+| classroom-qualifier.1 | Fall Qualifier deadlines in Sanity | Both Fall docs published 17 Nov with deadline 2027-01-31 and grades 7–12 (agent patch, owner's yes; Space was "High School" 9–12 before). Verified: Sanity read-back, `/events` shows "January 31, 2027" and both Qualifier cards "Grades 7–12", `/classroom-qualifier/2026-27` shows only 1/31/27. | — | ☑ |
 | classroom-qualifier.2 | Hosted Studio shows Teacher Story | `teacherStory` schema is in the repo and on production; hosted Studio not redeployed since. 0 stories exist. | Owner runs `npx sanity deploy`. | ☐ |
 | classroom-qualifier.3 | Spring 2027 documents | None in Sanity; `/classroom-qualifier/spring-2027` shows "opens 1/1/27" only. | Create both spring theme documents (season spring, campaignYear 2027, deadline 2027-05-14). | ☐ |
 | classroom-qualifier.4 | HubSpot follow-up sequences | Drafted in `docs/classroom-qualifier/HUBSPOT-SEQUENCES.md`; nothing in HubSpot. | Owner pastes them into HubSpot and leaves them inactive until approved. | ☐ |
