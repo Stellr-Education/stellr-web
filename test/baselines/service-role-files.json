@@ -521,6 +521,18 @@
       "class": "convert",
       "reason": "auto: reaches tables it does not name (dynamic .from, rpc, or a client passed to a helper); review before converting"
     },
+    "app/api/admin/events/[slug]/addons/[id]/route.ts": {
+      "class": "convert",
+      "reason": "Stellr-only admin route (stellrOnlyDb after stellrOnlyEvent): the event add-ons catalogue, as the merch offerings route; tenantDb when add-ons open to tenants"
+    },
+    "app/api/admin/events/[slug]/addons/route.ts": {
+      "class": "convert",
+      "reason": "Stellr-only admin route (stellrOnlyDb after stellrOnlyEvent): the event add-ons catalogue, as the merch offerings route; tenantDb when add-ons open to tenants"
+    },
+    "app/api/admin/events/[slug]/addons/settings/route.ts": {
+      "class": "convert",
+      "reason": "Stellr-only admin route (stellrOnlyDb after stellrOnlyEvent): the event add-ons catalogue, as the merch offerings route; tenantDb when add-ons open to tenants"
+    },
     "app/api/admin/events/[slug]/awards/issue/route.ts": {
       "class": "convert",
       "reason": "auto: reaches tables it does not name (dynamic .from, rpc, or a client passed to a helper); review before converting"
@@ -1388,6 +1400,10 @@
     "lib/activity-log.ts": {
       "class": "identity",
       "reason": "auto: no tenant or event-scoped table, classed by its identity tables; tables: member_activity_log"
+    },
+    "lib/addons/catalog.ts": {
+      "class": "convert",
+      "reason": "event add-ons catalogue: the public reader is cached across visitors (no session), and admin writes arrive with stellrOnlyDb; Stellr's events only until tenant add-ons"
     },
     "lib/admin-auth.ts": {
       "class": "stellr_only",

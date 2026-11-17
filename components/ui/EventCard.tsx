@@ -12,9 +12,13 @@ interface EventCardProps {
   event: StellarEvent
   /** The image's `sizes`: the grid the card sits in. Defaults to the /events board. */
   imageSizes?: string
+  /** Optional extras on sale (accommodation, experiences). Merch never shows on a card. */
+  extras?: ('accommodation' | 'experience')[]
 }
 
-export function EventCard({ event, imageSizes = CARD_IMAGE_SIZES.eventsBoard }: EventCardProps) {
+const EXTRA_LABEL = { accommodation: 'Accommodation available', experience: 'Optional tour' } as const
+
+export function EventCard({ event, imageSizes = CARD_IMAGE_SIZES.eventsBoard, extras = [] }: EventCardProps) {
   const status = registrationStatus(event.registrationOpenDate, event.registrationCloseDate, eventLastDay(event))
 
   return (
@@ -51,6 +55,16 @@ export function EventCard({ event, imageSizes = CARD_IMAGE_SIZES.eventsBoard }: 
 
         {event.tagline && (
           <p className="mt-2 text-sm text-brand-grey-dark line-clamp-2">{event.tagline}</p>
+        )}
+
+        {extras.length > 0 && (
+          <ul className="mt-3 flex flex-wrap gap-2" aria-label="Optional extras">
+            {extras.map((k) => (
+              <li key={k} className="rounded-pill bg-primary-soft px-2.5 py-1 text-xs font-medium text-primary-deep">
+                {EXTRA_LABEL[k]}
+              </li>
+            ))}
+          </ul>
         )}
 
         <div className="mt-auto pt-4">

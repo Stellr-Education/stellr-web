@@ -28,6 +28,7 @@ import EventCredentials from '@/components/admin/EventCredentials'
 import EventEducatorPd from '@/components/admin/EventEducatorPd'
 import { artworkTheme as artworkThemeOf } from '@/lib/artwork-theme'
 import { EventMerchandiseEditor } from '@/components/admin/EventMerchandiseEditor'
+import { EventAddonsEditor } from '@/components/admin/EventAddonsEditor'
 import { EventMerchBatch } from '@/components/admin/EventMerchBatch'
 import { isAssignmentActive } from '@/lib/event-manager-active'
 import { ContainerTraining, type ContentRow, type ModuleOption } from '@/components/admin/containers/ContainerTraining'
@@ -434,9 +435,17 @@ export default async function AdminEventDetailPage({
         <div className="space-y-4">
           <CollapseAllControls className="justify-end" label="Expand or collapse settings" />
           <Collapsible
+            id="addons"
+            title="Add-ons"
+            description="Accommodation, experiences and merch people can add to a place, and what the place includes."
+            bodyClassName="p-4"
+          >
+            <EventAddonsEditor eventSlug={slug} />
+          </Collapsible>
+          <Collapsible
             id="merchandise"
             title="Merchandise"
-            description="Included shirt (auto-allocated by size) and paid add-ons for this event."
+            description="The included shirt (allocated by size) and the bulk merch order. Paid merch is set up under Add-ons."
             bodyClassName="space-y-3 p-4"
           >
             <EventMerchandiseEditor eventSlug={slug} />

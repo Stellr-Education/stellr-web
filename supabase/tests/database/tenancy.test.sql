@@ -9,7 +9,7 @@
 BEGIN;
 SET LOCAL search_path = extensions, public;
 
-SELECT plan(398);
+SELECT plan(420);
 
 -- 1. Every table in public and entitlements is classified, and nothing else is.
 SELECT set_eq(
@@ -27,6 +27,7 @@ SELECT set_eq(
     'entitlements.tier_benefits',
     'entitlements.tiers',
     'public.account_credits',
+    'public.addon_orders',
     'public.admin_duties',
     'public.agreement_email_changes',
     'public.agreement_recipients',
@@ -84,6 +85,8 @@ SELECT set_eq(
     'public.esign_provider_state',
     'public.esign_templates',
     'public.ethnicity_options',
+    'public.event_addon_settings',
+    'public.event_addons',
     'public.event_award_assignments',
     'public.event_badge_templates',
     'public.event_certificate_templates',
@@ -134,6 +137,7 @@ SELECT set_eq(
     'public.record_access_log',
     'public.recording_offloads',
     'public.refund_policies',
+    'public.registration_addons',
     'public.registrations',
     'public.scholarship_applications',
     'public.schools',
@@ -186,6 +190,12 @@ SELECT set_eq(
 );
 
 -- 2. Tenant/event tables: tenant_id, an index led by it, RLS.
+SELECT has_column('public', 'addon_orders', 'tenant_id', 'public.addon_orders has tenant_id');
+SELECT ok(EXISTS (
+  SELECT 1 FROM pg_index i JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = i.indkey[0]
+  WHERE i.indrelid = 'public.addon_orders'::regclass AND a.attname = 'tenant_id'
+), 'public.addon_orders has an index led by tenant_id');
+SELECT ok((SELECT relrowsecurity FROM pg_class WHERE oid = 'public.addon_orders'::regclass), 'public.addon_orders has RLS enabled');
 SELECT has_column('public', 'agreements', 'tenant_id', 'public.agreements has tenant_id');
 SELECT ok(EXISTS (
   SELECT 1 FROM pg_index i JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = i.indkey[0]
@@ -210,6 +220,18 @@ SELECT ok(EXISTS (
   WHERE i.indrelid = 'public.credentials'::regclass AND a.attname = 'tenant_id'
 ), 'public.credentials has an index led by tenant_id');
 SELECT ok((SELECT relrowsecurity FROM pg_class WHERE oid = 'public.credentials'::regclass), 'public.credentials has RLS enabled');
+SELECT has_column('public', 'event_addon_settings', 'tenant_id', 'public.event_addon_settings has tenant_id');
+SELECT ok(EXISTS (
+  SELECT 1 FROM pg_index i JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = i.indkey[0]
+  WHERE i.indrelid = 'public.event_addon_settings'::regclass AND a.attname = 'tenant_id'
+), 'public.event_addon_settings has an index led by tenant_id');
+SELECT ok((SELECT relrowsecurity FROM pg_class WHERE oid = 'public.event_addon_settings'::regclass), 'public.event_addon_settings has RLS enabled');
+SELECT has_column('public', 'event_addons', 'tenant_id', 'public.event_addons has tenant_id');
+SELECT ok(EXISTS (
+  SELECT 1 FROM pg_index i JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = i.indkey[0]
+  WHERE i.indrelid = 'public.event_addons'::regclass AND a.attname = 'tenant_id'
+), 'public.event_addons has an index led by tenant_id');
+SELECT ok((SELECT relrowsecurity FROM pg_class WHERE oid = 'public.event_addons'::regclass), 'public.event_addons has RLS enabled');
 SELECT has_column('public', 'event_award_assignments', 'tenant_id', 'public.event_award_assignments has tenant_id');
 SELECT ok(EXISTS (
   SELECT 1 FROM pg_index i JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = i.indkey[0]
@@ -450,6 +472,12 @@ SELECT ok(EXISTS (
   WHERE i.indrelid = 'public.participants'::regclass AND a.attname = 'tenant_id'
 ), 'public.participants has an index led by tenant_id');
 SELECT ok((SELECT relrowsecurity FROM pg_class WHERE oid = 'public.participants'::regclass), 'public.participants has RLS enabled');
+SELECT has_column('public', 'registration_addons', 'tenant_id', 'public.registration_addons has tenant_id');
+SELECT ok(EXISTS (
+  SELECT 1 FROM pg_index i JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = i.indkey[0]
+  WHERE i.indrelid = 'public.registration_addons'::regclass AND a.attname = 'tenant_id'
+), 'public.registration_addons has an index led by tenant_id');
+SELECT ok((SELECT relrowsecurity FROM pg_class WHERE oid = 'public.registration_addons'::regclass), 'public.registration_addons has RLS enabled');
 SELECT has_column('public', 'store_order_items', 'tenant_id', 'public.store_order_items has tenant_id');
 SELECT ok(EXISTS (
   SELECT 1 FROM pg_index i JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = i.indkey[0]
@@ -480,6 +508,13 @@ SELECT col_not_null('public', 'tenant_domains', 'tenant_id', 'public.tenant_doma
 SELECT col_not_null('public', 'tenant_memberships', 'tenant_id', 'public.tenant_memberships.tenant_id is NOT NULL');
 SELECT ok(EXISTS (
   SELECT 1 FROM pg_trigger tg
+  WHERE tg.tgrelid = 'public.addon_orders'::regclass AND tg.tgname = 'zz_tenancy_derive_tenant_id'
+    AND tg.tgfoid = 'public.tenancy_derive_tenant_id()'::regprocedure
+    AND tg.tgenabled = 'O'
+    AND encode(tg.tgargs, 'escape') = 'event_slug\000slug\000'
+), 'public.addon_orders: derivation trigger on (event_slug, slug), enabled');
+SELECT ok(EXISTS (
+  SELECT 1 FROM pg_trigger tg
   WHERE tg.tgrelid = 'public.agreements'::regclass AND tg.tgname = 'zz_tenancy_derive_tenant_id'
     AND tg.tgfoid = 'public.tenancy_derive_tenant_id()'::regprocedure
     AND tg.tgenabled = 'O'
@@ -506,6 +541,20 @@ SELECT ok(EXISTS (
     AND tg.tgenabled = 'O'
     AND encode(tg.tgargs, 'escape') = 'event_slug\000slug\000'
 ), 'public.credentials: derivation trigger on (event_slug, slug), enabled');
+SELECT ok(EXISTS (
+  SELECT 1 FROM pg_trigger tg
+  WHERE tg.tgrelid = 'public.event_addon_settings'::regclass AND tg.tgname = 'zz_tenancy_derive_tenant_id'
+    AND tg.tgfoid = 'public.tenancy_derive_tenant_id()'::regprocedure
+    AND tg.tgenabled = 'O'
+    AND encode(tg.tgargs, 'escape') = 'event_slug\000slug\000'
+), 'public.event_addon_settings: derivation trigger on (event_slug, slug), enabled');
+SELECT ok(EXISTS (
+  SELECT 1 FROM pg_trigger tg
+  WHERE tg.tgrelid = 'public.event_addons'::regclass AND tg.tgname = 'zz_tenancy_derive_tenant_id'
+    AND tg.tgfoid = 'public.tenancy_derive_tenant_id()'::regprocedure
+    AND tg.tgenabled = 'O'
+    AND encode(tg.tgargs, 'escape') = 'event_slug\000slug\000'
+), 'public.event_addons: derivation trigger on (event_slug, slug), enabled');
 SELECT ok(EXISTS (
   SELECT 1 FROM pg_trigger tg
   WHERE tg.tgrelid = 'public.event_award_assignments'::regclass AND tg.tgname = 'zz_tenancy_derive_tenant_id'
@@ -779,6 +828,16 @@ SELECT ok(EXISTS (
 ), 'public.participants: inherit trigger on (registration_id, registrations), enabled');
 SELECT is((SELECT count(*)::int FROM pg_constraint c WHERE c.contype = 'f' AND c.conrelid = 'public.participants'::regclass AND c.confrelid = 'public.registrations'::regclass),
   1, 'public.participants: exactly one foreign key to public.registrations, so live embeds stay unambiguous');
+SELECT col_is_null('public', 'registration_addons', 'tenant_id', 'public.registration_addons.tenant_id is nullable: expand only');
+SELECT ok(EXISTS (
+  SELECT 1 FROM pg_trigger tg
+  WHERE tg.tgrelid = 'public.registration_addons'::regclass AND tg.tgname = 'zz_tenancy_derive_tenant_id'
+    AND tg.tgfoid = 'public.tenancy_inherit_tenant_id()'::regprocedure
+    AND tg.tgenabled = 'O'
+    AND encode(tg.tgargs, 'escape') = 'registration_id\000registrations\000'
+), 'public.registration_addons: inherit trigger on (registration_id, registrations), enabled');
+SELECT is((SELECT count(*)::int FROM pg_constraint c WHERE c.contype = 'f' AND c.conrelid = 'public.registration_addons'::regclass AND c.confrelid = 'public.registrations'::regclass),
+  1, 'public.registration_addons: exactly one foreign key to public.registrations, so live embeds stay unambiguous');
 SELECT col_is_null('public', 'store_order_items', 'tenant_id', 'public.store_order_items.tenant_id is nullable: expand only');
 SELECT ok(EXISTS (
   SELECT 1 FROM pg_trigger tg
@@ -978,10 +1037,13 @@ SELECT is((SELECT count(*)::int FROM public.event_settings WHERE event_slug IN (
 CREATE TEMP TABLE pgtap_backfill ON COMMIT DROP AS SELECT * FROM public.tenancy_backfill_tenant_ids();
 SELECT is((SELECT count(*)::int FROM public.event_settings WHERE event_slug IN ('pgtap-historic', 'pgtap-event') AND tenant_id IS NULL), 0, 'backfill: the NULL rows now carry a tenant');
 SELECT set_eq('SELECT tbl FROM pgtap_backfill', ARRAY[
+    'addon_orders',
     'agreements',
     'community_resources',
     'community_spaces',
     'credentials',
+    'event_addon_settings',
+    'event_addons',
     'event_award_assignments',
     'event_badge_templates',
     'event_certificate_templates',
@@ -1026,10 +1088,13 @@ SELECT is((SELECT string_agg(DISTINCT tgenabled::text, '') FROM pg_trigger
 SELECT throws_ok($q$UPDATE public.survey_access_log SET actor = 'x' WHERE event_slug = 'pgtap-historic'$q$,
   NULL, NULL, 'backfill: survey_access_log still refuses updates afterwards');
 SELECT is((SELECT COALESCE(sum(rows_updated), 0)::int FROM public.tenancy_backfill_tenant_ids()), 0, 'backfill: re-running it changes nothing');
+SELECT is((SELECT count(*)::int FROM public.addon_orders WHERE tenant_id IS NULL), 0, 'public.addon_orders: no NULL tenant_id after the backfill (NOT NULL-ready)');
 SELECT is((SELECT count(*)::int FROM public.agreements WHERE tenant_id IS NULL), 0, 'public.agreements: no NULL tenant_id after the backfill (NOT NULL-ready)');
 SELECT is((SELECT count(*)::int FROM public.community_resources WHERE tenant_id IS NULL), 0, 'public.community_resources: no NULL tenant_id after the backfill (NOT NULL-ready)');
 SELECT is((SELECT count(*)::int FROM public.community_spaces WHERE tenant_id IS NULL), 0, 'public.community_spaces: no NULL tenant_id after the backfill (NOT NULL-ready)');
 SELECT is((SELECT count(*)::int FROM public.credentials WHERE tenant_id IS NULL), 0, 'public.credentials: no NULL tenant_id after the backfill (NOT NULL-ready)');
+SELECT is((SELECT count(*)::int FROM public.event_addon_settings WHERE tenant_id IS NULL), 0, 'public.event_addon_settings: no NULL tenant_id after the backfill (NOT NULL-ready)');
+SELECT is((SELECT count(*)::int FROM public.event_addons WHERE tenant_id IS NULL), 0, 'public.event_addons: no NULL tenant_id after the backfill (NOT NULL-ready)');
 SELECT is((SELECT count(*)::int FROM public.event_award_assignments WHERE tenant_id IS NULL), 0, 'public.event_award_assignments: no NULL tenant_id after the backfill (NOT NULL-ready)');
 SELECT is((SELECT count(*)::int FROM public.event_badge_templates WHERE tenant_id IS NULL), 0, 'public.event_badge_templates: no NULL tenant_id after the backfill (NOT NULL-ready)');
 SELECT is((SELECT count(*)::int FROM public.event_certificate_templates WHERE tenant_id IS NULL), 0, 'public.event_certificate_templates: no NULL tenant_id after the backfill (NOT NULL-ready)');
@@ -1186,6 +1251,7 @@ CREATE TEMP TABLE pgtap_child_backfill ON COMMIT DROP AS SELECT * FROM public.te
   'esign_audit_events',
   'member_group_members',
   'participants',
+  'registration_addons',
   'store_order_items',
   'store_returns',
   'survey_answers',
@@ -1201,6 +1267,7 @@ SELECT set_eq('SELECT tbl FROM pgtap_child_backfill', ARRAY[
     'esign_audit_events',
     'member_group_members',
     'participants',
+    'registration_addons',
     'store_order_items',
     'store_returns',
     'survey_answers',
@@ -1230,6 +1297,7 @@ SELECT is((SELECT count(*)::int FROM public.esign_access_log WHERE tenant_id IS 
 SELECT is((SELECT count(*)::int FROM public.esign_audit_events WHERE tenant_id IS NULL), 0, 'public.esign_audit_events: no NULL tenant_id after the backfill (NOT NULL-ready)');
 SELECT is((SELECT count(*)::int FROM public.member_group_members WHERE tenant_id IS NULL), 0, 'public.member_group_members: no NULL tenant_id after the backfill (NOT NULL-ready)');
 SELECT is((SELECT count(*)::int FROM public.participants WHERE tenant_id IS NULL), 0, 'public.participants: no NULL tenant_id after the backfill (NOT NULL-ready)');
+SELECT is((SELECT count(*)::int FROM public.registration_addons WHERE tenant_id IS NULL), 0, 'public.registration_addons: no NULL tenant_id after the backfill (NOT NULL-ready)');
 SELECT is((SELECT count(*)::int FROM public.store_order_items WHERE tenant_id IS NULL), 0, 'public.store_order_items: no NULL tenant_id after the backfill (NOT NULL-ready)');
 SELECT is((SELECT count(*)::int FROM public.store_returns WHERE tenant_id IS NULL), 0, 'public.store_returns: no NULL tenant_id after the backfill (NOT NULL-ready)');
 SELECT is((SELECT count(*)::int FROM public.survey_answers WHERE tenant_id IS NULL), 0, 'public.survey_answers: no NULL tenant_id after the backfill (NOT NULL-ready)');

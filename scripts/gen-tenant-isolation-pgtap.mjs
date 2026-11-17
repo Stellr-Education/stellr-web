@@ -84,6 +84,9 @@ export const TENANTS = {
     order: 'a0000000-0000-4000-8000-000000000006',
     distribution: 'a0000000-0000-4000-8000-000000000007',
     response: 'a0000000-0000-4000-8000-000000000008',
+    participant: 'a0000000-0000-4000-8000-000000000009',
+    addon: 'a0000000-0000-4000-8000-00000000000a',
+    addonOrder: 'a0000000-0000-4000-8000-00000000000b',
   },
   b: {
     id: CANARY_TENANT_ID,
@@ -98,6 +101,9 @@ export const TENANTS = {
     order: 'b0000000-0000-4000-8000-000000000006',
     distribution: 'b0000000-0000-4000-8000-000000000007',
     response: 'b0000000-0000-4000-8000-000000000008',
+    participant: 'b0000000-0000-4000-8000-000000000009',
+    addon: 'b0000000-0000-4000-8000-00000000000a',
+    addonOrder: 'b0000000-0000-4000-8000-00000000000b',
   },
 }
 const MEMBER = 'c0000000-0000-4000-8000-000000000001'
@@ -158,12 +164,19 @@ export const FIXTURES = {
     member_id: lit(c.s.endsWith('-own') ? MEMBER_OWN : c.s.includes('-ref-own-') ? MEMBER_REF_OWN : MEMBER),
   }),
   'public.participants': (c) => ({
+    ...(c.seed ? { id: lit(c.t.participant) } : {}),
     // One row per (registration_id, email), so each row that lands needs its own address.
     registration_id: lit(c.t.registration), first_name: lit('Iso'), last_name: lit('Participant'), email: lit(`participant-${c.s}@example.test`),
     phone: lit('0'), date_of_birth: `${lit(ADULT_DOB)}::date`, gender: lit(''), t_shirt_size: lit('M'), school_name: lit(''),
     age_bracket: lit('high_school'), event_role: lit('participant'),
   }),
   'public.store_order_items': (c) => ({ order_id: lit(c.t.order), name: lit('Iso item') }),
+  'public.registration_addons': (c) => ({
+    registration_id: lit(c.t.registration), participant_id: lit(c.t.participant), addon_id: lit(c.t.addon),
+    unit_price_cents: '0', payer: lit('included'),
+    // One live line per (participant, add-on): only the seed is live, so the rows the matrix adds never collide.
+    status: lit(c.seed ? 'confirmed' : 'cancelled'),
+  }),
   'public.store_returns': (c) => ({ order_id: lit(c.t.order), reason: lit('Iso') }),
   'public.survey_answers': (c) => ({ response_id: lit(c.t.response), question_key: lit(`iso_${c.s}`) }),
   'public.survey_invitations': (c) => ({
@@ -191,6 +204,15 @@ export const FIXTURES = {
   'public.event_settings': (c) => ({ event_slug: lit(c.ev.slug) }),
   'public.event_crew_check_ins': (c) => ({ event_slug: lit(c.ev.slug), crew_key: lit(`m.user_iso_${c.s}`), role: lit('event_manager') }),
   'public.event_store_offerings': (c) => ({ event_slug: lit(c.ev.slug), variant_id: lit(VARIANT), treatment: lit('included') }),
+  'public.event_addons': (c) => ({
+    ...(c.seed ? { id: lit(c.t.addon) } : {}),
+    event_slug: lit(c.ev.slug), kind: lit('experience'), title: lit('Iso tour'), price_cents: '0',
+  }),
+  'public.event_addon_settings': (c) => ({ event_slug: lit(c.ev.slug) }),
+  'public.addon_orders': (c) => ({
+    ...(c.seed ? { id: lit(c.t.addonOrder) } : {}),
+    event_slug: lit(c.ev.slug), payer_kind: lit('group'), total_cents: '0',
+  }),
   'public.events': (c) => ({
     tenant_id: lit(c.t.id), slug: lit(`iso-own-${c.s}`), sanity_id: lit(`iso-own-sanity-${c.s}`), title: lit('Iso'),
     time_zone: lit('UTC'), country: lit('US'), currency: lit('usd'), grade_system: lit('us_grades'),
@@ -252,8 +274,8 @@ export function fixtureProblems(registry = TABLE_REGISTRY, fixtures = FIXTURES) 
 
 /** The tables other fixtures name a seeded row of, in the order they must be written. */
 const SEED_FIRST = [
-  'public.registrations', 'public.training_modules', 'public.agreements', 'public.credentials', 'public.member_groups',
-  'public.store_orders', 'public.survey_distributions', 'public.survey_responses',
+  'public.registrations', 'public.participants', 'public.training_modules', 'public.agreements', 'public.credentials', 'public.member_groups',
+  'public.store_orders', 'public.survey_distributions', 'public.survey_responses', 'public.event_addons', 'public.addon_orders',
 ]
 
 /** Parents first, then the rest alphabetically. */

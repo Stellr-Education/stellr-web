@@ -253,6 +253,11 @@ export const AUDIT_ACTIONS = [
   'event_company.placement.change',
   'event_offering.record.create',
   'event_offering.record.delete',
+  // Event add-ons catalogue (docs/PLAN-event-add-ons-2026-11-17.md): app/api/admin/events/[slug]/addons/**
+  'event_addon.record.create',
+  'event_addon.record.update',
+  'event_addon.record.delete',
+  'event_addon.settings.update',
   'merch.batch.commit',
 
   // S5 wave 7, registered ahead of the slices that write them (A10a, A10b).

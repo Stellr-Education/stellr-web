@@ -35,6 +35,11 @@ const LATER_CHILD_MIGRATIONS: Record<string, string> = {
   'public.event_email_templates': 'supabase/migrations/20261109230000_event_email_templates.sql',
   // Created as event_staff_check_ins (20261110120000); renamed, policies restated, 13 Nov.
   'public.event_crew_check_ins': 'supabase/migrations/20261113120000_rename_staff_to_duties_and_crew.sql',
+  // Event add-ons (17 Nov): four tables, event_refunds' guard restated, the registrations carry widened.
+  'public.event_addons': 'supabase/migrations/20261117182507_event_addons.sql',
+  'public.event_addon_settings': 'supabase/migrations/20261117182507_event_addons.sql',
+  'public.addon_orders': 'supabase/migrations/20261117182507_event_addons.sql',
+  'public.registration_addons': 'supabase/migrations/20261117182507_event_addons.sql',
 }
 const inheritedTenantTables = () => tenantTables().filter((t) => TABLE_REGISTRY[t].tenantColumn === 'inherited')
 /** The S4 file for a table it wrote, the C0b file for a child table, or the later child's own. */
@@ -55,8 +60,8 @@ describe('cross-tenant pgTAP matrix (S4)', () => {
 
   it('has a fixture for every own/derived/inherited tenant table, and none for anything else', () => {
     expect(fixtureProblems()).toEqual([])
-    expect(tenantTables().length).toBe(48)
-    expect(inheritedTenantTables().length).toBe(11)
+    expect(tenantTables().length).toBe(52)
+    expect(inheritedTenantTables().length).toBe(12)
     expect(Object.keys(FIXTURES).sort()).toEqual(tenantTables())
   })
 
@@ -130,7 +135,7 @@ describe('cross-tenant pgTAP matrix (S4)', () => {
   it('section 7: another tenant\'s parent and a missing one get the same refusal, in both modes, on every writable child table', () => {
     const sql = readFileSync(OUTPUT, 'utf8')
     const writable = inheritedTenantTables().filter((t) => !TENANT_APP_READ_ONLY_TABLES.includes(t))
-    expect(writable).toHaveLength(6)
+    expect(writable).toHaveLength(7)
     for (const mode of ['log', 'enforce']) {
       for (const who of ['Stellr', 'canary']) {
         for (const t of writable) {
