@@ -72,6 +72,16 @@ describe('handleSuppressionEvent', () => {
     ])
   })
 
+  // 17 Nov 2026: Resend accepted a send to an address on ITS suppression list
+  // and then reported it suppressed; History had called it sent.
+  it('records an address Resend reports as suppressed', async () => {
+    const fake = fakeSupabase({}, { schema })
+    expect(await handleSuppressionEvent(fake.client, { type: 'email.suppressed', data: { to: ['d@example.test'] } }))
+      .toEqual({ suppressed: 1 })
+    expect(fake.table('email_suppressions').map((r) => [r.email, r.reason, r.source]))
+      .toEqual([['d@example.test', 'bounce', 'resend:email.suppressed']])
+  })
+
   // Review finding: a bounce Resend could not classify was suppressed for good,
   // which could block every later consent form to a parent's working address.
   // Only an explicit permanent bounce is recorded; the rest are logged.

@@ -23,7 +23,7 @@ import {
   unknownTokens,
   type EventForEmail,
 } from './render'
-import { MAX_RECIPIENTS_PER_SEND, type EventEmailRow, type EventEmailStatus } from './types'
+import { MAX_RECIPIENTS_PER_SEND, type EventEmailRow, type EventEmailSendRow, type EventEmailStatus } from './types'
 import { isTenantRow, TENANT_SENDER_REQUIRED, type EventSender } from './tenant-mail'
 import { STELLR_TENANT_ID } from '@/lib/tenancy/constants'
 import { surveySendsHeld } from '@/lib/survey/hold'
@@ -63,7 +63,27 @@ const SEND_SPACING_MS = 550
 // event_emails.updated_at trigger makes the reclaiming UPDATE a safe
 // compare-and-swap: taking the row bumps updated_at, so a second run no longer
 // matches `updated_at < stale`.
-const SENDING_STALE_MS = 10 * 60_000
+//
+// Since 17 Nov 2026 a live send also HEARTBEATS: it touches event_emails after
+// every recipient (and through the DocuSign step), so updated_at is never more
+// than a few seconds old while a run is alive. That lets the cron treat two
+// minutes of silence as abandoned, and lets "Resume now" / the editor's
+// automatic continue take a row after CONTINUE_STALE_MS of silence.
+export const SENDING_STALE_MS = 2 * 60_000
+export const CONTINUE_STALE_MS = 20_000
+
+// A send stops cleanly before its function is killed (17 Nov 2026: a manual
+// send to the MN consent group spent its 60s on DocuSign re-sends, was killed
+// after 2 emails, and showed "Send failed." with the email stuck in 'sending').
+// Each run works until its deadline, records what it did, leaves the email in
+// 'sending' and says it is incomplete; the editor continues it at once and the
+// cron picks up anything left behind.
+export const SEND_TIME_BUDGET_MS = 45_000
+/** Stop starting new recipients this close to the deadline: one send plus the final write. */
+const DEADLINE_MARGIN_MS = 3_000
+/** The DocuSign re-send step gets at most this much of a run, a few at a time. */
+const DOCUSIGN_BUDGET_MS = 15_000
+const DOCUSIGN_CONCURRENCY = 4
 
 export type SendTrigger = 'manual' | 'schedule' | 'test' | 'catch_up'
 
@@ -80,6 +100,16 @@ export type SendOutcome =
       // prior state (scheduled/draft) rather than marked sent, so the next cron
       // slot resumes it and sends whoever is left.
       incomplete?: boolean
+      /**
+       * Why it stopped early: 'time' (this run's deadline — the email stays
+       * 'sending' and should be continued straight away) or 'quota' (the daily
+       * budget — it went back to draft/scheduled for the next cron slot).
+       */
+      stoppedFor?: 'time' | 'quota'
+      /** Recipients this run did not reach. */
+      remaining?: number
+      /** Recipients our suppression list skipped (bounced/complained before). */
+      suppressed?: number
     }
   | { ok: false; status: number; error: string }
 
@@ -143,6 +173,18 @@ export async function sendEventEmail(
     // draft/scheduled one) and the send resumes, skipping addresses already
     // emailed by the killed run.
     resume?: boolean
+    /**
+     * How long a 'sending' row must have been silent before `resume` may take
+     * it. The cron uses SENDING_STALE_MS; "Resume now" / the editor's automatic
+     * continue use CONTINUE_STALE_MS. Live runs heartbeat, so neither steals one.
+     */
+    staleMs?: number
+    /**
+     * Epoch ms by which this run must have stopped (default: now +
+     * SEND_TIME_BUDGET_MS). Callers that have already spent part of their
+     * function's time (the cron) pass their own.
+     */
+    deadline?: number
     /** S5 B14: the tenant's sender, for a tenant's email. Leave out for Stellr's. */
     sender?: EventSender
     /**
@@ -168,6 +210,7 @@ export async function sendEventEmail(
 
   const isTest = opts.trigger === 'test'
   if (isTest && !opts.testTo) return { ok: false, status: 400, error: 'No address to send the test to' }
+  const deadline = opts.deadline ?? Date.now() + SEND_TIME_BUDGET_MS
 
   // ── Claim ───────────────────────────────────────────────────────────────────
   const priorStatus: EventEmailStatus = email.status
@@ -176,7 +219,7 @@ export async function sendEventEmail(
       // Re-take a row abandoned in 'sending'. Only a row that has been 'sending'
       // longer than SENDING_STALE_MS matches, and the updated_at trigger bumps
       // the timestamp as we take it, so two concurrent reclaims can't both win.
-      const stale = new Date(Date.now() - SENDING_STALE_MS).toISOString()
+      const stale = new Date(Date.now() - (opts.staleMs ?? SENDING_STALE_MS)).toISOString()
       const { data: claimed } = await db
         .from('event_emails')
         .update({ status: 'sending' })
@@ -184,7 +227,15 @@ export async function sendEventEmail(
         .eq('status', 'sending')
         .lt('updated_at', stale)
         .select('id')
-      if (!claimed?.length) return { ok: false, status: 409, error: 'This email is not a stale send to resume' }
+      if (!claimed?.length) {
+        return {
+          ok: false,
+          status: 409,
+          error: email.status === 'sending'
+            ? 'This email is still sending — give it a minute, then try again'
+            : 'This email is not waiting to be resumed',
+        }
+      }
     } else {
       const { data: claimed } = await db
         .from('event_emails')
@@ -197,6 +248,16 @@ export async function sendEventEmail(
   }
   const release = async (status: EventEmailStatus, extra: Record<string, unknown> = {}) => {
     if (!isTest) await db.from('event_emails').update({ status, ...extra }).eq('id', email.id)
+  }
+  // Touch the claimed row so its updated_at shows the run is alive (see
+  // SENDING_STALE_MS). Best-effort: a missed beat only makes a resume wait longer.
+  const heartbeat = async () => {
+    if (isTest) return
+    try {
+      await db.from('event_emails').update({ status: 'sending' }).eq('id', email.id).eq('status', 'sending')
+    } catch (err) {
+      console.error(`[event-emails] heartbeat failed for ${email.id}:`, err)
+    }
   }
 
   try {
@@ -211,8 +272,10 @@ export async function sendEventEmail(
     // already tried. For a fresh send this set is empty; for a resumed stuck
     // send it is the addresses the killed run already emailed, so nobody is
     // emailed twice. Covers every non-test trigger, not just catch-ups.
+    let priorRunTried = 0
     if (!isTest) {
       const tried = await alreadyTriedAddresses(db, email.id)
+      priorRunTried = tried.size
       if (tried.size) recipients = missedRecipients(recipients, tried)
     }
 
@@ -224,7 +287,7 @@ export async function sendEventEmail(
         error: `${recipients.length} recipients is more than one send can handle (${MAX_RECIPIENTS_PER_SEND}). Split the groups across two emails.`,
       }
     }
-    if (!isTest && recipients.length === 0 && opts.trigger === 'manual') {
+    if (!isTest && recipients.length === 0 && opts.trigger === 'manual' && !opts.resume) {
       await release(priorStatus)
       return { ok: false, status: 400, error: 'Nobody matches these groups right now — nothing was sent' }
     }
@@ -248,18 +311,35 @@ export async function sendEventEmail(
     const carriesLink = [...extractTokens(email.subject), ...extractTokens(JSON.stringify(email.body_json ?? ''))]
       .includes('agreement_link')
     const skip = new Set(carriesLink ? audience.nativeParticipantIds ?? [] : [])
-    if (!isTest && email.resend_docusign && audience.docusignParticipantIds.length) {
-      for (const pid of audience.docusignParticipantIds.filter((id) => !skip.has(id))) {
-        try {
-          const r = await reissueParticipantAgreement(db, pid, { eventSlug: event.slug, allowNewEnvelope: false })
-          if (r.kind === 'resent') docusignResent++
-        } catch (err) {
-          console.error(`[event-emails] DocuSign resend failed for participant ${pid}:`, err)
+    // Only the FIRST run of an email re-sends DocuSign: a continued or resumed
+    // run (or one after an earlier run already emailed people) would otherwise
+    // send every family the DocuSign email again each time. The step is capped
+    // at DOCUSIGN_BUDGET_MS and runs a few at a time, so it can never eat the
+    // time the emails themselves need.
+    const firstRun = !opts.resume && priorRunTried === 0
+    if (!isTest && firstRun && email.resend_docusign && audience.docusignParticipantIds.length) {
+      const ids = audience.docusignParticipantIds.filter((id) => !skip.has(id))
+      const stopAt = Math.min(Date.now() + DOCUSIGN_BUDGET_MS, deadline - DEADLINE_MARGIN_MS - 10_000)
+      let next = 0
+      const worker = async () => {
+        while (next < ids.length && Date.now() < stopAt) {
+          const pid = ids[next++]
+          try {
+            const r = await reissueParticipantAgreement(db, pid, { eventSlug: event.slug, allowNewEnvelope: false })
+            if (r.kind === 'resent') docusignResent++
+          } catch (err) {
+            console.error(`[event-emails] DocuSign resend failed for participant ${pid}:`, err)
+          }
+          await heartbeat()
         }
+      }
+      await Promise.all(Array.from({ length: Math.min(DOCUSIGN_CONCURRENCY, ids.length) }, worker))
+      if (next < ids.length) {
+        console.warn(`[event-emails] email ${email.id}: DocuSign re-send stopped at its time cap after ${next} of ${ids.length} participants`)
       }
     }
 
-    const { sendId, sent, failed, stoppedForQuota, stoppedForTime } = await deliver(db, email, event, recipients, {
+    const { sendId, sent, failed, suppressed, stoppedForQuota, stoppedForTime, stoppedForDeadline, reached } = await deliver(db, email, event, recipients, {
       trigger: opts.trigger,
       triggeredBy: opts.triggeredBy,
       audiences: email.audiences,
@@ -268,7 +348,19 @@ export async function sendEventEmail(
       spacingMs: opts.spacingMs,
       sender: opts.sender,
       signal: opts.signal,
+      deadline: isTest ? undefined : deadline,
+      onProgress: heartbeat,
     })
+    const remaining = recipients.length - reached
+
+    // Out of time for this run: the email STAYS 'sending' (heartbeat-fresh) so
+    // the editor's automatic continue, "Resume now", or the cron's
+    // reclaimStuckSending carries on with whoever is left. Nobody is emailed
+    // twice: this run's recipients are on its send row.
+    if (stoppedForDeadline) {
+      await heartbeat()
+      return { ok: true, sendId, recipients: recipients.length, sent, failed, suppressed, docusignResent, incomplete: true, stoppedFor: 'time', remaining }
+    }
 
     // deep review INT-2 / PUB-4: if the shared daily email budget ran out
     // mid-send, do NOT mark the email 'sent' — put it back where it was so the
@@ -278,12 +370,12 @@ export async function sendEventEmail(
     // A tenant send stopped by its cron slice (S5 B14) is put back the same way.
     if (stoppedForQuota || stoppedForTime) {
       await release(priorStatus)
-      return { ok: true, sendId, recipients: recipients.length, sent, failed, docusignResent, incomplete: true }
+      return { ok: true, sendId, recipients: recipients.length, sent, failed, suppressed, docusignResent, incomplete: true, stoppedFor: stoppedForQuota ? 'quota' : 'time', remaining }
     }
 
     await release('sent', { sent_at: new Date().toISOString() })
 
-    return { ok: true, sendId, recipients: recipients.length, sent, failed, docusignResent }
+    return { ok: true, sendId, recipients: recipients.length, sent, failed, suppressed, docusignResent }
   } catch (err) {
     // Nothing (or not everything) went out: put the email back where it was so
     // it can be fixed and retried, rather than stranded in 'sending'.
@@ -314,8 +406,23 @@ export async function deliver(
     sender?: EventSender
     /** S5 B14: stop between recipients once this fires (a tenant cron's slice). Nobody unreached is recorded. */
     signal?: AbortSignal
+    /** Epoch ms: stop between recipients before this, so the run ends cleanly instead of being killed. */
+    deadline?: number
+    /** Called after each recipient (the heartbeat). */
+    onProgress?: () => Promise<void>
   },
-): Promise<{ sendId: string; sent: number; failed: number; stoppedForQuota: boolean; stoppedForTime: boolean }> {
+): Promise<{
+  sendId: string
+  sent: number
+  failed: number
+  /** Skipped by our suppression list (an earlier bounce or complaint). */
+  suppressed: number
+  /** How many recipients this run dealt with (sent, failed or suppressed). */
+  reached: number
+  stoppedForQuota: boolean
+  stoppedForTime: boolean
+  stoppedForDeadline: boolean
+}> {
   const isTest = opts.trigger === 'test'
   const eventVars = await eventVarsFor(db, email, event)
   // History shows the subject as it went out (first recipient's rendering),
@@ -341,7 +448,7 @@ export async function deliver(
     .select('id')
     .single()
 
-  const results: { email: string; name: string; memberId?: string | null; roles: string[]; status: 'sent' | 'failed'; error?: string }[] = []
+  const results: EventEmailSendRow['recipients'] = []
   // deep review INT-1: persist progress after EACH recipient, not only at the
   // end. A send runs in a ≤60s function; if it is killed mid-loop the earlier
   // write means every address already tried is on the row, so a re-run
@@ -362,7 +469,14 @@ export async function deliver(
   const kind = isTest ? 'transactional' : 'marketing'
   let stoppedForQuota = false
   let stoppedForTime = false
+  let stoppedForDeadline = false
   for (const [i, r] of recipients.entries()) {
+    // Out of time for this run: stop BEFORE the function is killed, so the
+    // run is recorded as finished with honest counts and can be continued.
+    if (opts.deadline && Date.now() + (i > 0 ? opts.spacingMs ?? SEND_SPACING_MS : 0) > opts.deadline - DEADLINE_MARGIN_MS) {
+      stoppedForDeadline = true
+      break
+    }
     if (i > 0) await sleep(opts.spacingMs ?? SEND_SPACING_MS)
     // The cron runner has moved on to the next tenant: stop rather than share the
     // account's send rate with it. Like a quota stop, the unreached recipients are
@@ -373,7 +487,7 @@ export async function deliver(
     }
     try {
       const content = renderEventEmail(email, { ...eventVars, ...recipientMergeVars(r) })
-      await sendEmail({
+      const out = await sendEmail({
         to: r.email,
         from: opts.sender?.from ?? EVENT_EMAIL_FROM,
         replyTo: opts.sender?.replyTo ?? EVENT_EMAIL_REPLY_TO,
@@ -383,7 +497,11 @@ export async function deliver(
         attachments: opts.attachments,
         kind,
       })
-      results.push({ email: r.email, name: r.name, memberId: r.memberId ?? null, roles: r.roles, status: 'sent' })
+      // sendEmail does not throw for an address on our suppression list or for
+      // mail parked in the outbox by the daily budget — record what really
+      // happened instead of calling both 'sent'.
+      const status = out?.suppressed ? 'suppressed' : out?.queued ? 'queued' : 'sent'
+      results.push({ email: r.email, name: r.name, memberId: r.memberId ?? null, roles: r.roles, status, ...(out?.id ? { resendId: out.id } : {}) })
     } catch (err) {
       // deep review INT-2 / PUB-4: a quota/429 means the SHARED Resend budget is
       // spent, not that this recipient failed. STOP now and do NOT record this
@@ -398,17 +516,21 @@ export async function deliver(
       results.push({ email: r.email, name: r.name, memberId: r.memberId ?? null, roles: r.roles, status: 'failed', error: err instanceof Error ? err.message.slice(0, 300) : String(err) })
     }
     await persistProgress()
+    if (opts.onProgress) await opts.onProgress()
   }
 
-  const sent = results.filter((r) => r.status === 'sent').length
-  const failed = results.length - sent
+  // 'queued' mail goes out from the outbox shortly, so it counts as sent here;
+  // suppressed and failed recipients do not.
+  const sent = results.filter((r) => r.status === 'sent' || r.status === 'queued').length
+  const suppressed = results.filter((r) => r.status === 'suppressed').length
+  const failed = results.filter((r) => r.status === 'failed').length
   if (sendRow?.id) {
     await db
       .from('event_email_sends')
       .update({ sent_count: sent, failed_count: failed, recipients: results, finished_at: new Date().toISOString() })
       .eq('id', sendRow.id)
   }
-  return { sendId: (sendRow?.id as string) ?? '', sent, failed, stoppedForQuota, stoppedForTime }
+  return { sendId: (sendRow?.id as string) ?? '', sent, failed, suppressed, reached: results.length, stoppedForQuota, stoppedForTime, stoppedForDeadline }
 }
 
 /**
@@ -428,7 +550,7 @@ export async function reclaimStuckSending(
    * (NULL tenant_id counts as Stellr's), with its sender. Without it, every row,
    * as before.
    */
-  scope: { tenantId?: string; sender?: EventSender; signal?: AbortSignal } = {},
+  scope: { tenantId?: string; sender?: EventSender; signal?: AbortSignal; deadline?: number } = {},
 ): Promise<{ reclaimed: number; errors: { id: string; error: string }[] }> {
   const out = { reclaimed: 0, errors: [] as { id: string; error: string }[] }
   const stale = new Date(Date.now() - SENDING_STALE_MS).toISOString()
@@ -453,6 +575,7 @@ export async function reclaimStuckSending(
       resume: true,
       ...(scope.sender ? { sender: scope.sender } : {}),
       ...(scope.signal ? { signal: scope.signal } : {}),
+      ...(scope.deadline ? { deadline: scope.deadline } : {}),
     })
     // 409 just means another run took it first — not an error.
     if (r.ok) out.reclaimed++

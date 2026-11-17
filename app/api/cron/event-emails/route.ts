@@ -45,6 +45,12 @@ const START_BUDGET_MS = 15_000
  * start budget has gone.
  */
 const SEND_OVERRUN_MS = 45_000
+/**
+ * Every send in this run stops between recipients by this point (17 Nov 2026),
+ * well inside maxDuration, so a long send ends recorded and resumable instead of
+ * being killed mid-loop. What is left goes at the next run (or "Resume now").
+ */
+const SEND_DEADLINE_MS = 50_000
 
 type Counts = {
   due: number
@@ -155,7 +161,7 @@ export const GET = withCronAudit('event-emails', async (req: NextRequest) => {
         add('deferred')
         continue
       }
-      const out = await sendEventEmail(db, row.id, { trigger: 'schedule', triggeredBy: 'schedule', ...withSender })
+      const out = await sendEventEmail(db, row.id, { trigger: 'schedule', triggeredBy: 'schedule', deadline: started + SEND_DEADLINE_MS, ...withSender })
       if (out.ok) add('sent')
       else job.fail(row.id, out.error)
     }
@@ -163,7 +169,7 @@ export const GET = withCronAudit('event-emails', async (req: NextRequest) => {
     // deep review INT-1: pick up any send abandoned in 'sending' by a killed
     // function and finish it (skipping whoever the killed run already emailed),
     // before the catch-up pass re-checks who is owed.
-    const resumed = await reclaimStuckSending(db, budgetLeft, { tenantId, ...withSender })
+    const resumed = await reclaimStuckSending(db, budgetLeft, { tenantId, deadline: started + SEND_DEADLINE_MS, ...withSender })
     add('resumed', resumed.reclaimed)
     for (const e of resumed.errors) job.fail(`resume:${e.id}`, e.error)
 
