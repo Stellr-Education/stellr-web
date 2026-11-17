@@ -259,3 +259,22 @@ export const getAddonKindsBySlug = unstable_cache(
   ['event-addon-kinds'],
   { revalidate: PUBLIC_ADDONS_SECONDS, tags: [ADDONS_TAG] },
 )
+
+/** Events with any add-on on sale (merch included), for "Add extras" links on member pages. */
+export const getSlugsWithAddonsOnSale = unstable_cache(
+  async (): Promise<string[]> => {
+    try {
+      const { data, error } = await supabaseServer()
+        .from('event_addons')
+        .select('event_slug, status, sale_opens_at, sale_closes_at')
+        .eq('status', 'on_sale')
+      if (error) throw error
+      return [...new Set(((data ?? []) as Pick<AddonRow, 'event_slug' | 'status' | 'sale_opens_at' | 'sale_closes_at'>[]).filter((r) => onSale(r)).map((r) => r.event_slug))]
+    } catch (e) {
+      console.warn('[addons] slugs-on-sale read failed:', e instanceof Error ? e.message : e)
+      return []
+    }
+  },
+  ['event-addon-slugs'],
+  { revalidate: 600, tags: [ADDONS_TAG] },
+)

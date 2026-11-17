@@ -308,6 +308,7 @@ const nextConfig = {
       { source: '/sign/:path*', headers: privateLink },
       { source: '/register/:slug/pay/:path*', headers: privateLink },
       { source: '/register/:slug/pay-seat/:path*', headers: privateLink },
+      { source: '/register/:slug/addons/pay/:path*', headers: privateLink },
       { source: '/register/:slug/join/:path*', headers: privateLink },
       { source: '/api/sign/:path*', headers: privateLink },
       { source: '/privacy/request', headers: privateLink },

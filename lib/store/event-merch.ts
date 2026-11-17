@@ -91,7 +91,7 @@ export class EventMerchOwnerReadError extends Error {
 }
 
 // Get (or create) the single event-merch order for a registration.
-async function ensureEventMerchOrder(db: SupabaseClient, registrationId: string): Promise<string | null> {
+export async function ensureEventMerchOrder(db: SupabaseClient, registrationId: string): Promise<string | null> {
   const { data: existing } = await db
     .from('store_orders')
     .select('id')
