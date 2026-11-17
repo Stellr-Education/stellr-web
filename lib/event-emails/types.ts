@@ -73,7 +73,15 @@ export interface EventEmailSendRow {
   failed_count: number
   docusign_resent: number
   /** memberId: the recipient's own members row, on sends recorded since Nov 2026 (admin link). */
-  recipients: { email: string; name: string; memberId?: string | null; roles: RecipientRole[]; status: 'sent' | 'failed'; error?: string }[]
+  /**
+   * status: 'suppressed' = skipped by our suppression list (an earlier bounce or
+   * complaint); 'queued' = parked in the outbox by the daily budget and sent
+   * from there (since 17 Nov 2026 — before that both were recorded as 'sent').
+   * resendId: Resend's id for the message, when it was handed to Resend.
+   */
+  recipients: { email: string; name: string; memberId?: string | null; roles: RecipientRole[]; status: 'sent' | 'failed' | 'suppressed' | 'queued'; error?: string; resendId?: string
+    /** Added by the History API, never stored: the address is now on the suppression list. */
+    blocked?: 'bounce' | 'complaint' | 'unsubscribe' | 'manual' }[]
   started_at: string
   finished_at: string | null
 }

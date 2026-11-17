@@ -123,15 +123,15 @@ describe('event-emails, Stellr alone', () => {
     const { status, body, finished } = await runEventEmails(flag)
     expect(status).toBe(200)
     expect(h.sendEventEmail.mock.calls.map((c) => c.slice(1))).toEqual([
-      ['s1', { trigger: 'schedule', triggeredBy: 'schedule' }],
-      ['s2', { trigger: 'schedule', triggeredBy: 'schedule' }],
+      ['s1', { trigger: 'schedule', triggeredBy: 'schedule', deadline: expect.any(Number) }],
+      ['s2', { trigger: 'schedule', triggeredBy: 'schedule', deadline: expect.any(Number) }],
     ])
     expect(Object.keys(body).sort()).toEqual(STELLR_RESULT_KEYS)
     expect(Object.keys(finished).sort()).toEqual(STELLR_RESULT_KEYS)
     expect(finished).toMatchObject({ due: 2, sent: 2 })
     expect(h.fails).toEqual([])
     // Stellr's follow-ups keep Stellr's rows, with Stellr's own sender (none passed).
-    expect(h.reclaimStuckSending.mock.calls[0][2]).toEqual({ tenantId: STELLR_TENANT_ID })
+    expect(h.reclaimStuckSending.mock.calls[0][2]).toEqual({ tenantId: STELLR_TENANT_ID, deadline: expect.any(Number) })
     expect(h.runCatchUps.mock.calls[0][4]).toEqual({ tenantId: STELLR_TENANT_ID })
     // The scheduled read is the same rows plus the tenant column; no child ledger rows.
     expect(fake.calls.filter((c) => c.table === 'cron_runs')).toEqual([])

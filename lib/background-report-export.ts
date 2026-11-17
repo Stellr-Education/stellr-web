@@ -27,6 +27,9 @@ import {
 import { ReportPdfUnavailableError, type BackgroundProvider } from '@/lib/background-provider'
 import { logActivity, type Actor } from '@/lib/activity-log'
 import { formatDateShort } from '@/lib/utils'
+import { pdfSafe } from '@/lib/pdf-safe'
+
+export { pdfSafe }
 
 export type ExportMode = 'checkr' | 'summary'
 
@@ -220,18 +223,6 @@ const STATUS_LABEL: Record<RowOutcome, string> = {
   not_cleared: 'Not cleared',
   not_required: 'Not required',
   no_account: 'Not cleared',
-}
-
-// Helvetica (WinAnsi) cannot encode every character a name may hold; pdf-lib
-// throws on one it can't. Fold accents, then replace anything left over.
-export function pdfSafe(text: string): string {
-  return text
-    .normalize('NFKD')
-    .replace(/[̀-ͯ]/g, '')
-    .replace(/[‘’]/g, "'")
-    .replace(/[“”]/g, '"')
-    .replace(/[–—]/g, '-')
-    .replace(/[^\x20-\x7e\xa0-\xff]/g, '?')
 }
 
 function fit(text: string, font: PDFFont, size: number, width: number): string {

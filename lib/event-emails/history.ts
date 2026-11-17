@@ -33,3 +33,22 @@ export async function alreadyTriedAddresses(db: SupabaseClient, emailId: string)
   }
   return out
 }
+
+/**
+ * Did the latest real (non-test) run of this email record itself as finished?
+ * A run that stopped at its time limit writes finished_at before it returns,
+ * so a continue may take over at once; a run still going (or killed) has none.
+ * No run at all (killed before its first recipient) answers false.
+ */
+export async function latestRunFinished(db: SupabaseClient, emailId: string): Promise<boolean> {
+  const { data, error } = await db
+    .from('event_email_sends')
+    .select('finished_at')
+    .eq('event_email_id', emailId)
+    .neq('trigger', 'test')
+    .order('started_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+  if (error || !data) return false
+  return data.finished_at != null
+}

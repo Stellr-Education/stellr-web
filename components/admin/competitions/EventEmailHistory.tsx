@@ -19,6 +19,50 @@ function when(iso: string): string {
 
 const audienceLabel = (key: string) => AUDIENCES.find((a) => a.key === key)?.label ?? key
 
+/** A run with no finish time this long after it started was cut off, not still going. */
+const CUT_OFF_AFTER_MS = 2 * 60_000
+
+type Recipient = EventEmailSendRow['recipients'][number]
+const notDelivered = (r: Recipient) => r.status === 'suppressed' || (!!r.blocked && r.status !== 'failed')
+
+// What the Result column says. A send can take more than one run (each stops at
+// its time limit and the next carries on), so "18 of 38" is normal, not an error.
+function Result({ h }: { h: EventEmailSendRow }) {
+  const reached = h.recipients.length
+  const blocked = h.recipients.filter(notDelivered).length
+  const delivered = h.recipients.filter((r) => (r.status === 'sent' || r.status === 'queued') && !notDelivered(r)).length
+  const sub = 'block text-xs text-content-muted'
+  if (h.finished_at == null) {
+    const cutOff = Date.now() - new Date(h.started_at).getTime() > CUT_OFF_AFTER_MS
+    return cutOff ? (
+      <>
+        <span className="text-orange-700">Cut off — {reached} of {h.recipient_count} reached</span>
+        <span className={sub}>The rest carry on with “Resume now” or at the next scheduled run.</span>
+      </>
+    ) : (
+      <span className="text-content-body">Sending… {reached} of {h.recipient_count}</span>
+    )
+  }
+  const carried = h.recipient_count - reached
+  return (
+    <>
+      <span className="text-ink">{delivered} sent</span>
+      {h.failed_count > 0 && <span className="ml-2 text-red-600">{h.failed_count} failed</span>}
+      {blocked > 0 && <span className={sub}>{blocked} not delivered (address blocked)</span>}
+      {carried > 0 && <span className={sub}>Stopped at its time limit — {carried} carried on in the next run</span>}
+      {h.docusign_resent > 0 && <span className={sub}>{h.docusign_resent} DocuSign re-sent</span>}
+    </>
+  )
+}
+
+function statusNote(r: Recipient): string {
+  if (r.status === 'failed') return ` — failed${r.error ? `: ${r.error}` : ''}`
+  if (r.status === 'suppressed') return ' — not delivered: this address bounced or complained before'
+  if (r.blocked) return ` — not delivered: address blocked (${r.blocked === 'complaint' ? 'spam complaint' : r.blocked})`
+  if (r.status === 'queued') return ' — queued (sent from the outbox)'
+  return ''
+}
+
 // Every send from this tab — manual, scheduled and tests. Counts only: there is
 // deliberately no open/read tracking. Expanding a row lists who it went to.
 export function EventEmailHistory({ history }: { history: EventEmailSendRow[] }) {
@@ -54,18 +98,8 @@ export function EventEmailHistory({ history }: { history: EventEmailSendRow[] })
                   <p className="text-xs text-brand-muted-soft">{h.subject}</p>
                 </td>
                 <td className="px-4 py-2.5 text-brand-muted">{h.audiences.map(audienceLabel).join(', ')}</td>
-                <td className="whitespace-nowrap px-4 py-2.5">
-                  {h.finished_at == null ? (
-                    <span className="text-orange-700">Incomplete</span>
-                  ) : (
-                    <>
-                      <span className="text-ink">{h.sent_count} sent</span>
-                      {h.failed_count > 0 && <span className="ml-2 text-red-600">{h.failed_count} failed</span>}
-                      {h.docusign_resent > 0 && (
-                        <span className="block text-xs text-brand-muted-soft">{h.docusign_resent} DocuSign re-sent</span>
-                      )}
-                    </>
-                  )}
+                <td className="max-w-xs px-4 py-2.5">
+                  <Result h={h} />
                 </td>
                 <td className="whitespace-nowrap px-4 py-2.5 text-brand-muted">
                   {TRIGGER_LABEL[h.trigger]}
@@ -84,7 +118,7 @@ export function EventEmailHistory({ history }: { history: EventEmailSendRow[] })
                     ) : (
                       <ul className="grid gap-1 text-xs sm:grid-cols-2">
                         {h.recipients.map((r) => (
-                          <li key={r.email} className={r.status === 'failed' ? 'text-red-600' : 'text-brand-muted'}>
+                          <li key={r.email} className={r.status === 'failed' ? 'text-red-600' : notDelivered(r) ? 'text-orange-700' : 'text-brand-muted'}>
                             {r.name !== r.email && (
                               <span className="text-ink">
                                 <MemberLink memberId={r.memberId}>{r.name}</MemberLink> ·{' '}
@@ -92,7 +126,7 @@ export function EventEmailHistory({ history }: { history: EventEmailSendRow[] })
                             )}
                             {r.email}
                             {r.roles.length > 0 && ` (${r.roles.map((x) => ROLE_LABEL[x] ?? x).join(', ')})`}
-                            {r.status === 'failed' && ` — failed${r.error ? `: ${r.error}` : ''}`}
+                            {statusNote(r)}
                           </li>
                         ))}
                       </ul>

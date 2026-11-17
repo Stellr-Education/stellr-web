@@ -7,8 +7,8 @@ import { withAudit } from '@/lib/audit/route'
 import { noteWebhook, webhookAudit, webhookEvent } from '@/lib/audit/webhook'
 
 // POST /api/webhooks/resend — Resend's delivery events, signed with svix.
-// Set up in Resend → Webhooks with the email.bounced and email.complained
-// events, pointing here; the signing secret goes in RESEND_WEBHOOK_SECRET.
+// Set up in Resend → Webhooks with the email.bounced, email.complained and
+// email.suppressed events, pointing here; the signing secret goes in RESEND_WEBHOOK_SECRET.
 // Without the secret every call is refused.
 //
 // Two consumers:

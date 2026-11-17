@@ -220,6 +220,9 @@ export const AUDIT_ACTIONS = [
   'survey.quote.withdraw',
   // C16 follow-up: registrations/[id]/payment-method (its change is catalogued under Registration)
   'registration.payment_method.read',
+  // Payment documents for a place, downloaded by crew on someone's behalf
+  'registration.receipt.read',
+  'registration.paid_invoice.read',
 
   // Events admin: paperwork and communications under an event (C17)
   'agreement.participant.reissue',
