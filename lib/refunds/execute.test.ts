@@ -153,7 +153,7 @@ describe('executeRefund — fixes that came with it', () => {
     seed({
       event_refunds: [
         { id: 'e1', participant_id: 'p1', refund_type: 'cash', kind: 'cancellation' },
-        { id: 'e2', participant_id: 'p1', refund_type: 'credit', kind: 'cancellation' },
+        { id: 'e2', participant_id: 'p1', refund_type: 'cash', kind: 'cancellation' },
       ],
     })
 

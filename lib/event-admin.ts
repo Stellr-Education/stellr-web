@@ -235,7 +235,7 @@ export async function getEventRoster(
     .select('registration_id, refund_cents')
     .eq('event_slug', eventSlug))
     .eq('kind', 'scholarship')
-    .in('refund_type', ['cash', 'credit'])
+    .eq('refund_type', 'cash')
   const scholarshipRefundByReg = new Map(
     ((scholarshipRefunds ?? []) as { registration_id: string; refund_cents: number | null }[]).map((r) => [r.registration_id, r.refund_cents ?? 0]),
   )

@@ -34,7 +34,6 @@ export interface Quote {
   couponApplied: boolean
   couponDiscountCents: number
   netCents: number
-  creditAvailableCents: number
   payableCents: number
 }
 
@@ -70,7 +69,7 @@ export interface Offering {
 
 /**
  * What will this offering cost this member right now? Returns the included/free
- * path or base → tier discount → coupon → account-credit waterfall. An
+ * path or base → tier discount → coupon. An
  * invalid/expired/exhausted coupon is silently ignored (couponApplied=false) so
  * the UI can show "code not valid" without the quote failing.
  */
@@ -92,7 +91,6 @@ async function getQuote(memberId: string, offeringId: string, coupon?: string | 
     couponApplied: Boolean(r.coupon_applied),
     couponDiscountCents: Number(r.coupon_discount_cents),
     netCents: Number(r.net_cents),
-    creditAvailableCents: Number(r.credit_available),
     payableCents: Number(r.payable_cents),
   }
 }
@@ -113,13 +111,6 @@ async function getAllocationBalance(
   return Number(data ?? 0)
 }
 
-/** A member's store-credit balance (cents). */
-async function getCreditBalanceCents(memberId: string): Promise<number> {
-  const { data, error } = await ent().rpc('fn_credit_balance', { p_member: memberId })
-  if (error) throw new Error(`getCreditBalanceCents: ${error.message}`)
-  return Number(data ?? 0)
-}
-
 export interface BookingRow {
   id: string
   offering_id: string
@@ -131,16 +122,14 @@ export interface BookingRow {
 export interface EntitlementSummary {
   coachingBalance: number
   mentoringBalance: number
-  creditCents: number
   bookings: BookingRow[]
 }
 
-/** A member's dashboard view: included balances, store credit, recent bookings. */
+/** A member's dashboard view: included balances and recent bookings. */
 export async function getMemberEntitlementSummary(memberId: string): Promise<EntitlementSummary> {
-  const [coachingBalance, mentoringBalance, creditCents] = await Promise.all([
+  const [coachingBalance, mentoringBalance] = await Promise.all([
     getAllocationBalance(memberId, 'coaching_session', 'coaching_session'),
     getAllocationBalance(memberId, 'cohort_access', 'mentoring_cohort'),
-    getCreditBalanceCents(memberId),
   ])
   const { data, error } = await ent()
     .from('bookings')
@@ -149,7 +138,7 @@ export async function getMemberEntitlementSummary(memberId: string): Promise<Ent
     .order('created_at', { ascending: false })
     .limit(10)
   if (error) throw new Error(`getMemberEntitlementSummary: ${error.message}`)
-  return { coachingBalance, mentoringBalance, creditCents, bookings: (data ?? []) as BookingRow[] }
+  return { coachingBalance, mentoringBalance, bookings: (data ?? []) as BookingRow[] }
 }
 
 // ── Offerings (read) ────────────────────────────────────────────────────────────
@@ -304,7 +293,6 @@ export async function confirmPaidBooking(args: {
   offeringId: string
   stripePaymentId: string
   amountChargedCents: number
-  creditAppliedCents: number
   participantId?: string | null
 }): Promise<string> {
   const { data, error } = await ent().rpc('fn_confirm_paid_booking', {
@@ -312,7 +300,6 @@ export async function confirmPaidBooking(args: {
     p_offering: args.offeringId,
     p_stripe_payment: args.stripePaymentId,
     p_amount_charged_cents: args.amountChargedCents,
-    p_credit_applied_cents: args.creditAppliedCents,
     p_participant: args.participantId ?? null,
   })
   if (error) throw new Error(`confirmPaidBooking: ${error.message}`)
@@ -527,51 +514,54 @@ export async function bookCohortFromAllocation(memberId: string, cohortId: strin
 
 /**
  * Cohort/workshop cancellation refund. Restores drawn ALLOCATIONS (free/included
- * sessions) back to the entitlements ledger, and refunds PAID bookings to the
- * GENERAL credit system (public.account_credits — redeemable at membership checkout,
- * shown in billing) so a member keeps one spendable, visible balance (David, #3).
- * Replaces the session_credits-scanning refundCohortMembers / refundWorkshop. No-op
- * when the cohort has no offering.
+ * sessions) to the entitlements ledger, and refunds PAID bookings to the card they
+ * were paid with (keyed on the booking, so a retry never refunds twice). A booking
+ * Stripe cannot refund automatically is flagged for staff in the error digest.
+ * No-op when the cohort has no offering.
  */
 export async function cancelCohortViaLedger(cohortId: string): Promise<void> {
   const db = supabaseServer()
-  const { data: cohort } = await db
-    .from('mentoring_cohorts')
-    .select('name, container_type')
-    .eq('id', cohortId)
-    .maybeSingle()
-  const ct = (cohort as { container_type?: string } | null)?.container_type ?? ''
-  const isCoaching = ct === 'coaching' || ct === 'workshop'
-  const label = (cohort as { name?: string } | null)?.name ?? (isCoaching ? 'a coaching workshop' : 'a mentoring cohort')
-  const sourceType = isCoaching ? 'coaching_workshop_refund' : 'mentoring_cohort_refund'
-
   const { data: offs } = await ent().from('offerings').select('id').eq('cohort_id', cohortId)
   for (const o of (offs ?? []) as Array<{ id: string }>) {
     // Collect paid bookings BEFORE cancellation (fn_cancel_cohort marks them cancelled).
     const { data: paid } = await ent()
       .from('bookings')
-      .select('member_id, amount_charged_cents, credit_applied_cents')
+      .select('id, member_id, amount_charged_cents, stripe_payment_id')
       .eq('offering_id', o.id)
       .eq('status', 'reserved')
-    const toRefund = ((paid ?? []) as Array<{ member_id: string; amount_charged_cents: number | null; credit_applied_cents: number | null }>)
-      .map((b) => ({ memberId: b.member_id, cents: (b.amount_charged_cents ?? 0) + (b.credit_applied_cents ?? 0) }))
-      .filter((x) => x.cents > 0)
+    const toRefund = ((paid ?? []) as Array<{ id: string; member_id: string; amount_charged_cents: number | null; stripe_payment_id: string | null }>)
+      .filter((b) => (b.amount_charged_cents ?? 0) > 0)
 
-    // Restore allocations + cancel bookings/offering (paid arm is a no-op in SQL now).
+    // Restore allocations + cancel bookings/offering.
     const { error } = await ent().rpc('fn_cancel_cohort', { p_offering: o.id })
     if (error) throw new Error(`cancelCohortViaLedger: ${error.message}`)
 
-    // Issue general account credit for each paid booking.
-    for (const r of toRefund) {
-      await db.from('account_credits').insert({
-        member_id: r.memberId,
-        currency: 'usd',
-        amount_cents: r.cents,
-        remaining_cents: r.cents,
-        source_type: sourceType,
-        reason: `Account credit for cancelled ${isCoaching ? 'coaching workshop' : 'cohort'}: ${label}`,
-      })
-    }
+    for (const b of toRefund) await refundCancelledBooking(db, cohortId, b)
+  }
+}
+
+async function refundCancelledBooking(
+  db: ReturnType<typeof supabaseServer>,
+  cohortId: string,
+  b: { id: string; member_id: string; amount_charged_cents: number | null; stripe_payment_id: string | null },
+) {
+  const { stripeClient } = await import('@/lib/stripe')
+  const { assertLiveCredentials } = await import('@/lib/env-guards')
+  const { reportError } = await import('@/lib/app-errors')
+  const stripe = stripeClient()
+  const intent = b.stripe_payment_id?.startsWith('pi_') ? b.stripe_payment_id : null
+  if (!stripe || !intent) {
+    await reportError(new Error(`cancelled cohort ${cohortId}: booking ${b.id} was paid but has no card payment to refund; refund it by hand`), { route: 'LIB entitlements cancelCohortViaLedger', db })
+    return
+  }
+  try {
+    assertLiveCredentials('stripe')
+    await stripe.refunds.create(
+      { payment_intent: intent, amount: b.amount_charged_cents ?? undefined, metadata: { source: 'stellr_app', reason: 'cohort_cancelled', bookingId: b.id } },
+      { idempotencyKey: `cohort-cancel-refund-${b.id}` },
+    )
+  } catch (e) {
+    await reportError(e, { route: 'LIB entitlements cancelCohortViaLedger refund', db })
   }
 }
 

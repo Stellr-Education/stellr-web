@@ -3,7 +3,6 @@ import Stripe from 'stripe'
 import { fulfilAddonOrder } from '@/lib/addons/fulfil'
 import { supabaseServer } from '@/lib/supabase'
 import { sendEmail, individualConfirmationEmail } from '@/lib/email'
-import { finalizeRedemption } from '@/lib/refunds/redeem'
 import { recordExternalChargeRefunds } from '@/lib/refunds/stripe-webhook'
 import { logActivity } from '@/lib/activity-log'
 import { handleStoreOrderPaid } from '@/lib/store/orders'
@@ -561,7 +560,6 @@ async function fulfilCheckoutSession(session: Stripe.Checkout.Session, stripe: S
     // ledger. Records the purchased (refundable) entitlement + reserves the
     // seat. If the cohort filled between checkout and webhook, refund + stop.
     const { memberId, offeringId, participantId, coupon } = session.metadata
-    const creditApplied = Math.max(0, Math.floor(Number(session.metadata?.creditAppliedCents) || 0))
     const amount = session.amount_total ?? 0
     if (memberId && offeringId) {
       const intent = typeof session.payment_intent === 'string' ? session.payment_intent : null
@@ -571,7 +569,6 @@ async function fulfilCheckoutSession(session: Stripe.Checkout.Session, stripe: S
           offeringId,
           stripePaymentId: intent ?? session.id,
           amountChargedCents: amount,
-          creditAppliedCents: creditApplied,
           participantId: participantId ?? null,
         })
         // Mentoring-cohort bookings also need the cohort_members roster (which
@@ -714,9 +711,6 @@ async function fulfilCheckoutSession(session: Stripe.Checkout.Session, stripe: S
       }
     }
   }
-
-  // Settle any account-credit redemption applied to this checkout.
-  await finalizeRedemption(session)
 }
 
 // deep review QUAL-7: a single webhook confirms a registration, grants tiers,

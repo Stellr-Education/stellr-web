@@ -177,7 +177,7 @@ export interface ScholarshipHistoryItem {
   offeredAt: string | null
   /** The student's offer page, while there is a next step to take. */
   offerUrl: string | null
-  /** Reimbursement for an already-paid student: 'cash' | 'credit' | 'manual_required'. */
+  /** Reimbursement for an already-paid student: 'cash' | 'manual_required'. */
   refund: { type: string; cents: number } | null
 }
 

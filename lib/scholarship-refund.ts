@@ -22,8 +22,6 @@ import { discountedCents, formatUsd } from '@/lib/scholarship-levels'
 // Card refunds carry metadata.source='stellr_app' so the charge.refunded
 // webhook doesn't record them again as made-in-the-dashboard.
 
-export type ScholarshipRefundMethod = 'cash' | 'credit'
-
 export interface ScholarshipRefundQuote {
   /**
    * refund       — money is owed back (refundCents > 0)
@@ -98,7 +96,7 @@ export async function quoteScholarshipRefund(
     .select('refund_cents, refund_type')
     .eq('registration_id', registrationId)
     .eq('kind', 'scholarship')
-    .in('refund_type', ['cash', 'credit'])
+    .eq('refund_type', 'cash')
     .limit(1)
   const done = (prior ?? [])[0] as { refund_cents: number | null; refund_type: string } | undefined
   if (done) {
@@ -106,7 +104,7 @@ export async function quoteScholarshipRefund(
       ...base,
       status: 'already_done',
       refundCents: done.refund_cents ?? 0,
-      detail: `Scholarship reimbursement already issued (${formatUsd(done.refund_cents ?? 0)} ${done.refund_type === 'credit' ? 'credit' : 'refund'})`,
+      detail: `Scholarship reimbursement already issued (${formatUsd(done.refund_cents ?? 0)} refund)`,
     }
   }
 
@@ -153,11 +151,10 @@ export async function quoteScholarshipRefund(
 }
 
 export interface ScholarshipRefundResult {
-  type: 'cash' | 'credit' | 'manual_required' | 'none'
+  type: 'cash' | 'manual_required' | 'none'
   refundCents: number
   detail: string
   stripeRefundId?: string
-  creditId?: string
 }
 
 /**
@@ -171,7 +168,6 @@ export async function issueScholarshipRefund(
     applicationId: string
     registrationId: string
     percent: number
-    method: ScholarshipRefundMethod
     actorMemberId: string | null
   },
 ): Promise<ScholarshipRefundResult> {
@@ -201,7 +197,6 @@ export async function issueScholarshipRefund(
       refund_pct: input.percent,
       refund_cents: result.refundCents,
       stripe_refund_id: result.stripeRefundId ?? null,
-      account_credit_id: result.creditId ?? null,
       decided_by: input.actorMemberId,
       source: 'admin',
       kind: 'scholarship',
@@ -217,47 +212,6 @@ export async function issueScholarshipRefund(
   if (quote.status === 'manual') {
     const result: ScholarshipRefundResult = { type: 'manual_required', refundCents: 0, detail: quote.detail }
     await audit(result, quote.detail)
-    return result
-  }
-
-  if (input.method === 'credit') {
-    if (!participant?.member_id) {
-      const result: ScholarshipRefundResult = { type: 'manual_required', refundCents: quote.refundCents, detail: 'No member account to hold the credit — reimburse manually' }
-      await audit(result, result.detail)
-      return result
-    }
-    // No expiry: this is the student's scholarship, not a cancellation credit.
-    const { data: credit, error } = await db
-      .from('account_credits')
-      .insert({
-        member_id: participant.member_id,
-        currency: quote.currency,
-        amount_cents: quote.refundCents,
-        remaining_cents: quote.refundCents,
-        source_type: 'scholarship',
-        source_participant_id: participant.id,
-        source_registration_id: reg.id,
-        reason: `${input.percent}% scholarship — ${reg.event_title}`,
-        expires_at: null,
-      })
-      .select('id')
-      .single()
-    if (error || !credit) {
-      const result: ScholarshipRefundResult = { type: 'manual_required', refundCents: quote.refundCents, detail: `Account credit could not be issued: ${error?.message ?? 'no row returned'}` }
-      await audit(result, result.detail)
-      return result
-    }
-    const result: ScholarshipRefundResult = { type: 'credit', refundCents: quote.refundCents, creditId: (credit as { id: string }).id, detail: `${amount} account credit issued` }
-    await audit(result, `${input.percent}% scholarship — ${quote.detail}`)
-    await logActivity({
-      memberId: participant.member_id,
-      category: 'billing',
-      action: 'scholarship_refund_issued',
-      summary: `Scholarship reimbursement — ${amount} account credit`,
-      metadata: { kind: 'credit', registrationId: reg.id, refundCents: quote.refundCents, scholarshipId: input.applicationId },
-      actorType: 'admin',
-      actorMemberId: input.actorMemberId,
-    }, db)
     return result
   }
 
