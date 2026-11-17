@@ -222,8 +222,8 @@ describe('group-invoice-sync, Stellr alone', () => {
 
     expect(after.stripe.calls).toEqual(before.stripe.calls)
     expect(writes(after.db.calls)).toEqual(writes(before.db.calls))
-    // The route also checks each due group for invoiced add-ons (lib/addons/invoice.ts); none here.
-    expect(otherReads(after.db.calls).filter((c) => !c.filters.some((f) => f.method === 'neq' && f.args[0] === 'tenant_id') && c.table !== 'registration_addons'))
+    // The route also checks each due group for invoiced add-ons, and sweeps unpaid add-ons (lib/addons); none here.
+    expect(otherReads(after.db.calls).filter((c) => !c.filters.some((f) => f.method === 'neq' && f.args[0] === 'tenant_id') && c.table !== 'registration_addons' && c.table !== 'addon_orders'))
       .toEqual(otherReads(before.db.calls))
     expect(body).toEqual(expected)
     expect(finished).toEqual(expected)

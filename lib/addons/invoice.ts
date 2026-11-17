@@ -24,6 +24,8 @@ import {
   type Actor,
 } from '@/lib/group-billing'
 import { invoiceAddons } from './invoice-items'
+import { markInvoiceSyncDue } from '@/lib/group-billing'
+import { stripeClient } from '@/lib/stripe'
 
 export type AddonInvoiceSync = 'none' | 'revised_main' | 'revised_addons' | 'created' | 'voided' | 'busy'
 
@@ -89,4 +91,17 @@ export function sameLines(_rowId: string, owed: string[], linked: string[]): boo
   if (owed.length !== linked.length) return false
   const a = new Set(owed)
   return linked.every((id) => a.has(id))
+}
+
+/** After add-on lines on a group's invoice change: revise it now, or leave it to the daily sync. Never throws. */
+export async function resyncAddonInvoice(db: SupabaseClient, registrationId: string): Promise<void> {
+  const stripe = stripeClient()
+  if (!stripe) return
+  try {
+    const r = await syncAddonInvoice(db, stripe, registrationId, { memberId: null, label: 'add-on change' })
+    if (r === 'busy') await markInvoiceSyncDue(db, registrationId)
+  } catch (e) {
+    console.error('[addons/invoice] resync failed; left to the daily sync:', e)
+    await markInvoiceSyncDue(db, registrationId)
+  }
 }

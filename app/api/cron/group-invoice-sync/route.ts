@@ -10,6 +10,7 @@ import { partitionByTenant, runPerTenant, type TenantJob } from '@/lib/cron-tena
 import { getEventBySlug } from '@/lib/events/repo'
 import { syncGroupInvoice } from '@/lib/group-billing'
 import { syncAddonInvoice } from '@/lib/addons/invoice'
+import { sweepUnpaidAddons } from '@/lib/addons/sweep'
 import { eventIsOver, settleShare } from '@/lib/teacher-share'
 import { STELLR_TENANT_ID } from '@/lib/tenancy/constants'
 import { STELLR_OR_NULL } from '@/lib/tenancy/stellr-scope'
@@ -176,6 +177,17 @@ export const GET = withCronAudit('group-invoice-sync', async (req: NextRequest) 
           const detail = e instanceof Error ? e.message : String(e)
           console.error('[cron:group-invoice-sync] share settlement failed:', detail)
           job.fail('share-settle', detail)
+        }
+        // Event add-ons (lib/addons/sweep.ts): unpaid places released at their cut-off,
+        // and a reminder the week before. Counted only when there is something to count.
+        try {
+          const addons = await sweepUnpaidAddons(db, stripe)
+          if (addons.released) tally.addons_released = addons.released
+          if (addons.reminded) tally.addons_reminded = addons.reminded
+        } catch (e) {
+          const detail = e instanceof Error ? e.message : String(e)
+          console.error('[cron:group-invoice-sync] add-on sweep failed:', detail)
+          job.fail('addon-sweep', detail)
         }
         return { tally, shares }
       },

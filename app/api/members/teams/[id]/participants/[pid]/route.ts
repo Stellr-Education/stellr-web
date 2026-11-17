@@ -1,3 +1,5 @@
+import { cancelParticipantAddons } from '@/lib/addons/cancel'
+import { resyncAddonInvoice } from '@/lib/addons/invoice'
 import { auth } from '@clerk/nextjs/server'
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseServer } from '@/lib/supabase'
@@ -317,6 +319,16 @@ async function removeParticipant(
     }
   } catch (err) {
     console.error('[teams/participants/pid] refund error:', err)
+  }
+
+  // Their extras are cancelled and refunded to whoever paid for each, by its rule,
+  // before the row goes (deleting it would take the lines with it). Never fatal.
+  if (!tenantGroup) {
+    await cancelParticipantAddons(db, stripeClient(), { participantIds: [pid] }, {
+      reason: isManager ? 'removed' : 'member',
+      actorMemberId: member.id,
+      onInvoiceChanged: (regId) => resyncAddonInvoice(db, regId),
+    }).catch((err) => console.error('[teams/participants/pid] add-on cancel error:', err))
   }
 
   const { error } = await db
