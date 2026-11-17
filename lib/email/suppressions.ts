@@ -144,6 +144,12 @@ export async function handleSuppressionEvent(
     reason = 'bounce'
   } else if (event.type === 'email.complained') {
     reason = 'complaint'
+  } else if (event.type === 'email.suppressed') {
+    // Resend refused to deliver because the address is on ITS suppression list
+    // (an earlier hard bounce or complaint, possibly from another sender). It
+    // accepted our API call, so sendEmail saw a success; recording it here
+    // stops the next send at our end and lets History say "not delivered".
+    reason = 'bounce'
   } else {
     return { suppressed: 0 }
   }

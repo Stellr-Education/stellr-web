@@ -56,7 +56,7 @@ describe('GET /api/cron/event-emails', () => {
     )
     expect(await run()).toMatchObject({ due: 1, sent: 1, skipped: 1, deferred: 0 })
     expect(sendEventEmail).toHaveBeenCalledTimes(1)
-    expect(sendEventEmail).toHaveBeenCalledWith(expect.anything(), 'due', { trigger: 'schedule', triggeredBy: 'schedule' })
+    expect(sendEventEmail).toHaveBeenCalledWith(expect.anything(), 'due', { trigger: 'schedule', triggeredBy: 'schedule', deadline: expect.any(Number) })
     expect(statusWrites).toEqual([{ id: 'stale', status: 'skipped' }])
   })
 
