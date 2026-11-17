@@ -14,6 +14,8 @@ import { listMemberScholarships, toHistoryItems } from '@/lib/scholarships'
 import { memberSurveyRows } from '@/lib/survey/member'
 import { toMemberSurveyItems, type MemberSurveyItem } from '@/lib/survey/history'
 import { resolveSchoolIds } from '@/lib/school-ids'
+import { paymentPill } from '@/lib/payment-status'
+import type { MemberPayment } from '@/components/admin/MemberPaymentsPanel'
 
 export const metadata = { title: 'Admin — Member Detail' }
 
@@ -203,8 +205,37 @@ export default async function AdminMemberPage({
   )
   const registrationsWithSchool = regRows.map((r, i) => ({ ...r, school_id: regSchoolIds[i] }))
 
+  // Paid places, for the Payments panel's Receipt and Invoice links (lib/payments).
+  // The links' routes decide again who may download, event by event.
+  const { data: placeRows } = await db
+    .from('participants')
+    .select('id, individual_payment_status, registrations(id, event_title, event_slug, status, invoice_requested, invoice_paid_at, created_at)')
+    .eq('member_id', id)
+  type PlaceReg = { id: string; event_title: string | null; event_slug: string; status: string | null; invoice_requested: boolean | null; invoice_paid_at: string | null; created_at: string | null }
+  const payments: MemberPayment[] = ((placeRows ?? []) as { id: string; individual_payment_status: string | null; registrations: PlaceReg | PlaceReg[] | null }[])
+    .flatMap((p) => {
+      const reg = Array.isArray(p.registrations) ? p.registrations[0] : p.registrations
+      if (!reg) return []
+      const pill = paymentPill({
+        invoiceRequested: reg.invoice_requested,
+        invoicePaidAt: reg.invoice_paid_at,
+        status: reg.status,
+        individualPaymentStatus: p.individual_payment_status,
+      })
+      if (pill !== 'link_paid' && pill !== 'invoice_paid') return []
+      return [{
+        participantId: p.id,
+        registrationId: reg.id,
+        eventTitle: reg.event_title || reg.event_slug,
+        date: pill === 'invoice_paid' ? reg.invoice_paid_at : reg.created_at,
+        how: pill === 'invoice_paid' ? 'invoice' as const : 'card' as const,
+      }]
+    })
+    .sort((a, b) => (b.date ?? '').localeCompare(a.date ?? ''))
+
   return (
     <AdminMemberDetail
+      payments={payments}
       member={member}
       tiers={tiers ?? []}
       schools={schools ?? []}

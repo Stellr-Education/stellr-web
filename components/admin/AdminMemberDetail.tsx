@@ -25,6 +25,7 @@ import { MemberEventManagerRole } from '@/components/admin/MemberEventManagerRol
 import { MemberStaffRole } from '@/components/admin/MemberStaffRole'
 import { PERSONAL_EMAIL_LABEL, SCHOOL_EMAIL_LABEL, showsSchoolEmail } from '@/lib/member-email'
 import { graduationYearRange } from '@/lib/graduation-year'
+import { MemberPaymentsPanel, type MemberPayment } from './MemberPaymentsPanel'
 
 interface Member {
   id: string
@@ -119,6 +120,8 @@ interface Props {
   canManageEventManager?: boolean
   /** An admin (not Staff): sees and uses view-as, merge, delete, clearance decisions and the Staff panel. */
   viewerIsAdmin?: boolean
+  /** Paid places, with their Receipt and Invoice (lib/payments). */
+  payments?: MemberPayment[]
 }
 
 const TIER_TOOLTIPS: Record<string, string> = {
@@ -155,7 +158,7 @@ function label(val: string) {
   return val.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
 }
 
-export function AdminMemberDetail({ member, tiers, schools, ethnicityOptions, allergyOptions, registrations, sessions, membershipId, activity, compliance, agreement, scholarships, surveys, canManageEventManager = false, viewerIsAdmin = true }: Props) {
+export function AdminMemberDetail({ member, tiers, schools, ethnicityOptions, allergyOptions, registrations, sessions, membershipId, activity, compliance, agreement, scholarships, surveys, canManageEventManager = false, viewerIsAdmin = true, payments = [] }: Props) {
   const router = useRouter()
   const [enteringPortal, setEnteringPortal] = useState(false)
   const [inviteSentAt, setInviteSentAt] = useState(member.account_invite_sent_at)
@@ -623,6 +626,13 @@ export function AdminMemberDetail({ member, tiers, schools, ethnicityOptions, al
               embedded
             />
           </Collapsible>
+
+          {/* Payments — each paid place's receipt and invoice, to download and pass on */}
+          {payments.length > 0 && (
+            <Collapsible id="payments" title="Payments" summary={countLabel(payments.length, 'paid place')} bodyClassName="p-6">
+              <MemberPaymentsPanel payments={payments} />
+            </Collapsible>
+          )}
 
           {/* Scholarships — offered %, and whether they accepted / attended */}
           {scholarships.length > 0 && (

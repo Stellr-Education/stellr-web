@@ -46,6 +46,9 @@ const PAYMENT_PILLS: Record<PaymentPill, { label: string; className: string }> =
   covered:        { label: 'Shared by Students', className: 'bg-brand-hairline text-brand-muted-soft' },
 }
 
+// The pills that mean money was received for the place: it has a receipt and an invoice.
+const PAID_PILLS = new Set<PaymentPill>(['invoice_paid', 'link_paid'])
+
 // Label and colour both come from lib/docusign-status now. This file used to
 // keep its own copy, which is how the roster, the admin table and the portal
 // ended up describing the same envelope three different ways.
@@ -204,12 +207,32 @@ export default function EventRoster({
     </select>
   )
 
-  const paymentCell = (p: RosterParticipant) => (
+  const paymentCell = (p: RosterParticipant, registrationId: string) => (
     <>
       <Pill {...PAYMENT_PILLS[p.payment_pill]} />
       {/* Refunded in the Stripe dashboard. The pill stays "paid"
           because the money did arrive; this says it went back. */}
       {p.refund_detail && <p className="mt-1 text-xs leading-tight text-brand-grey-dark">{p.refund_detail}</p>}
+      {/* Payment documents to download and pass on (lib/payments). Paid places only:
+          a free place ('waived') or a teacher the students cover has nothing to prove. */}
+      {PAID_PILLS.has(p.payment_pill) && (
+        <p className="mt-1 flex gap-2 text-xs">
+          <a
+            href={`/api/admin/registrations/${registrationId}/receipt?participant=${p.id}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="font-medium text-primary hover:text-ink"
+          >
+            Receipt
+          </a>
+          <a
+            href={`/api/admin/registrations/${registrationId}/paid-invoice?participant=${p.id}`}
+            className="font-medium text-primary hover:text-ink"
+          >
+            Invoice
+          </a>
+        </p>
+      )}
     </>
   )
 
@@ -557,7 +580,7 @@ export default function EventRoster({
                       </CardField>
                       <CardField label="Grade">{displayGrade(p.grade) ?? '—'}</CardField>
                       <CardField label="Shirt">{p.t_shirt_size ?? '—'}</CardField>
-                      <CardField label="Payment">{paymentCell(p)}</CardField>
+                      <CardField label="Payment">{paymentCell(p, group.registrationId)}</CardField>
                       <CardField label="DocuSign">{docusignCell(p)}</CardField>
                       <CardField label="Background">
                         <Pill {...COMPLIANCE_PILLS[p.compliance_pill]} />
@@ -639,7 +662,7 @@ export default function EventRoster({
                             <span className="text-brand-muted-soft">n/a</span>
                           )}
                         </td>
-                        <td className={TD}>{paymentCell(p)}</td>
+                        <td className={TD}>{paymentCell(p, group.registrationId)}</td>
                         <td className={TD}>{docusignCell(p)}</td>
                         <td className={TD}>
                           <Pill {...COMPLIANCE_PILLS[p.compliance_pill]} />
