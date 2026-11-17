@@ -475,6 +475,22 @@ describe('invoice.paid zero-amount guard (PAY-1)', () => {
   })
 })
 
+describe('invoice.paid for a Checkout-issued invoice', () => {
+  it('records nothing: no group ledger write, no registration confirmed', async () => {
+    current = makeDb({ registrations: [{ id: 'r1', status: 'confirmed' }], group_invoices: [], stripe_webhook_events: [] })
+    const res = await post({
+      id: 'evt_checkout_inv', type: 'invoice.paid',
+      // Even if a group key were ever added by mistake, source=checkout wins.
+      data: { object: { id: 'in_checkout', amount_paid: 8245, metadata: { source: 'checkout', checkoutRegistrationId: 'r1', registrationId: 'r1', isGroup: 'true' } } },
+    } as unknown as Stripe.Event)
+
+    expect(res.status).toBe(200)
+    expect(h.confirmRegistration).not.toHaveBeenCalled()
+    expect(current.inserts.some((i) => i.table === 'group_invoices')).toBe(false)
+    expect(current.updates.some((u) => u.table === 'group_invoices' || u.table === 'registrations')).toBe(false)
+  })
+})
+
 describe('money-path write failure fails closed (PAY-5)', () => {
   const recorded = () => current.inserts.find((i) => i.table === 'stripe_webhook_events')
 

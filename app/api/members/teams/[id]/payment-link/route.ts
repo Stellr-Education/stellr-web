@@ -6,6 +6,7 @@ import { getEventBySlug } from '@/lib/events/repo'
 import { assertNotImpersonating } from '@/lib/impersonation'
 import { assertLiveCredentials } from '@/lib/env-guards'
 import { stripeClient } from '@/lib/stripe'
+import { checkoutInvoiceParams } from '@/lib/payments/checkout-invoice'
 import { GUARANTEE_CHECKOUT_TEXT } from '@/lib/guarantee'
 import { ensureSeatPayToken, seatDiscount, seatPayPageUrl } from '@/lib/individual-payment'
 import { withAudit } from '@/lib/audit/route'
@@ -114,6 +115,15 @@ async function createSeatPaymentLink(
       participantEmail: member.email,
       isIndividualGroupPayment: 'true',
     },
+    // A paid invoice and an emailed receipt for the place (lib/payments/checkout-invoice.ts).
+    ...checkoutInvoiceParams({
+      registrationId,
+      eventSlug: registration.event_slug,
+      eventTitle: registration.event_title as string | null,
+      participantId: participant.id as string,
+      forName: `${member.first_name ?? ''} ${member.last_name ?? ''}`.trim(),
+      receiptEmail: member.email,
+    }),
     success_url: `${SITE_URL}/register/${registration.event_slug}/confirmation?id=${registrationId}&type=group&payment=success`,
     cancel_url: `${SITE_URL}/account?tab=teams`,
   })
