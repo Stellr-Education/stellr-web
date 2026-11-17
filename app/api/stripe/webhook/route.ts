@@ -23,6 +23,7 @@ import { checkInCodeLink } from '@/lib/check-in-codes'
 import { reportError } from '@/lib/app-errors'
 import { withAudit } from '@/lib/audit/route'
 import { noteWebhook, stripeEventNote, webhookAudit, webhookEvent } from '@/lib/audit/webhook'
+import { isCheckoutInvoice } from '@/lib/payments/checkout-invoice'
 
 // Formats a Stripe minor-unit amount as " ($60.00)" for activity-log summaries.
 function fmtMoney(amount: number | null | undefined, currency: string | null | undefined): string {
@@ -804,7 +805,11 @@ async function handleStripeEvent(req: NextRequest) {
       // pinned dahlia version dropped the top-level invoice.subscription).
       const subscriptionId = resolveInvoiceSubscriptionId(invoice)
 
-      if (invoice.metadata?.type === 'membership_invoice') {
+      if (isCheckoutInvoice(invoice)) {
+        // The paid invoice Checkout issues for a card payment (lib/payments/checkout-invoice.ts).
+        // checkout.session.completed already settled that payment; this invoice is its
+        // record for the payer, never a group invoice or a membership, so nothing to do.
+      } else if (invoice.metadata?.type === 'membership_invoice') {
         // One-time membership purchased by emailed invoice — grant on payment.
         await activateInvoiceMembership(invoice)
       } else if (invoice.metadata?.type === 'membership' || subscriptionId) {

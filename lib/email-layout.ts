@@ -27,8 +27,10 @@ const EMAIL_LOGO_URL = `${SITE_URL}/stellr-logo.png`
 
 // CAN-SPAM requires a valid physical postal address on marketing email. Shown
 // only when an unsubscribe link is present (i.e. marketing, not transactional).
-const MARKETING_POSTAL_ADDRESS =
+// Also the address on the paid invoices the app issues (lib/payments/paid-invoice-pdf.ts).
+export const ORG_POSTAL_ADDRESS =
   process.env.MARKETING_POSTAL_ADDRESS ?? '7533 S Center View CT STE R, West Jordan, Utah 84084'
+const MARKETING_POSTAL_ADDRESS = ORG_POSTAL_ADDRESS
 
 interface LayoutOptions {
   heading: string

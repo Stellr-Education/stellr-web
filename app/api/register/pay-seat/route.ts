@@ -81,12 +81,14 @@ export async function POST(req: NextRequest) {
     const db = supabaseServer()
     const { data: partRow } = await db
       .from('participants')
-      .select('id, email, registration_id, individual_payment_status')
+      .select('id, email, first_name, last_name, registration_id, individual_payment_status')
       .eq('pay_token', token)
       .maybeSingle()
     const participant = partRow as {
       id: string
       email: string
+      first_name: string | null
+      last_name: string | null
       registration_id: string
       individual_payment_status: string | null
     } | null
@@ -148,6 +150,7 @@ export async function POST(req: NextRequest) {
           registrationId: participant.registration_id,
           eventSlug: reg.event_slug,
           eventTitle: reg.event_title,
+          participantName: `${participant.first_name ?? ''} ${participant.last_name ?? ''}`.trim(),
           successUrl,
           cancelUrl: seatPayPageUrl(reg.event_slug, token, { cancelled: true }),
           discountCode: typeof body?.code === 'string' ? body.code.slice(0, 64) : null,
@@ -179,6 +182,7 @@ export async function POST(req: NextRequest) {
         // email for the receipt (same choice as the registration pay page).
         customerEmail: null,
         couponId: reg.invoice_coupon_id,
+        participantName: `${participant.first_name ?? ''} ${participant.last_name ?? ''}`.trim(),
         successUrl,
         cancelUrl: seatPayPageUrl(reg.event_slug, token, { cancelled: true }),
       })
