@@ -31,7 +31,7 @@ export const PUT = withAudit(saveAudit, saveBadgeTemplate)
 export const DELETE = withAudit(deleteAudit, deleteBadgeTemplate)
 
 // Name badge templates: one background per Avery format per audience
-// (everyone, mentors, or one company). GET lists the event's own with its
+// (everyone, mentors, teachers, or one company). GET lists the event's own with its
 // theme's defaults (everyone/mentors, standing in for any slot the event has
 // not filled) and its companies; PUT sets the event's artwork (uploaded
 // browser → storage via /api/uploads/sign, kind = the format's artworkKind)
@@ -51,7 +51,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ slug: s
   return NextResponse.json({ theme, templates: await fillPlacements(db, templates), defaults, companies })
 }
 
-const AUDIENCES: BadgeAudience[] = ['everyone', 'mentors', 'company']
+const AUDIENCES: BadgeAudience[] = ['everyone', 'mentors', 'teachers', 'company']
 
 // PUT { format, audience, companyId?, storagePath?, fileType?, name_x?, name_y?, name_max_width?, name_size?, reset? }
 // New artwork resets the placement to one found from the artwork's rule;
@@ -127,7 +127,7 @@ async function saveBadgeTemplate(req: Request, { params }: Ctx) {
 }
 
 // DELETE ?id= — drop one of the event's backgrounds. Those badges fall back to
-// the next one down (company → mentors → everyone, the theme default standing
+// the next one down (mentors/teachers → company → everyone, the theme default standing
 // in for a mentors or everyone slot the event no longer has → plain).
 async function deleteBadgeTemplate(req: Request, { params }: Ctx) {
   const { slug } = await params
