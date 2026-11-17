@@ -77,7 +77,57 @@ export function EventEmailEditor({
   async function call(path: string, init?: RequestInit) {
     const res = await fetch(path, { headers: { 'Content-Type': 'application/json' }, ...init })
     const data = await res.json().catch(() => null)
+    // No JSON back means the request never reached our code's answer — most
+    // often the server's time limit. Say so, rather than a bare "failed".
+    if (!res.ok && !data?.error) {
+      return {
+        ok: false,
+        data: {
+          error: res.status === 504 || res.status === 502
+            ? 'The server ran out of time before it could answer. Some emails may have gone — check History. Press “Resume now” to finish: nobody already emailed gets it twice.'
+            : `The server returned an error (${res.status}). Check History before trying again.`,
+        },
+      }
+    }
     return { ok: res.ok, data }
+  }
+
+  // Each send request stops at its time limit and says how many are left;
+  // keep going until everyone is reached. Counts are added up across runs.
+  async function sendUntilDone(first: Awaited<ReturnType<typeof call>>, total: number | null) {
+    let { ok, data } = first
+    let sent = 0
+    let failed = 0
+    let blocked = 0
+    for (let round = 0; round < 25; round++) {
+      if (!ok) {
+        setMessage({ ok: false, text: `${sent ? `Sent to ${sent} so far, then it stopped: ` : ''}${data?.error ?? 'Send failed.'}` })
+        onChanged({ ...email, status: 'sending' }, { refreshHistory: true })
+        return
+      }
+      sent += data.sent ?? 0
+      failed += data.failed ?? 0
+      blocked += data.suppressed ?? 0
+      if (!(data.incomplete && data.stoppedFor === 'time')) break
+      setMessage({ ok: true, text: `Sent to ${sent}${total ? ` of ${total}` : ''} so far… still going (${data.remaining} left). Keep this tab open.` })
+      ;({ ok, data } = await call(`${base}/send`, { method: 'POST', body: JSON.stringify({ continue: true }) }))
+    }
+    const extras = [
+      failed ? `${failed} failed` : '',
+      blocked ? `${blocked} not delivered (address blocked)` : '',
+    ].filter(Boolean).join(', ')
+    if (data?.incomplete) {
+      setMessage({
+        ok: false,
+        text: data.stoppedFor === 'quota'
+          ? `Sent to ${sent}. Today's email limit was reached — the rest go at the next scheduled run.`
+          : `Sent to ${sent} so far. The rest carry on with “Resume now” or at the next scheduled run.`,
+      })
+      onChanged({ ...email, status: data.stoppedFor === 'quota' ? email.status : 'sending' }, { refreshHistory: true })
+      return
+    }
+    setMessage({ ok: failed === 0, text: `Sent to ${sent}${extras ? ` — ${extras} (see History)` : ''}.` })
+    onChanged({ ...email, status: 'sent', sent_at: new Date().toISOString() }, { refreshHistory: true })
   }
 
   const payload = () => ({
@@ -141,14 +191,15 @@ export function EventEmailEditor({
       : ''
     const empty = pv.warnings?.length ? `\n\nCheck first:\n${pv.warnings.join('\n')}` : ''
     if (!confirm(`Send “${subject}” to ${pv.count} ${pv.count === 1 ? 'person' : 'people'} now?${docusign}${empty}`)) return
-    setMessage({ ok: true, text: `Sending to ${pv.count}… this can take up to a minute.` })
-    const { ok: sent, data } = await call(`${base}/send`, { method: 'POST', body: '{}' })
-    if (!sent) return setMessage({ ok: false, text: data?.error ?? 'Send failed.' })
-    setMessage({
-      ok: data.failed === 0,
-      text: `Sent to ${data.sent} of ${data.recipients}${data.failed ? ` — ${data.failed} failed (see History)` : ''}.`,
-    })
-    onChanged({ ...email, status: 'sent', sent_at: new Date().toISOString() }, { refreshHistory: true })
+    setMessage({ ok: true, text: `Sending to ${pv.count}… keep this tab open until it finishes.` })
+    await sendUntilDone(await call(`${base}/send`, { method: 'POST', body: '{}' }), pv.count)
+  })
+
+  // An email left 'sending' (cut off, or this tab was closed mid-send): carry
+  // on with whoever is left. The server refuses while a run is still alive.
+  const resume = () => run('send', async () => {
+    setMessage({ ok: true, text: 'Resuming… keep this tab open until it finishes.' })
+    await sendUntilDone(await call(`${base}/send`, { method: 'POST', body: JSON.stringify({ continue: true }) }), null)
   })
 
   const schedule = () => run('schedule', async () => {
@@ -239,7 +290,7 @@ export function EventEmailEditor({
           {email.status === 'sent'
             ? `Sent ${email.sent_at ? new Date(email.sent_at).toLocaleString('en-US', { timeZone: 'America/Denver' }) + ' MT' : ''}. Duplicate it to send again.`
             : email.status === 'sending'
-              ? 'Sending now.'
+              ? 'Sending, or stopped part-way. If nothing is moving in History, press “Resume now”: it carries on with whoever is left, and nobody already emailed gets it twice. Otherwise it finishes at the next scheduled run.'
               : 'Skipped — the event had already happened when this was due.'}
         </p>
       )}
@@ -412,6 +463,11 @@ export function EventEmailEditor({
           </>
         ) : (
           <>
+            {email.status === 'sending' && (
+              <Button variant="primary" className="!px-4 !py-2" disabled={busy !== null} onClick={resume}>
+                {busy === 'send' ? 'Resuming…' : 'Resume now'}
+              </Button>
+            )}
             <Button variant="softBlue" className="!py-2" disabled={busy !== null} onClick={duplicate}>Duplicate</Button>
             <button type="button" className={link} disabled={busy !== null} onClick={loadPreview}>Preview recipients</button>
             <button type="button" className={link} disabled={busy !== null} onClick={saveAsTemplate}>
