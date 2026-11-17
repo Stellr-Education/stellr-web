@@ -157,6 +157,10 @@
       "class": "convert",
       "reason": "event add-ons pay link: the token is the only key (no session), as the pay-seat page; Stellr's orders only"
     },
+    "app/(stellr)/(flow)/register/[slug]/confirmation/confirmation-body.tsx": {
+      "class": "convert",
+      "reason": "event add-ons: a count of a registration's open add-on orders by its opaque id, no rows shown (the pay links stay off this tracked page); Stellr's page only"
+    },
     "app/(stellr)/(flow)/register/[slug]/individual/individual-body.tsx": {
       "class": "convert",
       "reason": "The individual registration page's body, moved here unchanged from its page.tsx by S5 B5b so a tenant page can reuse it without the tracking. Reads the scholarship offer and event add-ons signed out, with no session to scope them. Same access as before the move, for the area conversion to decide."

@@ -88,7 +88,7 @@ export async function POST(req: NextRequest) {
       emergency_contact_email: body.emergency_contact_email,
       emergency_contact_phone: body.emergency_contact_phone,
       emergency_contact_relationship: body.emergency_contact_relationship,
-      merch_addons: body.merch_addons,
+      extras: body.extras,
     }
 
     // deep review AUTH-N2: rate-limit this public, unauthenticated write before

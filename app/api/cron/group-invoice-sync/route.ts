@@ -9,6 +9,7 @@ import { startCronRun } from '@/lib/cron-runs'
 import { partitionByTenant, runPerTenant, type TenantJob } from '@/lib/cron-tenants'
 import { getEventBySlug } from '@/lib/events/repo'
 import { syncGroupInvoice } from '@/lib/group-billing'
+import { syncAddonInvoice } from '@/lib/addons/invoice'
 import { eventIsOver, settleShare } from '@/lib/teacher-share'
 import { STELLR_TENANT_ID } from '@/lib/tenancy/constants'
 import { STELLR_OR_NULL } from '@/lib/tenancy/stellr-scope'
@@ -81,6 +82,13 @@ async function syncDue(db: Db, stripe: Stripe, job: TenantJob, stop: () => boole
     }
     const result = await syncGroupInvoice(db, stripe, id)
     tally[result] = (tally[result] ?? 0) + 1
+    // Add-ons on the group's invoice (lib/addons/invoice.ts): an update that found the invoice busy.
+    const { count } = await db.from('registration_addons').select('id', { count: 'exact', head: true })
+      .eq('registration_id', id).eq('payer', 'group').eq('group_method', 'invoice').eq('status', 'pending_payment')
+    if (count) {
+      const addons = await syncAddonInvoice(db, stripe, id, { memberId: null, label: 'add-on change' })
+      tally[`addons_${addons}`] = (tally[`addons_${addons}`] ?? 0) + 1
+    }
   }
   return tally
 }
