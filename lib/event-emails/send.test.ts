@@ -226,13 +226,13 @@ describe('sendEventEmail', () => {
 // 'scheduled'. reclaimStuckSending re-drives a row that has been 'sending'
 // longer than the stale window, and the resumed send skips whoever the killed
 // run already emailed.
-function reclaimDb(opts: { updatedAt: string; priorSent: { email: string; status: string }[] }) {
+function reclaimDb(opts: { updatedAt: string; priorSent: { email: string; status: string }[]; priorFinished?: boolean }) {
   const state = {
     row: { ...EMAIL, status: 'sending' as string, updated_at: opts.updatedAt },
     sends: [] as Record<string, unknown>[],
     statusWrites: [] as string[],
-    // Seed a prior (killed) send row so alreadyTried has something to skip.
-    seeded: [{ trigger: 'schedule', recipients: opts.priorSent }] as Record<string, unknown>[],
+    // Seed a prior send row (killed unless priorFinished) so alreadyTried has something to skip.
+    seeded: [{ trigger: 'schedule', recipients: opts.priorSent, finished_at: opts.priorFinished ? new Date().toISOString() : null }] as Record<string, unknown>[],
   }
   const db = {
     state,
@@ -260,7 +260,16 @@ function reclaimDb(opts: { updatedAt: string; priorSent: { email: string; status
                   select: async () => {
                     if (state.row.status !== wantStatus || !(state.row.updated_at < stale)) return { data: [] }
                     state.row.status = values.status
-                    state.row.updated_at = new Date().toISOString() // trigger bump: no second reclaim
+                    state.row.updated_at = new Date(Date.now() + 1).toISOString() // trigger bump: no second reclaim
+                    state.statusWrites.push(values.status)
+                    return { data: [{ id: state.row.id }] }
+                  },
+                }),
+                // continue after a cleanly stopped run: .eq('updated_at', asRead).select('id')
+                eq: (_c3: string, asRead: string) => ({
+                  select: async () => {
+                    if (state.row.status !== wantStatus || state.row.updated_at !== asRead) return { data: [] }
+                    state.row.updated_at = new Date(Date.now() + 1).toISOString()
                     state.statusWrites.push(values.status)
                     return { data: [{ id: state.row.id }] }
                   },
@@ -280,12 +289,21 @@ function reclaimDb(opts: { updatedAt: string; priorSent: { email: string; status
       return {
         select: () => ({
           eq: () => ({
-            neq: async (_c: string, v: string) => ({
-              data: [...state.seeded, ...state.sends]
-                .filter((s) => (s as { trigger?: string }).trigger !== v)
-                .map((s) => ({ recipients: (s as { recipients?: unknown }).recipients ?? [] })),
-              error: null,
-            }),
+            neq: (_c: string, v: string) => {
+              const rows = [...state.seeded, ...state.sends].filter((s) => (s as { trigger?: string }).trigger !== v)
+              return {
+                // alreadyTriedAddresses awaits this directly
+                then: (resolve: (x: unknown) => void) => resolve({
+                  data: rows.map((s) => ({ recipients: (s as { recipients?: unknown }).recipients ?? [] })),
+                  error: null,
+                }),
+                // latestRunFinished: .order().limit(1).maybeSingle()
+                order: () => ({ limit: () => ({ maybeSingle: async () => ({
+                  data: rows.length ? { finished_at: (rows[rows.length - 1] as { finished_at?: string | null }).finished_at ?? null } : null,
+                  error: null,
+                }) }) }),
+              }
+            },
           }),
         }),
         insert: (values: Record<string, unknown>) => ({
@@ -405,6 +423,14 @@ describe('time-limited runs', () => {
     const out = await sendEventEmail(db as never, 'e1', { trigger: 'manual', spacingMs: 0, resume: true, staleMs: 20_000 })
     expect(out).toMatchObject({ ok: false, status: 409, error: expect.stringContaining('still sending') })
     expect(sendEmail).not.toHaveBeenCalled()
+  })
+
+  it('a continue takes over at once from a run that stopped cleanly (fresh heartbeat, finished run)', async () => {
+    const db = reclaimDb({ updatedAt: new Date().toISOString(), priorSent: [{ email: 'a@example.com', status: 'sent' }], priorFinished: true })
+    const out = await sendEventEmail(db as never, 'e1', { trigger: 'manual', spacingMs: 0, resume: true, staleMs: 20_000 })
+    expect(out).toMatchObject({ ok: true, sent: 1 })
+    expect(sendEmail.mock.calls.map((c) => c[0].to)).toEqual(['b@example.com'])
+    expect(db.state.row.status).toBe('sent')
   })
 
   it('a continue with nobody left marks the email sent instead of refusing', async () => {

@@ -13,7 +13,7 @@ import { getEventBySlug } from '@/lib/events/repo'
 import { reissueParticipantAgreement } from '@/lib/docusign-reissue'
 import { resolveAudience, type ResolvedRecipient } from './audiences'
 import { AWARD_MERGE_TOKENS, loadAwardMergeVars } from './awards'
-import { alreadyTriedAddresses, missedRecipients } from './history'
+import { alreadyTriedAddresses, latestRunFinished, missedRecipients } from './history'
 import {
   EVENT_EMAIL_FROM,
   EVENT_EMAIL_REPLY_TO,
@@ -220,13 +220,26 @@ export async function sendEventEmail(
       // longer than SENDING_STALE_MS matches, and the updated_at trigger bumps
       // the timestamp as we take it, so two concurrent reclaims can't both win.
       const stale = new Date(Date.now() - (opts.staleMs ?? SENDING_STALE_MS)).toISOString()
-      const { data: claimed } = await db
+      let { data: claimed } = await db
         .from('event_emails')
         .update({ status: 'sending' })
         .eq('id', email.id)
         .eq('status', 'sending')
         .lt('updated_at', stale)
         .select('id')
+      // A run that stopped at its time limit has recorded itself finished and
+      // its last heartbeat is seconds old: a continue takes over at once. The
+      // compare-and-swap on updated_at (as read above) means two continues
+      // can't both win, and a run that heartbeats in between keeps the row.
+      if (!claimed?.length && email.status === 'sending' && email.updated_at && (await latestRunFinished(db, email.id))) {
+        ;({ data: claimed } = await db
+          .from('event_emails')
+          .update({ status: 'sending' })
+          .eq('id', email.id)
+          .eq('status', 'sending')
+          .eq('updated_at', email.updated_at)
+          .select('id'))
+      }
       if (!claimed?.length) {
         return {
           ok: false,
