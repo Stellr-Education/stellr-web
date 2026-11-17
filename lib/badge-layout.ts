@@ -84,11 +84,12 @@ export function isBadgeFormat(v: unknown): v is BadgeFormat {
 }
 
 /**
- * Who a template is for. A mentor's badge uses the mentors' template, else
- * their company's, else everyone's; anyone else's uses their company's, else
- * everyone's — see pickTemplate().
+ * Who a template is for. A mentor's badge uses the mentors' template, a
+ * teacher's the teachers' (event-only, Nov 2026), else their company's, else
+ * everyone's; anyone else's uses their company's, else everyone's — see
+ * pickTemplate().
  */
-export type BadgeAudience = 'everyone' | 'mentors' | 'company'
+export type BadgeAudience = 'everyone' | 'mentors' | 'teachers' | 'company'
 
 export interface BadgeTemplateRef {
   audience: BadgeAudience
@@ -98,14 +99,17 @@ export interface BadgeTemplateRef {
 /**
  * The most specific template for one person, or null for a plain badge. Mentors
  * can hold a company number too (Oct 2026), but their badge keeps the mentors'
- * design: it is how a student tells a mentor apart at a glance.
+ * design: it is how a student tells a mentor apart at a glance. Teachers' the
+ * same (Nov 2026). With no teachers' background, a teacher's badge is
+ * everyone's (or their company's), as before.
  */
 export function pickTemplate<T extends BadgeTemplateRef>(
   templates: T[],
-  person: { companyId: string | null; mentor: boolean },
+  person: { companyId: string | null; mentor: boolean; teacher?: boolean },
 ): T | null {
   return (
     (person.mentor ? templates.find((t) => t.audience === 'mentors') : undefined) ??
+    (person.teacher ? templates.find((t) => t.audience === 'teachers') : undefined) ??
     (person.companyId ? templates.find((t) => t.audience === 'company' && t.companyId === person.companyId) : undefined) ??
     templates.find((t) => t.audience === 'everyone') ??
     null
