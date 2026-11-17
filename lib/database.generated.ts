@@ -4107,6 +4107,7 @@ export type Database = {
       }
       group_invoices: {
         Row: {
+          addons_cents: number
           coupon_id: string | null
           created_at: string
           created_by: string | null
@@ -4133,6 +4134,7 @@ export type Database = {
           voided_at: string | null
         }
         Insert: {
+          addons_cents?: number
           coupon_id?: string | null
           created_at?: string
           created_by?: string | null
@@ -4159,6 +4161,7 @@ export type Database = {
           voided_at?: string | null
         }
         Update: {
+          addons_cents?: number
           coupon_id?: string | null
           created_at?: string
           created_by?: string | null
