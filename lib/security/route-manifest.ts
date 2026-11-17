@@ -148,6 +148,7 @@ export const ROUTE_MANIFEST: Record<string, RouteClass> = {
   'app/api/admin/events/[slug]/addons/route.ts': 'tenant_crew',
   'app/api/admin/events/[slug]/addons/[id]/route.ts': 'tenant_crew',
   'app/api/admin/events/[slug]/addons/settings/route.ts': 'tenant_crew',
+  'app/api/admin/events/[slug]/addons/bookings/route.ts': 'tenant_crew',
   'app/api/admin/events/[slug]/participants/[pid]/guardian-consent/resend/route.ts': 'tenant_crew',
   'app/api/admin/events/[slug]/participants/[pid]/guardian/route.ts': 'tenant_crew',
   'app/api/admin/events/[slug]/payment-link/route.ts': 'tenant_crew',

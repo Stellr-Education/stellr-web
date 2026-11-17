@@ -533,6 +533,10 @@
       "class": "convert",
       "reason": "Stellr-only admin route (stellrOnlyDb after stellrOnlyEvent): the event add-ons catalogue, as the merch offerings route; tenantDb when add-ons open to tenants"
     },
+    "app/api/admin/events/[slug]/addons/bookings/route.ts": {
+      "class": "convert",
+      "reason": "Stellr-only admin route (stellrOnlyDb after stellrOnlyEvent): event add-on bookings for staff; every line is checked to be this event's; tenantDb when add-ons open to tenants"
+    },
     "app/api/admin/events/[slug]/addons/route.ts": {
       "class": "convert",
       "reason": "Stellr-only admin route (stellrOnlyDb after stellrOnlyEvent): the event add-ons catalogue, as the merch offerings route; tenantDb when add-ons open to tenants"

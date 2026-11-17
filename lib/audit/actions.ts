@@ -198,6 +198,7 @@ export const AUDIT_ACTIONS = [
   'staff.settings.update',
   // Exports of personal data (Staff role phase 4): also in record_access_log
   'export.roster',
+  'export.addon_manifest',
   'export.members',
 
   // Events admin: records by id inside an event (C16)
@@ -262,6 +263,9 @@ export const AUDIT_ACTIONS = [
   'event_addon.record.update',
   'event_addon.record.delete',
   'event_addon.settings.update',
+  'event_addon.booking.create',
+  'event_addon.booking.update',
+  'event_addon.booking.cancel',
   'merch.batch.commit',
 
   // S5 wave 7, registered ahead of the slices that write them (A10a, A10b).
