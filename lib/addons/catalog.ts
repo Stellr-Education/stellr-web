@@ -20,6 +20,8 @@ import {
 } from './types'
 
 export const ADDONS_TAG = 'event-addons'
+/** The public pages' window (app/(stellr)/(public)/events: 6 hours). Tags refresh it sooner. */
+const PUBLIC_ADDONS_SECONDS = 21600
 export const addonsTagFor = (slug: string) => `event-addons:${slug}`
 
 const ADDON_COLUMNS =
@@ -209,8 +211,9 @@ export async function loadPublicAddons(db: SupabaseClient, eventSlug: string, no
 }
 
 /**
- * Cached reader for public pages. Revalidates on any staff change (bustAddonCache)
- * and every 10 minutes, so availability stays roughly current without a query per view.
+ * Cached reader for public pages. It keeps the event pages' own 6-hour window (a shorter
+ * one here would shorten theirs: Next takes the smallest), and is refreshed by tag
+ * whenever staff change an add-on or a booking changes what is left (bustAddonCache).
  */
 export function getPublicAddons(eventSlug: string) {
   return unstable_cache(
@@ -223,7 +226,7 @@ export function getPublicAddons(eventSlug: string) {
       }
     },
     ['event-addons-public', eventSlug],
-    { revalidate: 600, tags: [ADDONS_TAG, addonsTagFor(eventSlug)] },
+    { revalidate: PUBLIC_ADDONS_SECONDS, tags: [ADDONS_TAG, addonsTagFor(eventSlug)] },
   )()
 }
 
@@ -254,5 +257,5 @@ export const getAddonKindsBySlug = unstable_cache(
     }
   },
   ['event-addon-kinds'],
-  { revalidate: 600, tags: [ADDONS_TAG] },
+  { revalidate: PUBLIC_ADDONS_SECONDS, tags: [ADDONS_TAG] },
 )
