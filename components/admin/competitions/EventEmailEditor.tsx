@@ -284,7 +284,7 @@ export function EventEmailEditor({
   const link = 'text-sm font-medium text-primary hover:text-primary-deep disabled:opacity-50'
 
   return (
-    <div className="space-y-5 rounded-xl border border-brand-border bg-white p-5">
+    <div data-email-editor className="space-y-5 rounded-xl border border-brand-border bg-white p-5">
       {!editable && (
         <p className="rounded-md bg-surface px-3 py-2 text-sm text-brand-muted">
           {email.status === 'sent'
