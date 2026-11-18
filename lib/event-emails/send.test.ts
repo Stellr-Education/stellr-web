@@ -178,10 +178,10 @@ describe('sendEventEmail', () => {
     const out = await sendEventEmail(db as never, 'e1', { trigger: 'schedule', spacingMs: 0 })
 
     expect(out).toMatchObject({ ok: true, sent: 1, failed: 0, incomplete: true })
-    // Only Al was attempted; Bo was not emailed and not recorded.
+    // Al went out; Bo hit the cap, so is listed as not reached (still owed), not as tried.
     expect(sendEmail.mock.calls.map((c) => c[0].to)).toEqual(['a@example.com', 'b@example.com'])
-    const recorded = (db.state.sends[0].recipients as { email: string }[]) ?? []
-    expect(recorded.map((r) => r.email)).toEqual(['a@example.com'])
+    const recorded = (db.state.sends[0].recipients as { email: string; status: string }[]) ?? []
+    expect(recorded.map((r) => [r.email, r.status])).toEqual([['a@example.com', 'sent'], ['b@example.com', 'not_reached']])
     // Returned to 'scheduled' (its prior status) so the next cron slot resumes it.
     expect(db.state.row.status).toBe('scheduled')
     expect(db.state.statusWrites).toEqual(['sending', 'scheduled'])
@@ -453,6 +453,42 @@ describe('time-limited runs', () => {
     const db = fakeDb(EMAIL)
     await sendEventEmail(db as never, 'e1', { trigger: 'manual', spacingMs: 0 })
     expect(db.state.heartbeats).toBeGreaterThanOrEqual(2)
+  })
+})
+
+// 17 Nov 2026: a run killed after Resend accepted a message but before the
+// result was saved emailed that parent again on the next run.
+describe('nobody is emailed twice, and History can tell who is still owed', () => {
+  it('records the address as sending BEFORE handing it to Resend', async () => {
+    const db = fakeDb(EMAIL)
+    let atSend: unknown = null
+    sendEmail.mockImplementationOnce(async () => {
+      atSend = JSON.parse(JSON.stringify(db.state.sends[0].recipients))
+      return { id: 're_1' } as never
+    })
+    await sendEventEmail(db as never, 'e1', { trigger: 'manual', spacingMs: 0 })
+    expect(atSend).toEqual([expect.objectContaining({ email: 'a@example.com', status: 'sending' })])
+    const rec = db.state.sends[0].recipients as { status: string }[]
+    expect(rec.map((r) => r.status)).toEqual(['sent', 'sent'])
+  })
+
+  it('a run stopped at its deadline lists who it did not reach as not_reached', async () => {
+    const db = fakeDb(EMAIL)
+    await sendEventEmail(db as never, 'e1', { trigger: 'manual', spacingMs: 200, deadline: Date.now() + 3_100 })
+    const rec = db.state.sends[0].recipients as { email: string; status: string }[]
+    expect(rec.map((r) => [r.email, r.status])).toEqual([['a@example.com', 'sent'], ['b@example.com', 'not_reached']])
+  })
+
+  it('the next run emails the not_reached, and skips an address caught mid-send', async () => {
+    const old = new Date(Date.now() - 60_000).toISOString()
+    const db = reclaimDb({
+      updatedAt: old,
+      priorSent: [{ email: 'a@example.com', status: 'sending' }, { email: 'b@example.com', status: 'not_reached' }],
+    })
+    resolveAudience.mockResolvedValue({ recipients: [R('a@example.com', 'Al'), R('b@example.com', 'Bo')], docusignParticipantIds: [] })
+    const out = await sendEventEmail(db as never, 'e1', { trigger: 'manual', spacingMs: 0, resume: true, staleMs: 20_000 })
+    expect(out).toMatchObject({ ok: true, sent: 1 })
+    expect(sendEmail.mock.calls.map((c) => c[0].to)).toEqual(['b@example.com'])
   })
 })
 

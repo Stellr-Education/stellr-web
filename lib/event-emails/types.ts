@@ -60,6 +60,17 @@ export interface EventEmailRow {
   tenant_id?: string | null
 }
 
+/**
+ * One recipient's state on a run (event_email_sends.recipients):
+ * - 'sent' / 'queued' (outbox) / 'suppressed' (our suppression list) / 'failed';
+ * - 'sending' (since 18 Nov 2026): written just before the message goes to
+ *   Resend. Left like that only when the run was killed mid-send: the message
+ *   may or may not have gone, and it is never sent again automatically;
+ * - 'not_reached' (since 18 Nov 2026): the run stopped (time limit, daily
+ *   budget) before their turn. Not tried; the next run picks them up.
+ */
+export type RecipientSendStatus = 'sent' | 'failed' | 'suppressed' | 'queued' | 'sending' | 'not_reached'
+
 export interface EventEmailSendRow {
   id: string
   event_email_id: string | null
@@ -79,7 +90,7 @@ export interface EventEmailSendRow {
    * from there (since 17 Nov 2026 — before that both were recorded as 'sent').
    * resendId: Resend's id for the message, when it was handed to Resend.
    */
-  recipients: { email: string; name: string; memberId?: string | null; roles: RecipientRole[]; status: 'sent' | 'failed' | 'suppressed' | 'queued'; error?: string; resendId?: string
+  recipients: { email: string; name: string; memberId?: string | null; roles: RecipientRole[]; status: RecipientSendStatus; error?: string; resendId?: string
     /** Added by the History API, never stored: the address is now on the suppression list. */
     blocked?: 'bounce' | 'complaint' | 'unsubscribe' | 'manual' }[]
   started_at: string

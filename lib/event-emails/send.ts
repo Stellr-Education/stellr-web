@@ -498,6 +498,15 @@ export async function deliver(
       stoppedForTime = true
       break
     }
+    // Record the address as 'sending' BEFORE handing it to Resend. If the
+    // function is killed between Resend accepting the message and the result
+    // being saved, the address is already on the row, so a re-run skips it
+    // (nobody is emailed twice) and History shows it as unconfirmed instead of
+    // silently emailing it again (17 Nov 2026: one parent got the consent email
+    // twice exactly this way).
+    const base = { email: r.email, name: r.name, memberId: r.memberId ?? null, roles: r.roles }
+    results.push({ ...base, status: 'sending' })
+    await persistProgress()
     try {
       const content = renderEventEmail(email, { ...eventVars, ...recipientMergeVars(r) })
       const out = await sendEmail({
@@ -514,7 +523,7 @@ export async function deliver(
       // mail parked in the outbox by the daily budget — record what really
       // happened instead of calling both 'sent'.
       const status = out?.suppressed ? 'suppressed' : out?.queued ? 'queued' : 'sent'
-      results.push({ email: r.email, name: r.name, memberId: r.memberId ?? null, roles: r.roles, status, ...(out?.id ? { resendId: out.id } : {}) })
+      results[results.length - 1] = { ...base, status, ...(out?.id ? { resendId: out.id } : {}) }
     } catch (err) {
       // deep review INT-2 / PUB-4: a quota/429 means the SHARED Resend budget is
       // spent, not that this recipient failed. STOP now and do NOT record this
@@ -523,10 +532,11 @@ export async function deliver(
       // genuine per-recipient failure (e.g. a bad address) still records as
       // 'failed' and carries on, exactly as before.
       if (err instanceof EmailSendError && err.isQuota) {
+        results.pop()
         stoppedForQuota = true
         break
       }
-      results.push({ email: r.email, name: r.name, memberId: r.memberId ?? null, roles: r.roles, status: 'failed', error: err instanceof Error ? err.message.slice(0, 300) : String(err) })
+      results[results.length - 1] = { ...base, status: 'failed', error: err instanceof Error ? err.message.slice(0, 300) : String(err) }
     }
     await persistProgress()
     if (opts.onProgress) await opts.onProgress()
@@ -537,10 +547,17 @@ export async function deliver(
   const sent = results.filter((r) => r.status === 'sent' || r.status === 'queued').length
   const suppressed = results.filter((r) => r.status === 'suppressed').length
   const failed = results.filter((r) => r.status === 'failed').length
+  // A run that stopped early (time, budget or its cron slice) also lists who it
+  // did NOT reach, as 'not_reached'. They are not "tried" (alreadyTriedAddresses
+  // skips them, so the next run emails them), but History can then tell
+  // "still waiting" from "left the group before their turn" (a consent form
+  // signed in between) by name, instead of only by a shrinking count.
+  const notReached: EventEmailSendRow['recipients'] = recipients.slice(results.length)
+    .map((r) => ({ email: r.email, name: r.name, memberId: r.memberId ?? null, roles: r.roles, status: 'not_reached' as const }))
   if (sendRow?.id) {
     await db
       .from('event_email_sends')
-      .update({ sent_count: sent, failed_count: failed, recipients: results, finished_at: new Date().toISOString() })
+      .update({ sent_count: sent, failed_count: failed, recipients: [...results, ...notReached], finished_at: new Date().toISOString() })
       .eq('id', sendRow.id)
   }
   return { sendId: (sendRow?.id as string) ?? '', sent, failed, suppressed, reached: results.length, stoppedForQuota, stoppedForTime, stoppedForDeadline }
