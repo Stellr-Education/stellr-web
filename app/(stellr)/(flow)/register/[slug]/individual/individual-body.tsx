@@ -5,7 +5,7 @@ import { gradeBand } from '@/lib/grade-band'
 import { formatDateRange } from '@/lib/utils'
 import type { RegistrationPrefill } from '@/lib/registration-prefill'
 import { supabaseServer } from '@/lib/supabase'
-import { listEventAddons } from '@/lib/store/event-merch'
+import { getPublicAddons } from '@/lib/addons/catalog'
 import IndividualRegistrationForm, { type ScholarshipFormOffer } from '@/components/forms/IndividualRegistrationForm'
 import { findOfferByToken, discountedCents, formatUsd } from '@/lib/scholarships'
 import { stripeClient } from '@/lib/stripe'
@@ -71,7 +71,8 @@ export async function individualRegistrationBody({
   const scholarship = await loadScholarshipOffer(scholarshipToken, slug, event.stripePriceId)
 
   const prefill = loadPrefill ? await loadPrefill() : null
-  const addons = await listEventAddons(supabaseServer(), slug).catch(() => [])
+  // Extras (lib/addons): Stellr's events only, so only Stellr's page (stellrNotes) offers them.
+  const extras = stellrNotes ? await getPublicAddons(slug) : null
   // Grade options follow the event's eligible range, not a fixed 9–12.
   const band = gradeBand(event)
   const price = await getEventPrice(event.stripePriceId)
@@ -107,7 +108,7 @@ export async function individualRegistrationBody({
           eventSlug={slug}
           eventTitle={event.title}
           prefill={prefill}
-          addons={addons}
+          extras={extras}
           gradeMin={band.min}
           gradeMax={band.max}
           scholarship={scholarship}

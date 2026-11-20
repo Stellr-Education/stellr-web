@@ -665,7 +665,7 @@ async function fulfilCheckoutSession(session: Stripe.Checkout.Session, stripe: S
   } else if (session.metadata?.type === 'addon_order') {
     // Event add-ons (lib/addons): the order is re-read and its amount checked
     // before any line is confirmed. Idempotent.
-    await fulfilAddonOrder(supabaseServer(), session)
+    await fulfilAddonOrder(supabaseServer(), session, stripe)
   } else if (session.metadata?.type === 'store_order') {
     // Web-store purchase (direct-to-consumer) — mark paid, place the Printful
     // order, log to activity history, email the buyer. Idempotent.

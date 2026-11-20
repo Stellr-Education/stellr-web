@@ -6,6 +6,7 @@ import { formatDateRange } from '@/lib/utils'
 import type { RegistrationPrefill } from '@/lib/registration-prefill'
 import { getEventPrice } from '@/lib/event-pricing'
 import GroupRegistrationForm from '@/components/forms/GroupRegistrationForm'
+import { getPublicAddons } from '@/lib/addons/catalog'
 import type { StellrRegistrationNotes } from '../stellr-notes'
 
 // The group registration page, shared by Stellr's page and the tenant tree's. It
@@ -41,6 +42,8 @@ export async function groupRegistrationBody({
   // registration with an actionable error rather than silently waiving a fee.
   const price = await getEventPrice(event.stripePriceId)
   const isFree = price.kind === 'free' || price.kind === 'tbc'
+  // Extras (lib/addons): Stellr's events only, so only Stellr's page (stellrNotes) offers them.
+  const extras = stellrNotes && !isCampaign ? await getPublicAddons(slug) : null
 
   return (
     <div className="bg-surface">
@@ -69,6 +72,7 @@ export async function groupRegistrationBody({
           isFree={isFree}
           gradeMin={band.min}
           gradeMax={band.max}
+          extras={extras}
         />
         {!isCampaign && !isFree && stellrNotes?.guarantee}
         {stellrNotes?.missionFunding}

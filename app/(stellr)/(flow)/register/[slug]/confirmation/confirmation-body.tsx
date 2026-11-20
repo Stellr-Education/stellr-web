@@ -1,3 +1,4 @@
+import { supabaseServer } from '@/lib/supabase'
 import type { ReactNode } from 'react'
 import Link from 'next/link'
 import { CheckCircle, ExternalLink } from 'lucide-react'
@@ -53,6 +54,9 @@ export async function confirmationBody({
   const hasRemaining = isGroup && remainingCount > 0
 
   const event = await getEventBySlug(slug).catch(() => null)
+  // Extras still to pay (lib/addons). Only a count: the pay links stay out of this page,
+  // which loads analytics, and live in the email and on the account's Add extras page.
+  const extrasToPay = !tenantEvent && id ? await openAddonOrderCount(id) : 0
 
   return (
     <div className="bg-surface flex items-start justify-center px-4 py-10 sm:py-16">
@@ -128,6 +132,19 @@ export async function confirmationBody({
               <ExternalLink size={14} />
             </a>
             <p className="text-xs text-content-faint mt-2">A link to this sheet has also been sent to your email.</p>
+          </div>
+        )}
+
+        {extrasToPay > 0 && (
+          <div className="mb-8 rounded-ds-card border border-line bg-white p-6 text-left">
+            <p className="font-semibold text-ink">Pay for your extras</p>
+            <p className="mt-1 text-sm text-content-body">
+              Your extras are held for you. We’ve emailed {isGroup ? 'each person' : 'you'} a link to pay for them, and they’re on your account too.
+            </p>
+            {/* A full page load: the account page may show Clerk's sign-in. */}
+            <a href={`/account/extras/${encodeURIComponent(id!)}`} className="btn-primary mt-4 inline-flex text-sm">
+              Pay for extras
+            </a>
           </div>
         )}
 
@@ -248,4 +265,15 @@ export async function confirmationBody({
       </div>
     </div>
   )
+}
+
+/** How many add-on orders on this registration still wait for payment (lib/addons). */
+async function openAddonOrderCount(registrationId: string): Promise<number> {
+  if (!/^[0-9a-f-]{36}$/i.test(registrationId)) return 0
+  const { count } = await supabaseServer()
+    .from('addon_orders')
+    .select('id', { count: 'exact', head: true })
+    .eq('registration_id', registrationId)
+    .eq('status', 'open')
+  return count ?? 0
 }

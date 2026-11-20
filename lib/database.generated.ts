@@ -4107,6 +4107,7 @@ export type Database = {
       }
       group_invoices: {
         Row: {
+          addons_cents: number
           coupon_id: string | null
           created_at: string
           created_by: string | null
@@ -4133,6 +4134,7 @@ export type Database = {
           voided_at: string | null
         }
         Insert: {
+          addons_cents?: number
           coupon_id?: string | null
           created_at?: string
           created_by?: string | null
@@ -4159,6 +4161,7 @@ export type Database = {
           voided_at?: string | null
         }
         Update: {
+          addons_cents?: number
           coupon_id?: string | null
           created_at?: string
           created_by?: string | null
@@ -6120,6 +6123,7 @@ export type Database = {
           booked_by_role: string | null
           cancel_reason: string | null
           cancelled_at: string | null
+          checked_at: string | null
           created_at: string
           currency: string
           group_invoice_id: string | null
@@ -6145,6 +6149,7 @@ export type Database = {
           booked_by_role?: string | null
           cancel_reason?: string | null
           cancelled_at?: string | null
+          checked_at?: string | null
           created_at?: string
           currency?: string
           group_invoice_id?: string | null
@@ -6170,6 +6175,7 @@ export type Database = {
           booked_by_role?: string | null
           cancel_reason?: string | null
           cancelled_at?: string | null
+          checked_at?: string | null
           created_at?: string
           currency?: string
           group_invoice_id?: string | null
@@ -9496,6 +9502,7 @@ export type Database = {
           booked_by_role: string | null
           cancel_reason: string | null
           cancelled_at: string | null
+          checked_at: string | null
           created_at: string
           currency: string
           group_invoice_id: string | null

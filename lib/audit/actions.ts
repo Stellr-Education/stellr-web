@@ -34,6 +34,7 @@ export const AUDIT_ACTIONS = [
   'registration.invoice_discount.change',
   // Event add-ons booked from the member side, and an add-on pay link opened (lib/addons)
   'registration.addon.book',
+  'registration.addon.cancel',
   'registration.addon_payment.start',
   // Guardian consent on a tenant's event (S5 wave 6, lib/registration/tenant-guardian-consent.ts)
   'registration.guardian_consent.request',
@@ -197,6 +198,7 @@ export const AUDIT_ACTIONS = [
   'staff.settings.update',
   // Exports of personal data (Staff role phase 4): also in record_access_log
   'export.roster',
+  'export.addon_manifest',
   'export.members',
 
   // Events admin: records by id inside an event (C16)
@@ -261,6 +263,9 @@ export const AUDIT_ACTIONS = [
   'event_addon.record.update',
   'event_addon.record.delete',
   'event_addon.settings.update',
+  'event_addon.booking.create',
+  'event_addon.booking.update',
+  'event_addon.booking.cancel',
   'merch.batch.commit',
 
   // S5 wave 7, registered ahead of the slices that write them (A10a, A10b).

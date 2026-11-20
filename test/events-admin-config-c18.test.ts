@@ -297,9 +297,9 @@ describe('Stellr, with every flag at its default', () => {
       products: [],
     })
     expect(queries('event_store_offerings')[0].filters).toEqual([['eq', 'event_slug', SLUG]])
-    const added = await (await offerings()).POST(req({ variantId: 'v', treatment: 'addon' }), ctx())
+    const added = await (await offerings()).POST(req({ variantId: 'v', treatment: 'included' }), ctx())
     expect(await added.json()).toEqual({ ok: true })
-    expect(queries('event_store_offerings').at(-1)).toMatchObject({ op: 'insert', payload: { event_slug: SLUG, variant_id: 'v', treatment: 'addon' } })
+    expect(queries('event_store_offerings').at(-1)).toMatchObject({ op: 'insert', payload: { event_slug: SLUG, variant_id: 'v', treatment: 'included' } })
     const removed = await (await offerings()).DELETE(req(undefined, 'DELETE', 'https://app.test/x?id=o1'), ctx())
     expect(await removed.json()).toEqual({ ok: true })
     expect(queries('event_store_offerings').at(-1)).toMatchObject({ op: 'delete', filters: [['eq', 'id', 'o1'], ['eq', 'event_slug', SLUG]] })
@@ -376,7 +376,7 @@ describe("a tenant's admin", () => {
   it("on their own event: Stellr's store and merch batch are refused, with nothing read or written", async () => {
     const runs: [string, () => Promise<Response>][] = [
       ['offerings GET', async () => (await offerings()).GET(req(undefined, 'GET'), ctx('own'))],
-      ['offerings POST', async () => (await offerings()).POST(req({ variantId: 'v', treatment: 'addon' }), ctx('own'))],
+      ['offerings POST', async () => (await offerings()).POST(req({ variantId: 'v', treatment: 'included' }), ctx('own'))],
       ['offerings DELETE', async () => (await offerings()).DELETE(req(undefined, 'DELETE', 'https://app.test/x?id=o1'), ctx('own'))],
       ['merch GET', async () => (await merch()).GET(req(undefined, 'GET'), ctx('own'))],
       ['merch POST', async () => (await merch()).POST(req({ shipTo: { name: 'a', line1: 'b', city: 'c', state: 'd', postcode: 'e' } }), ctx('own'))],
@@ -417,7 +417,7 @@ describe("a tenant's admin", () => {
 describe("Stellr's store routes on another tenant's event", () => {
   const STORE_RUNS: [string, () => Promise<Response>][] = [
     ['offerings GET', async () => (await offerings()).GET(req(undefined, 'GET'), ctx('own'))],
-    ['offerings POST', async () => (await offerings()).POST(req({ variantId: 'v', treatment: 'addon' }), ctx('own'))],
+    ['offerings POST', async () => (await offerings()).POST(req({ variantId: 'v', treatment: 'included' }), ctx('own'))],
     ['offerings DELETE', async () => (await offerings()).DELETE(req(undefined, 'DELETE', 'https://app.test/x?id=o1'), ctx('own'))],
     ['merch GET', async () => (await merch()).GET(req(undefined, 'GET'), ctx('own'))],
     ['merch POST', async () => (await merch()).POST(req({ shipTo: { name: 'a', line1: 'b', city: 'c', state: 'd', postcode: 'e' } }), ctx('own'))],
@@ -490,7 +490,7 @@ describe('audit', () => {
   it('on, a refusal writes none', async () => {
     vi.stubEnv('PLATFORM_AUDIT_ENABLED', 'true')
     asEventManager('texas')
-    expect((await (await offerings()).POST(req({ variantId: 'v', treatment: 'addon' }), ctx())).status).toBe(403)
+    expect((await (await offerings()).POST(req({ variantId: 'v', treatment: 'included' }), ctx())).status).toBe(403)
     await Promise.all(pending)
     expect(state.audits).toEqual([])
   })
