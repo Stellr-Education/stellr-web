@@ -15,6 +15,7 @@ import { isRegistrationMinor } from '@/lib/registration-eligibility'
 import { ensureEventMerchOrder } from '@/lib/store/event-merch'
 import { addendumSignedFor, settledStatus } from './consent'
 import { addonPaidEmail, type EmailLine } from './emails'
+import { loadRegistrationTenantId } from '@/lib/tenancy/registration-tenant'
 
 const ROUTE = 'LIB addons/fulfil'
 
@@ -115,7 +116,10 @@ async function refundLatePayment(
       { payment_intent: paymentIntent, amount: cents, metadata: { source: 'stellr_app', reason: 'addon_paid_after_release', addonLineId: l.id } },
       { idempotencyKey: `addon-late-refund-${l.id}` },
     )
+    // S5 wave 8: this row has no event_slug, so it carries the registration's tenant itself.
+    const tenantId = await loadRegistrationTenantId(db, l.registrationId)
     await db.from('event_refunds').insert({
+      tenant_id: tenantId,
       participant_id: l.participantId, registration_id: l.registrationId, paid_cents: cents, refund_type: 'cash', refund_cents: cents,
       stripe_refund_id: refund.id, source: 'admin', kind: 'addon', addon_line_id: l.id, currency: l.currency,
       note: `${l.addon?.title ?? 'Extra'} was paid after it was released; refunded`,

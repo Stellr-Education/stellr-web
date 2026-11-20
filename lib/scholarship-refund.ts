@@ -5,6 +5,7 @@ import { assertLiveCredentials } from '@/lib/env-guards'
 import { logActivity } from '@/lib/activity-log'
 import { stripeRefundState, remainingCents } from '@/lib/refunds/stripe-state'
 import { discountedCents, formatUsd } from '@/lib/scholarship-levels'
+import { loadRegistrationTenantId } from '@/lib/tenancy/registration-tenant'
 
 // The reimbursement for a scholarship awarded after the student had already
 // registered and paid (owner, 2 Oct 2026). Plan: docs/PLAN-scholarship-offers-2026-10-02.md.
@@ -186,8 +187,11 @@ export async function issueScholarshipRefund(
     .maybeSingle()
   const participant = part as { id: string; member_id: string | null } | null
 
+  // S5 wave 8: the registration's tenant, explicit beside event_slug (Lane C optional-event writers).
+  const tenantId = await loadRegistrationTenantId(db, reg.id)
   const audit = async (result: ScholarshipRefundResult, note: string | null) => {
     const { error } = await db.from('event_refunds').insert({
+      tenant_id: tenantId,
       participant_id: participant?.id ?? null,
       registration_id: reg.id,
       member_id: participant?.member_id ?? null,
