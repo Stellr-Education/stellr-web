@@ -50,8 +50,7 @@ const CHECKS = [
   ['participants', 'registration_id'],
   // refund engine (migration 027)
   ['participants', 'stripe_payment_intent_id'], ['registrations', 'stripe_payment_intent_id'],
-  ['refund_policies', 'scope'], ['account_credits', 'member_id'],
-  ['account_credits', 'remaining_cents'], ['credit_redemptions', 'credit_id'],
+  ['refund_policies', 'scope'],
   ['event_refunds', 'participant_id'],
   // web store (migration 051)
   ['store_products', 'status'], ['store_variants', 'product_id'],

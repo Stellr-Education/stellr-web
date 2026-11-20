@@ -89,7 +89,6 @@ const system = (note?: string) => plain('system', note)
 
 export const TABLE_REGISTRY: Record<string, TableEntry> = {
   // ── entitlements schema: the coaching / mentoring allowance ledger ────────
-  'entitlements.account_credit_ledger': stellr('membership allowance ledger'),
   'entitlements.bookings': stellr(),
   'entitlements.coupon_redemptions': stellr(),
   'entitlements.discounts': stellr(),
@@ -217,8 +216,6 @@ export const TABLE_REGISTRY: Record<string, TableEntry> = {
   'public.email_suppressions': platform('global suppression list'),
 
   // ── Stellr-only products ─────────────────────────────────────────────────
-  'public.account_credits': stellr('Stellr credit balances; S9 ledger replaces'),
-  'public.credit_redemptions': stellr(),
   'public.chat_channels': stellr('community'),
   'public.chat_messages': stellr('community'),
   'public.coaching_requests': stellr('coaching'),
