@@ -21,9 +21,9 @@ import { requestTenant, tenantFromParams } from './request-tenant'
 
 const CANARY = '11111111-1111-4111-8111-111111111111'
 const ROWS = [
-  { host: 'canary-academy.localhost', tenant_id: CANARY, tenants: { slug: 'canary-academy', status: 'active' } },
-  { host: 'stellr.localhost', tenant_id: STELLR_TENANT_ID, tenants: { slug: 'stellr', status: 'active' } },
-  { host: 'paused.localhost', tenant_id: CANARY, tenants: { slug: 'paused', status: 'suspended' } },
+  { host: 'canary-academy.localhost', tenant_id: CANARY, tenant_slug: 'canary-academy' },
+  { host: 'stellr.localhost', tenant_id: STELLR_TENANT_ID, tenant_slug: 'stellr' },
+  // (a suspended tenant's host: tenant_host_map() returns active tenants only, so it is absent)
 ]
 const fetchStub = vi.fn()
 
@@ -35,6 +35,8 @@ beforeEach(() => {
   vi.stubGlobal('fetch', fetchStub)
   vi.stubEnv('NEXT_PUBLIC_SUPABASE_URL', 'https://db.test')
   vi.stubEnv('SUPABASE_SECRET_KEY', 'sb_secret_TESTONLY')
+  // B25: the host map is read with the publishable key (tenant_host_map()).
+  vi.stubEnv('NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY', 'sb_publishable_TESTONLY')
 })
 afterEach(() => {
   vi.unstubAllEnvs()

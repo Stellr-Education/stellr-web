@@ -1677,10 +1677,6 @@
       "class": "convert",
       "reason": "auto: touches tenant or event-scoped tables; tables: community_space_roles, community_space_sources, community_space_tiers, community_spaces, registrations"
     },
-    "lib/tenancy/host.ts": {
-      "class": "convert",
-      "reason": "The tenant host resolver (S5 B1) reads the host map over raw PostgREST with the secret key, because it runs in the proxy on the Edge before any tenant is known and supabase-js is not Edge-safe there. Inert until TENANT_ROUTING_ENABLED and the proxy wiring land. Class left at the conservative convert until a person reviews it."
-    },
     "lib/tenancy/tenant-records.ts": {
       "class": "convert",
       "reason": "The tenant tree's record checks (S5 B5b). Each reads a record's tenant_id by slug or token for a signed-out visitor, before any page renders, and compares it to the tenant from the URL param. It runs only under app/%5Ft, so nothing reaches it with TENANT_ROUTING_ENABLED off. A tenantDb client can't be used yet: the check is what decides the record is this tenant's, and TENANT_DB_ENABLED is off."
