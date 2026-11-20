@@ -153,6 +153,10 @@
       "class": "convert",
       "reason": "auto: reaches tables it does not name (dynamic .from, rpc, or a client passed to a helper); review before converting"
     },
+    "app/(stellr)/(flow)/register/[slug]/addons/pay/[token]/page.tsx": {
+      "class": "convert",
+      "reason": "event add-ons pay link: the token is the only key (no session), as the pay-seat page; Stellr's orders only"
+    },
     "app/(stellr)/(flow)/register/[slug]/individual/individual-body.tsx": {
       "class": "convert",
       "reason": "The individual registration page's body, moved here unchanged from its page.tsx by S5 B5b so a tenant page can reuse it without the tracking. Reads the scholarship offer and event add-ons signed out, with no session to scope them. Same access as before the move, for the area conversion to decide."
@@ -1109,6 +1113,10 @@
       "class": "identity",
       "reason": "auto: no tenant or event-scoped table, classed by its identity tables; tables: members"
     },
+    "app/api/members/addons/[registrationId]/route.ts": {
+      "class": "convert",
+      "reason": "event add-ons from the member side: the registration is placed by its tenant and the member's role (lib/addons/access.ts) before any write, as members/teams routes; Stellr's events only"
+    },
     "app/api/members/addresses/route.ts": {
       "class": "identity",
       "reason": "auto: no tenant or event-scoped table, classed by its identity tables; tables: member_addresses"
@@ -1248,6 +1256,10 @@
     "app/api/privacy-requests/route.ts": {
       "class": "convert",
       "reason": "auto: reaches tables it does not name (dynamic .from, rpc, or a client passed to a helper); review before converting"
+    },
+    "app/api/register/addons-pay/route.ts": {
+      "class": "convert",
+      "reason": "event add-ons pay link: the token is the only key (no session), as register/pay-seat; Stellr's orders only"
     },
     "app/api/register/group-join/route.ts": {
       "class": "convert",

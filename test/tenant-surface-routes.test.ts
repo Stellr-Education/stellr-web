@@ -48,9 +48,11 @@ const MANIFEST_CLASS_COUNTS: Record<RouteClass, number> = {
   // +2 tenant_crew, +1 participant on 17 Nov 2026: admin registrations/[id]/{receipt,paid-invoice}, members/billing/paid-invoice
   // +3 tenant_crew: admin events/[slug]/addons, addons/[id], addons/settings (event add-ons, 17 Nov)
   tenant_crew: 44,
-  participant: 132,
+  // +2 on 17 Nov 2026: members/addons/[registrationId] and account/extras/[registrationId] (event add-ons)
+  participant: 134,
   // +6 on 16 Nov 2026: the Classroom Qualifier hub, its two window pages, the library and the teacher stories list and detail.
-  public: 139,
+  // +2 on 17 Nov 2026: register/addons-pay and register/[slug]/addons/pay/[token] (event add-ons, denied on tenant hosts)
+  public: 141,
   webhook: 12,
   cron: 24,
   // -1 on 14 Nov 2026: the embedded Sanity Studio page left the app for Sanity's hosting.
@@ -69,18 +71,18 @@ const MANIFEST_CLASS_COUNTS: Record<RouteClass, number> = {
 // +6 on 16 Nov 2026: classroom-qualifier hub, 2026-27, spring-2027, resources, stories and stories/[slug] (public pages, denied on tenant hosts like the other Stellr marketing pages).
 // +1 on 16 Nov 2026: admin events/[slug]/participants/[pid]/guardian-consent/resend, the staff resend of a guardian's consent form (tenant_crew, denied on tenant hosts like every admin route).
 // +3 on 17 Nov 2026: payment documents, admin registrations/[id]/receipt and paid-invoice (tenant_crew, denied on tenant hosts like every admin route) and members/billing/paid-invoice (participant, pending like the other member routes).
-// +3 on 17 Nov 2026: event add-ons admin routes (tenant_crew, denied on tenant hosts like every admin route).
-const MANIFEST_TOTAL = 523
+// +7 on 17 Nov 2026: event add-ons (3 admin, 2 member, 2 pay link; members/addons pending like every member API, the rest denied).
+const MANIFEST_TOTAL = 527
 
 // The decisions. Moving a route between them is a deliberate diff here.
 const DECISION_COUNTS: Record<TenantSurfaceDecision, number> = {
   allow: 50,
-  // members 38, schools 2, privacy request pages 2 and APIs 2, the bounce-notice
+  // members 39, schools 2, privacy request pages 2 and APIs 2, the bounce-notice
   // link page and API 2, and the 4 held
   // files pinned under 'routes held back' below
-  pending: 50,
+  pending: 51,
   bypass: 4,
-  deny: 419,
+  deny: 422,
 }
 
 /** A concrete URL a manifest file serves, with sample values for its params. */

@@ -32,6 +32,9 @@ export const AUDIT_ACTIONS = [
   'registration.seat_payment_link.create',
   'registration.payment_method.change',
   'registration.invoice_discount.change',
+  // Event add-ons booked from the member side, and an add-on pay link opened (lib/addons)
+  'registration.addon.book',
+  'registration.addon_payment.start',
   // Guardian consent on a tenant's event (S5 wave 6, lib/registration/tenant-guardian-consent.ts)
   'registration.guardian_consent.request',
   'registration.guardian_consent.sign',

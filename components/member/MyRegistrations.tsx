@@ -1,3 +1,4 @@
+import Link from '@/components/ui/SiteLink'
 import { WithdrawRegistrationButton } from '@/components/member/WithdrawRegistrationButton'
 
 export interface MyRegistrationRow {
@@ -9,6 +10,8 @@ export interface MyRegistrationRow {
   type: string
   checkedInAt: string | null
   company: { number: number; name: string | null } | null
+  /** The event has add-ons on sale (lib/addons). */
+  hasExtras?: boolean
 }
 
 // The member's current event registrations, including the Company they've been
@@ -44,6 +47,11 @@ export function MyRegistrations({ registrations, readOnly = false }: { registrat
             >
               {r.checkedInAt ? 'Checked In' : r.status === 'confirmed' ? 'Registered' : 'Pending'}
             </span>
+            {!readOnly && r.hasExtras && r.registrationId && !r.checkedInAt && (
+              <Link href={`/account/extras/${r.registrationId}`} className="text-sm font-medium text-primary-deep hover:underline">
+                Add extras
+              </Link>
+            )}
             {!readOnly && r.type === 'individual' && r.registrationId && !r.checkedInAt && (
               <WithdrawRegistrationButton registrationId={r.registrationId} eventTitle={r.eventTitle} />
             )}

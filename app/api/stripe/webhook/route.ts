@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import Stripe from 'stripe'
+import { fulfilAddonOrder } from '@/lib/addons/fulfil'
 import { supabaseServer } from '@/lib/supabase'
 import { sendEmail, individualConfirmationEmail } from '@/lib/email'
 import { finalizeRedemption } from '@/lib/refunds/redeem'
@@ -664,6 +665,10 @@ async function fulfilCheckoutSession(session: Stripe.Checkout.Session, stripe: S
         actorType: 'stripe',
       })
     }
+  } else if (session.metadata?.type === 'addon_order') {
+    // Event add-ons (lib/addons): the order is re-read and its amount checked
+    // before any line is confirmed. Idempotent.
+    await fulfilAddonOrder(supabaseServer(), session)
   } else if (session.metadata?.type === 'store_order') {
     // Web-store purchase (direct-to-consumer) — mark paid, place the Printful
     // order, log to activity history, email the buyer. Idempotent.
