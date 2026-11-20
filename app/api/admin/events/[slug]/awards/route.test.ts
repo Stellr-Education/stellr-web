@@ -4,8 +4,9 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 // indexes do. These tests pin the rules and the access gate, with the data
 // layer mocked: every write is recorded, none is performed.
 
-const { requireEventAccess, writes, state } = vi.hoisted(() => ({
-  requireEventAccess: vi.fn(async (_slug: string): Promise<{ ok: boolean; status: number; userId?: string }> => ({ ok: true, status: 200, userId: 'user_admin' })),
+const { requireEventRoute, writes, state } = vi.hoisted(() => ({
+  // C19b: lib/authz's check, answering as test/fixtures/event-route.ts does (a Stellr admin).
+  requireEventRoute: vi.fn(async (slug: string): Promise<unknown> => (await import('@/test/fixtures/event-route')).eventRouteFor(slug)),
   writes: [] as { op: string; table: string; payload?: unknown; filters: [string, unknown][] }[],
   state: {
     students: [] as { id: string; first_name: string; last_name: string; company_id: string | null; checked_in_at?: string | null }[],
@@ -13,7 +14,7 @@ const { requireEventAccess, writes, state } = vi.hoisted(() => ({
   },
 }))
 
-vi.mock('@/lib/event-access', () => ({ requireEventAccess }))
+vi.mock('@/lib/authz', () => ({ requireEventRoute }))
 vi.mock('@/lib/event-award-issue', () => ({ pendingAwardChanges: async () => 0 }))
 vi.mock('@/lib/event-certificates', async () => ({
   // The real attendance rule; only the database reads are faked.
@@ -58,7 +59,7 @@ function put(body: unknown) {
 
 beforeEach(() => {
   writes.length = 0
-  requireEventAccess.mockClear()
+  requireEventRoute.mockClear()
   state.students = [
     { id: 'p1', first_name: 'Daniel', last_name: 'Ahaiwe', company_id: 'co-1' },
     { id: 'p2', first_name: 'Leon', last_name: 'Buk', company_id: 'co-1' },
@@ -69,7 +70,7 @@ beforeEach(() => {
 
 describe('PUT /api/admin/events/[slug]/awards', () => {
   it('refuses an event manager not assigned to the event', async () => {
-    requireEventAccess.mockResolvedValueOnce({ ok: false, status: 403 })
+    requireEventRoute.mockResolvedValueOnce((await import('@/test/fixtures/event-route')).eventRouteRefused(403))
     const res = await put({ action: 'set_champion', companyId: 'co-1' })
     expect(res.status).toBe(403)
     expect(writes).toHaveLength(0)
