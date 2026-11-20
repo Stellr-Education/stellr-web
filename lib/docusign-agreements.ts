@@ -740,7 +740,11 @@ async function recordCoverage(
   // discarded insert error meant the family was told paperwork was on file while
   // the participant had no coverage row at all. Fail closed so the caller's
   // catch records the failure and alerts admins instead of sending that email.
+  // S5 wave 8 (ENF prep): the row carries its tenant, so derivation's enforce mode never
+  // refuses it (see recordEnvelope).
+  const tenantId = await agreementEventTenant(db, ctx.eventSlug)
   const { error } = await db.from('agreements').insert({
+    tenant_id:         tenantId,
     participant_id:    ctx.participantId,
     member_id:         ctx.memberId,
     event_slug:        ctx.eventSlug,
@@ -768,7 +772,15 @@ async function recordEnvelope(
   signerName: string,
   signerEmail: string,
 ): Promise<{ signNowUrl: string | null }> {
+  // S5 wave 8 (ENF prep): the row carries its tenant. A program agreement's slug
+  // ('membership', lib/membership-agreement.ts) is no event, so the trigger derives
+  // nothing, and in enforce mode it refuses a row with neither key nor tenant: every
+  // membership agreement would fail. agreementEventTenant answers the event's owner, or
+  // Stellr's for a slug the mirror lacks, which is what the trigger derives for a mirrored
+  // event and what it stamps today for an unmirrored one. A failed read leaves NULL, as before.
+  const tenantId = await agreementEventTenant(db, ctx.eventSlug)
   const row = {
+    tenant_id:         tenantId,
     participant_id:    ctx.participantId,
     member_id:         ctx.memberId,
     event_slug:        ctx.eventSlug,

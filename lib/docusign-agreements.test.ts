@@ -241,6 +241,18 @@ describe('dispatchAgreement — never issues paperwork already in the system', (
     expect((sendEmail.mock.calls[0][0] as { subject: string }).subject).toBe('on-file')
   })
 
+  // S5 wave 8 (ENF prep): a new agreement row carries its tenant, so derivation's enforce mode
+  // never refuses it. A program agreement's slug ('membership') is no event: Stellr's.
+  it('a new agreement row carries the event owner’s tenant, Stellr’s for a slug the mirror lacks', async () => {
+    const canary = '00000000-0000-4000-8000-0000000ca4a2'
+    const unmirrored = makeDb({ event: null })
+    await dispatchAgreement(unmirrored.db, ADULT)
+    expect(unmirrored.inserts.find((i) => i.table === 'agreements')?.payload.tenant_id).toBe('00000000-0000-4000-8000-000000000001')
+    const mirrored = makeDb({ event: { tenant_id: canary } })
+    await dispatchAgreement(mirrored.db, ADULT)
+    expect(mirrored.inserts.find((i) => i.table === 'agreements')?.payload.tenant_id).toBe(canary)
+  })
+
   // S5 wave 8, A11 (WD-7 default): one tenant's paperwork never covers another tenant's event.
   it('does NOT reuse paperwork signed for another tenant, and issues a fresh envelope', async () => {
     const { db, inserts } = makeDb({
