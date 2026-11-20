@@ -1,10 +1,11 @@
 import { supabaseServer } from '@/lib/supabase'
 import { formatDateShort } from '@/lib/utils'
-import { getEventsByIds } from '@/lib/events/repo'
+import { getEventsByIdsIn } from '@/lib/events/tenant-facade'
 import { notifyMember } from '@/lib/notify'
 import { sendEmail } from '@/lib/email'
 import { audienceIncludes, eventVolunteers } from '@/lib/training-audience'
 import { otherTenantEvents, stellrRows } from '@/lib/tenancy/stellr-scope'
+import { STELLR_TENANT_ID } from '@/lib/tenancy/constants'
 
 // Training reminder + escalation engine (FR-COM-10), run daily by the cron.
 // Processes BOTH assignment sources:
@@ -194,7 +195,8 @@ export async function runTrainingReminders(): Promise<ReminderResult> {
   if (legacy?.length) {
     const settings = await settingsByModule(db, legacy.map((a) => a.module_id as string))
     const items = await publishedItems(db, legacy.map((a) => a.module_id as string))
-    const events = await getEventsByIds([...new Set(legacy.map((a) => a.event_ref as string))])
+    // S5 wave 8, C8-PG: Stellr's assignments only (stellrRows), so Stellr's events.
+    const events = await getEventsByIdsIn(STELLR_TENANT_ID, [...new Set(legacy.map((a) => a.event_ref as string))])
     const slugByRef = new Map(events.map((e) => [e._id, e.slug.current]))
 
     for (const a of legacy) {
