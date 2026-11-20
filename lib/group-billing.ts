@@ -5,6 +5,7 @@ import { GUARANTEE_RECEIPT_LINE } from '@/lib/guarantee'
 import { normalizeEventRole } from '@/lib/member-enums'
 import { runAfterResponse } from '@/lib/after-response'
 import { loadPayerPeople, seatsOnInvoice } from '@/lib/group-payer'
+import { STELLR_TENANT_ID } from '@/lib/tenancy/constants'
 
 // What a group pays when its roster changes after registration (29 Oct 2026).
 //
@@ -314,8 +315,43 @@ export async function invoicePaymentIntent(stripe: Stripe, invoiceId: string): P
   }
 }
 
-async function upsertLedger(db: Db, row: Partial<GroupInvoiceRow> & { stripe_invoice_id: string }) {
-  const { error } = await db.from('group_invoices').upsert(row, { onConflict: 'stripe_invoice_id' })
+/**
+ * The tenant a group's money belongs to (S5 A8b): its registration's tenant_id, or
+ * Stellr's for a row the backfill has not reached (lib/registration/event-context
+ * rowTenant, inlined to keep this module's imports light).
+ */
+export function billingTenant(reg: Pick<GroupRegistration, 'tenant_id'>): string {
+  return reg.tenant_id ?? STELLR_TENANT_ID
+}
+
+/**
+ * Thrown before Stripe is asked anything when a group invoice would be raised or
+ * revised for another tenant's registration (S5 A8b, BF-58 default). Nothing is billed
+ * for a tenant until S9; the register routes (A7) and the organiser and staff writers
+ * (A8) already refuse first, so this is the backstop under all of them.
+ */
+export class TenantBillingRefused extends Error {
+  constructor() {
+    super('Group billing is Stellr-only until S9')
+    this.name = 'TenantBillingRefused'
+  }
+}
+
+/** What an admin or organiser is told when another tenant's group would be billed (lib/registration/event-context TENANT_PAYMENTS_UNAVAILABLE). */
+export const TENANT_BILLING_UNAVAILABLE = 'Paid registration for this event isn’t available online yet. Please contact the event organiser.'
+
+function assertStellrBilling(reg: Pick<GroupRegistration, 'tenant_id'>) {
+  if (billingTenant(reg) !== STELLR_TENANT_ID) throw new TenantBillingRefused()
+}
+
+/**
+ * One ledger row. tenant_id is the registration's (S5 A8b), so the row keeps its
+ * tenant when derivation enforces; it is the value the trigger derives from the
+ * event for a mirrored event. NULL leaves it to the trigger, as before.
+ */
+async function upsertLedger(db: Db, tenantId: string | null, row: Partial<GroupInvoiceRow> & { stripe_invoice_id: string }) {
+  const write: Partial<GroupInvoiceRow> & { stripe_invoice_id: string; tenant_id?: string } = tenantId ? { ...row, tenant_id: tenantId } : row
+  const { error } = await db.from('group_invoices').upsert(write, { onConflict: 'stripe_invoice_id' })
   if (error) console.error('[group-billing] ledger write failed:', error.message, { invoice: row.stripe_invoice_id })
 }
 
@@ -386,7 +422,7 @@ export async function currentSeatsInvoice(
     // declared size and its per-place price is what it charged per place.
     const seats = Number(invoice.metadata?.seats) || (reg.adult_count ?? 0) + (reg.student_count ?? 0)
     const perSeat = Number(invoice.metadata?.perSeatCents) || (seats > 0 ? Math.round((invoice.subtotal ?? 0) / seats) : 0)
-    await upsertLedger(db, {
+    await upsertLedger(db, billingTenant(reg), {
       ...ledgerRowFromInvoice(invoice, { registrationId: reg.id, eventSlug: reg.event_slug, kind: 'seats', seats, perSeatCents: perSeat }),
       reason: 'Group registration',
     })
@@ -445,7 +481,7 @@ async function finishAndRecord(
 ) {
   const finalized = await stripe.invoices.finalizeInvoice(draftId)
   if (afterFinalize) await afterFinalize(finalized)
-  await upsertLedger(db, {
+  await upsertLedger(db, billingTenant(spec.reg), {
     ...ledgerRowFromInvoice(finalized, { registrationId: spec.reg.id, eventSlug: spec.reg.event_slug, kind: spec.kind, seats: spec.seats, perSeatCents: spec.perSeatCents }),
     coupon_id: spec.couponId,
     promotion_code: spec.couponId ? spec.reg.invoice_promotion_code : null,
@@ -494,6 +530,7 @@ async function draftWithLine(stripe: Stripe, spec: InvoiceSpec, params: Stripe.I
 
 /** A fresh invoice: the group's first, or one for places added after payment. */
 export async function createGroupInvoice(db: Db, stripe: Stripe, spec: InvoiceSpec): Promise<Stripe.Invoice> {
+  assertStellrBilling(spec.reg)
   const draft = await draftWithLine(stripe, spec, {
     days_until_due: 14,
     metadata: metadataFor(spec),
@@ -544,6 +581,7 @@ async function replaceGroupInvoice(db: Db, stripe: Stripe, original: Stripe.Invo
  * replaced with a new one instead.
  */
 export async function reviseGroupInvoice(db: Db, stripe: Stripe, original: Stripe.Invoice, spec: InvoiceSpec): Promise<Stripe.Invoice> {
+  assertStellrBilling(spec.reg)
   let draft: Stripe.Invoice
   try {
     draft = await stripe.invoices.create({ from_invoice: { action: 'revision', invoice: original.id as string } })
@@ -733,6 +771,12 @@ async function applyRosterChangeToBilling(
   let reg = await loadRegistration(db, input.registrationId)
   if (!reg || reg.type !== 'group' || reg.status === 'withdrawn') {
     return { message: null, action: 'none', seatsAfter: 0 }
+  }
+  // S5 A8b (BF-58 default): another tenant's group is never billed until S9. The
+  // roster writers (A8) refuse a tenant group that takes money first; this keeps any
+  // other caller away from Stripe too.
+  if (billingTenant(reg) !== STELLR_TENANT_ID) {
+    return { message: null, action: 'none', seatsAfter: (reg.adult_count ?? 0) + (reg.student_count ?? 0) }
   }
   // Registrations from before migration 037 have no declared size: nothing to track.
   if (reg.adult_count == null || reg.student_count == null) {
@@ -1266,6 +1310,8 @@ async function applyGroupDiscount(
 ): Promise<AdminInvoiceResult> {
   const reg = await loadRegistration(db, registrationId)
   if (!reg || reg.type !== 'group') return { ok: false, error: 'Group registration not found' }
+  // S5 A8b (BF-58 default): refused before anything is saved or Stripe is asked.
+  if (billingTenant(reg) !== STELLR_TENANT_ID) return { ok: false, error: TENANT_BILLING_UNAVAILABLE }
   if (!reg.invoice_requested) return { ok: false, error: 'This group is not paying by invoice.' }
   if (reg.invoice_paid_at) return { ok: false, error: 'This invoice has already been paid, so it can no longer be changed. Refund the difference in Stripe if a discount was owed.' }
   const current = await currentSeatsInvoice(db, stripe, reg)
@@ -1316,6 +1362,8 @@ async function correctGroupInvoice(
 ): Promise<AdminInvoiceResult> {
   const reg = await loadRegistration(db, registrationId)
   if (!reg || reg.type !== 'group') return { ok: false, error: 'Group registration not found' }
+  // S5 A8b (BF-58 default): refused before anything is saved or Stripe is asked.
+  if (billingTenant(reg) !== STELLR_TENANT_ID) return { ok: false, error: TENANT_BILLING_UNAVAILABLE }
   if (!reg.invoice_requested) return { ok: false, error: 'This group is not paying by invoice.' }
   if (reg.invoice_paid_at) return { ok: false, error: 'This invoice has already been paid, so it can no longer be changed.' }
   const current = await currentSeatsInvoice(db, stripe, reg)
@@ -1389,7 +1437,11 @@ export async function recordGroupInvoicePaid(db: Db, stripe: Stripe, invoice: St
     await db.from('group_invoices').update({ status: 'paid', paid_at: paidAt, payment_intent_id: paymentIntent }).eq('id', row.id)
   } else {
     const seats = Number(invoice.metadata?.seats) || 0
-    await upsertLedger(db, {
+    // S5 A8b: the registration's tenant. Read only here, where the row is new; a
+    // failed read leaves tenant_id to the trigger, as before, and never means Stellr.
+    const { data: owner, error: ownerError } = await db.from('registrations').select('tenant_id').eq('id', registrationId).maybeSingle()
+    const ledgerTenant = ownerError || !owner ? null : billingTenant(owner as Pick<GroupRegistration, 'tenant_id'>)
+    await upsertLedger(db, ledgerTenant, {
       ...ledgerRowFromInvoice(invoice, {
         registrationId, eventSlug: invoice.metadata?.eventSlug ?? '', kind,
         seats, perSeatCents: Number(invoice.metadata?.perSeatCents) || (seats > 0 ? Math.round((invoice.subtotal ?? 0) / seats) : 0),

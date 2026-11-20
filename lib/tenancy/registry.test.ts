@@ -62,7 +62,7 @@ describe('table registry (S3)', () => {
     expect(derivedTables().map((d) => d.table)).toEqual(withKey)
     // ~27 event_slug tables plus the 5 Sanity-id tables (plan S3), and the
     // derived tables created since (POST_EXPAND below).
-    expect(derivedTables().filter((d) => d.kind === 'slug')).toHaveLength(28)
+    expect(derivedTables().filter((d) => d.kind === 'slug')).toHaveLength(31)
     expect(derivedTables().filter((d) => d.kind === 'sanity_id')).toHaveLength(5)
   })
 
@@ -73,7 +73,7 @@ describe('table registry (S3)', () => {
     const fromExpand = [...expand.matchAll(/ADD COLUMN IF NOT EXISTS tenant_id[^;]*;\s*\n?/g)].length
     // Derived tables created after S3 carry tenant_id, its index and the
     // trigger in their own CREATE TABLE migration (checked by lint:tenancy).
-    const POST_EXPAND = new Set(['public.event_crew_check_ins'])
+    const POST_EXPAND = new Set(['public.event_crew_check_ins', 'public.event_addons', 'public.event_addon_settings', 'public.addon_orders'])
     expect(fromExpand).toBe(derivedTables().filter((d) => !POST_EXPAND.has(d.table)).length)
     // The backfill reads its table list from the catalog (every table with the
     // derivation trigger), so it cannot drift; pgTAP section 6 checks the set.
@@ -91,7 +91,7 @@ describe('table registry (S3)', () => {
     // Inherited tables created after C0b carry tenant_id, its index and the
     // trigger in their own CREATE TABLE migration (checked by lint:tenancy),
     // not in the C0b expand.
-    const POST_C0B = new Set(['public.agreement_email_changes'])
+    const POST_C0B = new Set(['public.agreement_email_changes', 'public.registration_addons'])
     const children = inheritedTables().filter((c) => !POST_C0B.has(c.table))
     expect(children).toHaveLength(10)
     expect(Object.values(TABLE_REGISTRY).filter((e) => e.tenantColumn === 'via_parent')).toEqual([])

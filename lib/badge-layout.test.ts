@@ -193,6 +193,23 @@ describe('pickTemplate', () => {
   })
 })
 
+describe('pickTemplate: teachers (Nov 2026)', () => {
+  const everyone = { audience: 'everyone' as const, companyId: null, id: 'e' }
+  const teachers = { audience: 'teachers' as const, companyId: null, id: 't' }
+  const c1 = { audience: 'company' as const, companyId: 'c1', id: 'c1' }
+
+  it('gives a teacher the teachers design, over their company', () => {
+    expect(pickTemplate([everyone, teachers, c1], { companyId: null, mentor: false, teacher: true })?.id).toBe('t')
+    expect(pickTemplate([everyone, teachers, c1], { companyId: 'c1', mentor: false, teacher: true })?.id).toBe('t')
+  })
+
+  it('falls back to everyone without a teachers background, and never gives it to students', () => {
+    expect(pickTemplate([everyone, c1], { companyId: null, mentor: false, teacher: true })?.id).toBe('e')
+    expect(pickTemplate([everyone, teachers], { companyId: null, mentor: false })?.id).toBe('e')
+    expect(pickTemplate([], { companyId: null, mentor: false, teacher: true })).toBeNull()
+  })
+})
+
 describe('formats', () => {
   it('fit every label on a US Letter page without overlap', () => {
     for (const spec of Object.values(BADGE_FORMATS)) {

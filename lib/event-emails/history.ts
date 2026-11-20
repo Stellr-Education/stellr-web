@@ -11,8 +11,8 @@ export function missedRecipients(recipients: ResolvedRecipient[], alreadyTried: 
 }
 
 /**
- * Every address a real (non-test) send of this email has already tried — sent
- * OR failed. deep review INT-1: `deliver` records each recipient as it goes, so
+ * Every address a real (non-test) send of this email has already tried — sent,
+ * failed, suppressed, or caught mid-send ('sending') — but not 'not_reached'. deep review INT-1: `deliver` records each recipient as it goes, so
  * this reflects progress even when an earlier run was killed mid-send, and a
  * re-run (a resumed stuck send, or the next catch-up) skips those addresses
  * instead of emailing them a second time.
@@ -27,9 +27,30 @@ export async function alreadyTriedAddresses(db: SupabaseClient, emailId: string)
   if (error) throw new Error(`Could not read send history: ${error.message}`)
   const out = new Set<string>()
   for (const row of data ?? []) {
-    for (const r of (row.recipients as { email?: string }[] | null) ?? []) {
-      if (r?.email) out.add(r.email.toLowerCase())
+    for (const r of (row.recipients as { email?: string; status?: string }[] | null) ?? []) {
+      // 'not_reached' = listed by a run that stopped before their turn: still owed.
+      // 'sending' = handed to Resend when the run was killed: counted as tried.
+      if (r?.email && r.status !== 'not_reached') out.add(r.email.toLowerCase())
     }
   }
   return out
+}
+
+/**
+ * Did the latest real (non-test) run of this email record itself as finished?
+ * A run that stopped at its time limit writes finished_at before it returns,
+ * so a continue may take over at once; a run still going (or killed) has none.
+ * No run at all (killed before its first recipient) answers false.
+ */
+export async function latestRunFinished(db: SupabaseClient, emailId: string): Promise<boolean> {
+  const { data, error } = await db
+    .from('event_email_sends')
+    .select('finished_at')
+    .eq('event_email_id', emailId)
+    .neq('trigger', 'test')
+    .order('started_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+  if (error || !data) return false
+  return data.finished_at != null
 }

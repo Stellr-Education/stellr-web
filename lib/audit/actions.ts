@@ -32,6 +32,9 @@ export const AUDIT_ACTIONS = [
   'registration.seat_payment_link.create',
   'registration.payment_method.change',
   'registration.invoice_discount.change',
+  // Event add-ons booked from the member side, and an add-on pay link opened (lib/addons)
+  'registration.addon.book',
+  'registration.addon_payment.start',
   // Guardian consent on a tenant's event (S5 wave 6, lib/registration/tenant-guardian-consent.ts)
   'registration.guardian_consent.request',
   'registration.guardian_consent.sign',
@@ -41,6 +44,8 @@ export const AUDIT_ACTIONS = [
   'registration.guardian_consent.lift',
   // A consent envelope from an earlier registration was voided.
   'registration.guardian_consent.void',
+  // Staff resent a pending consent's invitation, or chased the guardian (wave 8 CONSENT (c)).
+  'registration.guardian_consent.resend',
 
   // Consent and uploads (A14)
   'consent.request.send',
@@ -218,6 +223,9 @@ export const AUDIT_ACTIONS = [
   'survey.quote.withdraw',
   // C16 follow-up: registrations/[id]/payment-method (its change is catalogued under Registration)
   'registration.payment_method.read',
+  // Payment documents for a place, downloaded by crew on someone's behalf
+  'registration.receipt.read',
+  'registration.paid_invoice.read',
 
   // Events admin: paperwork and communications under an event (C17)
   'agreement.participant.reissue',
@@ -248,6 +256,11 @@ export const AUDIT_ACTIONS = [
   'event_company.placement.change',
   'event_offering.record.create',
   'event_offering.record.delete',
+  // Event add-ons catalogue (docs/PLAN-event-add-ons-2026-11-17.md): app/api/admin/events/[slug]/addons/**
+  'event_addon.record.create',
+  'event_addon.record.update',
+  'event_addon.record.delete',
+  'event_addon.settings.update',
   'merch.batch.commit',
 
   // S5 wave 7, registered ahead of the slices that write them (A10a, A10b).

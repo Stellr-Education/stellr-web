@@ -153,6 +153,10 @@
       "class": "convert",
       "reason": "auto: reaches tables it does not name (dynamic .from, rpc, or a client passed to a helper); review before converting"
     },
+    "app/(stellr)/(flow)/register/[slug]/addons/pay/[token]/page.tsx": {
+      "class": "convert",
+      "reason": "event add-ons pay link: the token is the only key (no session), as the pay-seat page; Stellr's orders only"
+    },
     "app/(stellr)/(flow)/register/[slug]/individual/individual-body.tsx": {
       "class": "convert",
       "reason": "The individual registration page's body, moved here unchanged from its page.tsx by S5 B5b so a tenant page can reuse it without the tracking. Reads the scholarship offer and event add-ons signed out, with no session to scope them. Same access as before the move, for the area conversion to decide."
@@ -521,6 +525,18 @@
       "class": "convert",
       "reason": "auto: reaches tables it does not name (dynamic .from, rpc, or a client passed to a helper); review before converting"
     },
+    "app/api/admin/events/[slug]/addons/[id]/route.ts": {
+      "class": "convert",
+      "reason": "Stellr-only admin route (stellrOnlyDb after stellrOnlyEvent): the event add-ons catalogue, as the merch offerings route; tenantDb when add-ons open to tenants"
+    },
+    "app/api/admin/events/[slug]/addons/route.ts": {
+      "class": "convert",
+      "reason": "Stellr-only admin route (stellrOnlyDb after stellrOnlyEvent): the event add-ons catalogue, as the merch offerings route; tenantDb when add-ons open to tenants"
+    },
+    "app/api/admin/events/[slug]/addons/settings/route.ts": {
+      "class": "convert",
+      "reason": "Stellr-only admin route (stellrOnlyDb after stellrOnlyEvent): the event add-ons catalogue, as the merch offerings route; tenantDb when add-ons open to tenants"
+    },
     "app/api/admin/events/[slug]/awards/issue/route.ts": {
       "class": "convert",
       "reason": "auto: reaches tables it does not name (dynamic .from, rpc, or a client passed to a helper); review before converting"
@@ -620,6 +636,10 @@
     "app/api/admin/events/[slug]/offerings/route.ts": {
       "class": "convert",
       "reason": "auto: reaches tables it does not name (dynamic .from, rpc, or a client passed to a helper); review before converting"
+    },
+    "app/api/admin/events/[slug]/participants/[pid]/guardian-consent/resend/route.ts": {
+      "class": "convert",
+      "reason": "Staff resend of a tenant guardian consent (wave 8 CONSENT (c)). Reads tenant_guardian_consents, which only service_role may read (TENANT_APP_NO_ACCESS_TABLES), and sends through the signing engine, which writes agreement_recipients and the envelope audit. The participant and the envelope are loaded through loadRecord in the crew's scope; convert those reads with the rest of the events admin routes."
     },
     "app/api/admin/events/[slug]/participants/[pid]/guardian/route.ts": {
       "class": "convert",
@@ -773,6 +793,10 @@
       "class": "convert",
       "reason": "auto: reaches tables it does not name (dynamic .from, rpc, or a client passed to a helper); review before converting"
     },
+    "app/api/admin/registrations/[id]/paid-invoice/route.ts": {
+      "class": "convert",
+      "reason": "Crew download a place's paid invoice: loadEventRecord reads the registration, then lib/payments (documents, paid-invoice-pdf) read its participant, group_invoices and event_refunds with this client. Converts with the registration lane."
+    },
     "app/api/admin/registrations/[id]/participants/route.ts": {
       "class": "convert",
       "reason": "Staff add a person to a group's roster: reads the registration, then lib/group-participant-add writes the participant with this client. Converts with the registration lane."
@@ -780,6 +804,10 @@
     "app/api/admin/registrations/[id]/payment-method/route.ts": {
       "class": "convert",
       "reason": "Staff change how a group pays: reads the registration to check the event, then lib/group-payment-change moves its billing with this client. Converts with the registration lane."
+    },
+    "app/api/admin/registrations/[id]/receipt/route.ts": {
+      "class": "convert",
+      "reason": "Crew open a place's Stripe receipt: loadEventRecord reads the registration, then lib/payments reads its participant and group_invoices with this client. Converts with the registration lane."
     },
     "app/api/admin/sanity/event-sync/route.ts": {
       "class": "convert",
@@ -803,7 +831,7 @@
     },
     "app/api/admin/scholarships/[id]/refund/route.ts": {
       "class": "convert",
-      "reason": "auto: reaches tables it does not name (dynamic .from, rpc, or a client passed to a helper); review before converting"
+      "reason": "auto: touches tenant or event-scoped tables; tables: scholarship_applications"
     },
     "app/api/admin/scholarships/[id]/resend/route.ts": {
       "class": "convert",
@@ -1035,7 +1063,7 @@
     },
     "app/api/cron/group-invoice-sync/route.ts": {
       "class": "convert",
-      "reason": "auto: touches tenant or event-scoped tables; tables: registrations"
+      "reason": "auto: reaches tables it does not name (dynamic .from, rpc, or a client passed to a helper); review before converting"
     },
     "app/api/cron/hubspot-event-options/route.ts": {
       "class": "convert",
@@ -1085,15 +1113,15 @@
       "class": "identity",
       "reason": "auto: no tenant or event-scoped table, classed by its identity tables; tables: members"
     },
+    "app/api/members/addons/[registrationId]/route.ts": {
+      "class": "convert",
+      "reason": "event add-ons from the member side: the registration is placed by its tenant and the member's role (lib/addons/access.ts) before any write, as members/teams routes; Stellr's events only"
+    },
     "app/api/members/addresses/route.ts": {
       "class": "identity",
       "reason": "auto: no tenant or event-scoped table, classed by its identity tables; tables: member_addresses"
     },
     "app/api/members/billing/payment-link/route.ts": {
-      "class": "convert",
-      "reason": "auto: touches tenant or event-scoped tables; tables: members, participants, registrations"
-    },
-    "app/api/members/billing/receipt/route.ts": {
       "class": "convert",
       "reason": "auto: touches tenant or event-scoped tables; tables: members, participants, registrations"
     },
@@ -1228,6 +1256,10 @@
     "app/api/privacy-requests/route.ts": {
       "class": "convert",
       "reason": "auto: reaches tables it does not name (dynamic .from, rpc, or a client passed to a helper); review before converting"
+    },
+    "app/api/register/addons-pay/route.ts": {
+      "class": "convert",
+      "reason": "event add-ons pay link: the token is the only key (no session), as register/pay-seat; Stellr's orders only"
     },
     "app/api/register/group-join/route.ts": {
       "class": "convert",
@@ -1381,13 +1413,17 @@
       "class": "identity",
       "reason": "auto: no tenant or event-scoped table, classed by its identity tables; tables: member_activity_log"
     },
+    "lib/addons/catalog.ts": {
+      "class": "convert",
+      "reason": "event add-ons catalogue: the public reader is cached across visitors (no session), and admin writes arrive with stellrOnlyDb; Stellr's events only until tenant add-ons"
+    },
     "lib/admin-auth.ts": {
       "class": "stellr_only",
       "reason": "auto: no tenant or event-scoped table, classed by its stellr_only tables; tables: admin_duties, members"
     },
     "lib/admin-digest.ts": {
       "class": "convert",
-      "reason": "auto: touches tenant or event-scoped tables; tables: agreements, chat_messages, coaching_requests, cohort_members, community_comments, community_posts (+13)"
+      "reason": "auto: touches tenant or event-scoped tables; tables: agreements, chat_messages, coaching_requests, cohort_members, community_comments, community_posts (+12)"
     },
     "lib/app-errors.ts": {
       "class": "convert",
@@ -1447,7 +1483,7 @@
     },
     "lib/deletion/execute.ts": {
       "class": "convert",
-      "reason": "auto: touches tenant or event-scoped tables; tables: deletion_archive, member_pending_consent, participants, registrations, tenant_guardian_consents"
+      "reason": "auto: touches tenant or event-scoped tables; tables: member_pending_consent, participants, registrations, tenant_guardian_consents"
     },
     "lib/deletion/external.ts": {
       "class": "convert",
@@ -1518,8 +1554,8 @@
       "reason": "auto: touches tenant or event-scoped tables; tables: member_memberships, members, membership_tiers, participants, registrations, tier_grant_rules"
     },
     "lib/mentions.ts": {
-      "class": "stellr_only",
-      "reason": "auto: no tenant or event-scoped table, classed by its stellr_only tables; tables: member_directory_prefs, member_memberships, members"
+      "class": "identity",
+      "reason": "auto: no tenant or event-scoped table, classed by its identity tables; tables: member_directory_prefs, members"
     },
     "lib/mentoring.ts": {
       "class": "convert",
@@ -1536,6 +1572,10 @@
     "lib/object-roles.ts": {
       "class": "convert",
       "reason": "auto: touches tenant or event-scoped tables; tables: member_roles, mentoring_cohorts, object_roles, object_type_singleton_roles"
+    },
+    "lib/payments/member-access.ts": {
+      "class": "convert",
+      "reason": "A member's own place for the Billing tab's Receipt and Invoice links: reads members, participants and registrations by the session's member (or view-as). Converts with the member billing routes."
     },
     "lib/rate-limit-store.ts": {
       "class": "system",
@@ -1647,7 +1687,7 @@
     },
     "lib/training-admin.ts": {
       "class": "convert",
-      "reason": "auto: touches tenant or event-scoped tables; tables: cohort_members, cohort_training_links, community_space_members, community_spaces, course_object_assignments, member_memberships (+8)"
+      "reason": "auto: touches tenant or event-scoped tables; tables: cohort_members, cohort_training_links, community_space_members, community_spaces, course_object_assignments, mentoring_cohorts (+7)"
     },
     "lib/training-portal.ts": {
       "class": "convert",

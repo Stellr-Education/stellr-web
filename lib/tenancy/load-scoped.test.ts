@@ -376,8 +376,8 @@ describe('child tables and the real schema', () => {
   // Exactly one matters beyond this file: a second foreign key between the same two
   // tables makes PostgREST refuse every live embed of them that names no hint
   // (PGRST201), so the composite foreign key cannot simply be added beside this one.
-  it('all 11 either embed through exactly one foreign key or are listed as having none', () => {
-    expect(children).toHaveLength(11)
+  it('all 12 either embed through exactly one foreign key or are listed as having none', () => {
+    expect(children).toHaveLength(12)
     expect(new Set(children.filter(([, e]) => e.noForeignKey).map(([k]) => k))).toEqual(VIA_PARENT_WITHOUT_FK)
     for (const [key, entry] of children) {
       const fks = foreignKeys(short(key), short(entry.parent!))

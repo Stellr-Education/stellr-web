@@ -9,8 +9,10 @@ import { PlacementSlider } from './PlacementSlider'
 
 // Name badges, like EventCertificates: pick the Avery stock, give it a
 // background, check where the name lands, download the sheet.
-// One background for everyone is enough. Mentors and each company can have
-// their own; a badge uses its company's, else the mentors', else everyone's.
+// One background for everyone is enough. Mentors, teachers (event only, Nov
+// 2026) and each company can have their own; a mentor's or teacher's badge uses
+// theirs, else their company's, else everyone's. "Teachers only" prints just the
+// teachers' badges, a separate run for their packets.
 //
 // Two scopes (30 Oct 2026): with `eventSlug`, one event's own backgrounds, where
 // an Everyone or Mentors slot without its own uses the theme's default; without,
@@ -75,8 +77,9 @@ export default function EventBadges({
   // teacher one packet at check-in; the code lets the desk scan the badge.
   const [bySchool, setBySchool] = useState(false)
   const [codes, setCodes] = useState(false)
+  const [teachersOnly, setTeachersOnly] = useState(false)
   const spec = BADGE_FORMATS[format]
-  const downloadHref = `${base}/badges?format=${format}${bySchool ? '&order=school' : ''}${codes ? '&codes=1' : ''}`
+  const downloadHref = `${base}/badges?format=${format}${bySchool ? '&order=school' : ''}${codes ? '&codes=1' : ''}${teachersOnly ? '&who=teachers' : ''}`
 
   async function load() {
     const res = await fetch(`${base}/badge-templates`)
@@ -96,6 +99,11 @@ export default function EventBadges({
   const rows: Row[] = [
     { key: 'everyone', audience: 'everyone', companyId: null, label: 'Everyone', who: 'Every badge without its own background below.', fallback: 'Plain badges (name, role, event).' },
     { key: 'mentors', audience: 'mentors', companyId: null, label: 'Mentors', who: 'Optional. Volunteer mentors and anyone registered as a mentor.', fallback: usesEveryone },
+    // Event only: there is no theme default for teachers, so without their own
+    // they print on Everyone's (the event's, else the theme default).
+    ...(eventSlug
+      ? [{ key: 'teachers', audience: 'teachers' as const, companyId: null, label: 'Teachers', who: 'Optional. Everyone registered as a teacher.', fallback: usesEveryone }]
+      : []),
     ...(eventSlug ? companies : []).map((c) => ({
       key: `company-${c.id}`,
       audience: 'company' as const,
@@ -108,7 +116,7 @@ export default function EventBadges({
   const templateFor = (r: Row) =>
     templates?.find((t) => t.format === format && t.audience === r.audience && t.company_id === r.companyId) ?? null
   // The theme default a slot falls back to (event scope; never for a company).
-  const inheritedRow = (r: Row) => (eventSlug && r.audience !== 'company' ? inheritedFor(r.audience) : null)
+  const inheritedRow = (r: Row) => (eventSlug && r.audience !== 'company' && r.audience !== 'teachers' ? inheritedFor(r.audience) : null)
 
   async function save(r: Row, body: Record<string, unknown>) {
     const res = await fetch(`${base}/badge-templates`, {
@@ -168,7 +176,7 @@ export default function EventBadges({
                 {defaults.length > 0
                   ? `Badges use the ${themeLabel} default unless you upload this event’s own;`
                   : `There is no ${themeLabel} default yet, so upload this event’s own;`}{' '}
-                give mentors or a company their own to tell them apart.
+                give mentors, teachers or a company their own to tell them apart.
                 {canEditDefaults && (
                   <>
                     {' '}
@@ -192,7 +200,7 @@ export default function EventBadges({
             href={downloadHref}
             className="inline-block text-sm font-medium bg-brand-blue text-white rounded-lg px-3 py-1.5"
           >
-            Download {spec.label} PDF
+            Download {teachersOnly ? 'teacher ' : ''}{spec.label} PDF
           </a>
         )
       }
@@ -230,6 +238,13 @@ export default function EventBadges({
             <input type="checkbox" checked={codes} onChange={(e) => setCodes(e.target.checked)} className="h-5 w-5 accent-primary" />
             Add check-in QR codes
             <span className="text-xs text-content-muted">(bottom-right corner: keep it clear in the artwork)</span>
+          </label>
+          <label className="inline-flex min-h-11 cursor-pointer items-center gap-2 text-sm text-content-body">
+            <input type="checkbox" checked={teachersOnly} onChange={(e) => setTeachersOnly(e.target.checked)} className="h-5 w-5 accent-primary" />
+            Teachers only
+            <span className="text-xs text-content-muted">
+              ({own('teachers') ? 'on the Teachers background' : hasEveryone ? 'no Teachers background yet, so the Everyone one' : 'plain badges'})
+            </span>
           </label>
         </div>
       )}

@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { STELLR_TENANT_ID } from '@/lib/tenancy/constants'
 
 // removeEventParticipation only touches the DB, but importing the module pulls
 // in its grant-side collaborators. Stub them so the test exercises the removal
@@ -175,7 +176,8 @@ describe('recordEventParticipation: what it does, in order', () => {
     }) as never)
   })
 
-  const ROW = { member_id: 'mem1', event_slug: 'evt', event_title: 'The Event', event_year: 2027, status: 'approved' }
+  // S5 A8b: Stellr's id, written by the app (event participation is Stellr's alone).
+  const ROW = { member_id: 'mem1', event_slug: 'evt', tenant_id: STELLR_TENANT_ID, event_title: 'The Event', event_year: 2027, status: 'approved' }
   const ACTIVITY = {
     memberId: 'mem1',
     category: 'event',

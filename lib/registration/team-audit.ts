@@ -33,6 +33,8 @@ export const TEAM_PARTICIPANT_REMOVE_AUDIT = teamAuditSpec('registration.partici
 export const TEAM_SHEET_SYNC_AUDIT = teamAuditSpec('registration.roster.sheet_sync')
 export const TEAM_AGREEMENT_RESEND_AUDIT = teamAuditSpec('agreement.reminder.send')
 export const TEAM_SEAT_PAYMENT_LINK_AUDIT = teamAuditSpec('registration.seat_payment_link.create')
+export const TEAM_ADDON_BOOK_AUDIT = teamAuditSpec('registration.addon.book')
+export const ADDON_PAYMENT_START_AUDIT = teamAuditSpec('registration.addon_payment.start')
 
 /** withAudit's spec for a team route. */
 function teamAuditSpec(action: AuditAction) {

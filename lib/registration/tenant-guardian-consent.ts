@@ -775,8 +775,9 @@ export interface ConsentSweepResult {
  * settles it signed) or is part-way through finalising (held). A declined or
  * expired consent whose removal failed is tried again, up to MAX_REMOVAL_ATTEMPTS,
  * then escalated to Stellr's platform staff. A consent envelope left open after a correction to 18 or
- * over settled its pending row, or left from an earlier registration, is voided. Run daily, behind the flag,
- * from the membership-expiry cron.
+ * over settled its pending row, or left from an earlier registration, is voided. Run daily from the
+ * membership-expiry cron, whenever an unsigned row exists (tenantGuardianConsentWorkWaiting), whatever
+ * TENANT_GUARDIAN_CONSENT_ENABLED says: it expires, removes and voids, and never admits anyone.
  */
 export async function sweepTenantGuardianConsents(
   db: SupabaseClient,
@@ -1066,4 +1067,46 @@ export async function pendingConsentParticipantIds(db: SupabaseClient, participa
     }
   }
   return pending
+}
+
+// ── Staff resend and the sweep's gate ───────────────────────────────────────
+
+/** A participant's pending consent, as the staff resend needs it. */
+export interface PendingConsent {
+  id: string
+  tenant_id: string
+  registration_id: string
+  /** The consent envelope; NULL when none was issued, or after a move. */
+  agreement_id: string | null
+}
+
+/**
+ * The participant's pending guardian consent on another organiser's event, for the
+ * staff resend (tracker T-23, s5-programme.23). Null when there is none: no row, a
+ * row that is not pending (signed, settled, or declined or expired and being
+ * removed), or a Stellr row (Stellr's events have none). Throws on a failed read.
+ */
+export async function pendingConsentForParticipant(db: SupabaseClient, participantId: string): Promise<PendingConsent | null> {
+  const { data, error } = await db
+    .from('tenant_guardian_consents')
+    .select('id, tenant_id, registration_id, agreement_id')
+    .eq('participant_id', participantId)
+    .eq('status', 'pending')
+    .maybeSingle()
+  if (error) throw new Error(`Reading the guardian consent failed: ${error.message}`)
+  const row = data as PendingConsent | null
+  return row && isTenantRow(row.tenant_id) ? row : null
+}
+
+/**
+ * Whether the daily sweep has anything to settle (tracker s5-programme.26): any
+ * consent row that is not signed. The participant trigger opens pending rows
+ * whatever TENANT_GUARDIAN_CONSENT_ENABLED says, so the sweep runs whenever this is
+ * true, flag or no flag. A settled row counts: its envelope may still be open. Reads
+ * one id at most. Throws on a failed read.
+ */
+export async function tenantGuardianConsentWorkWaiting(db: SupabaseClient): Promise<boolean> {
+  const { data, error } = await db.from('tenant_guardian_consents').select('id').neq('status', 'signed').limit(1)
+  if (error) throw new Error(`Reading guardian consents failed: ${error.message}`)
+  return (data ?? []).length > 0
 }

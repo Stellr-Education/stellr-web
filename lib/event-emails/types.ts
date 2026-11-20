@@ -1,4 +1,4 @@
-// Shared vocabulary for the event "Email Reminders" tab. Pure — safe to import
+// Shared vocabulary for the event "Email Engagement" tab. Pure — safe to import
 // from client components.
 
 export const AUDIENCES = [
@@ -6,7 +6,7 @@ export const AUDIENCES = [
   { key: 'guardians',            label: 'Parents / legal guardians',    hint: 'The nominated parent or guardian of each minor' },
   { key: 'mentors',              label: 'Mentors',                      hint: 'Assigned volunteers and this event’s event managers' },
   { key: 'docusign_outstanding', label: 'Outstanding DocuSigns',        hint: 'The participant and their parent/guardian' },
-  { key: 'payment_outstanding',  label: 'Outstanding payments',         hint: 'The participant, their parent/guardian, and the teacher for group registrations' },
+  { key: 'payment_outstanding',  label: 'Outstanding payments',         hint: 'Invoiced or group-paid places: only the teacher or student manager who registered the group, and their teacher contact. Places paid by their own link: the person, their parent/guardian, and the group’s organiser' },
   { key: 'team_profile_outstanding', label: 'Outstanding team profiles', hint: 'Students whose forms are signed but who haven’t submitted a team profile, and their parent/guardian' },
   // After the event: whoever actually came (lib/event-emails/audiences.ts).
   { key: 'attendees',            label: 'All attendees',                hint: 'Everyone checked in at the event: students, student managers, teachers, mentors and event managers' },
@@ -18,12 +18,13 @@ export function isAudienceKey(v: unknown): v is AudienceKey {
   return typeof v === 'string' && AUDIENCES.some((a) => a.key === v)
 }
 
-export type RecipientRole = 'participant' | 'guardian' | 'teacher' | 'volunteer' | 'event_manager'
+export type RecipientRole = 'participant' | 'guardian' | 'teacher' | 'student_manager' | 'volunteer' | 'event_manager'
 
 export const ROLE_LABEL: Record<RecipientRole, string> = {
   participant:   'Participant',
   guardian:      'Parent/guardian',
   teacher:       'Teacher',
+  student_manager: 'Student manager',
   volunteer:     'Volunteer',
   event_manager: 'Event manager',
 }
@@ -59,6 +60,17 @@ export interface EventEmailRow {
   tenant_id?: string | null
 }
 
+/**
+ * One recipient's state on a run (event_email_sends.recipients):
+ * - 'sent' / 'queued' (outbox) / 'suppressed' (our suppression list) / 'failed';
+ * - 'sending' (since 18 Nov 2026): written just before the message goes to
+ *   Resend. Left like that only when the run was killed mid-send: the message
+ *   may or may not have gone, and it is never sent again automatically;
+ * - 'not_reached' (since 18 Nov 2026): the run stopped (time limit, daily
+ *   budget) before their turn. Not tried; the next run picks them up.
+ */
+export type RecipientSendStatus = 'sent' | 'failed' | 'suppressed' | 'queued' | 'sending' | 'not_reached'
+
 export interface EventEmailSendRow {
   id: string
   event_email_id: string | null
@@ -72,7 +84,15 @@ export interface EventEmailSendRow {
   failed_count: number
   docusign_resent: number
   /** memberId: the recipient's own members row, on sends recorded since Nov 2026 (admin link). */
-  recipients: { email: string; name: string; memberId?: string | null; roles: RecipientRole[]; status: 'sent' | 'failed'; error?: string }[]
+  /**
+   * status: 'suppressed' = skipped by our suppression list (an earlier bounce or
+   * complaint); 'queued' = parked in the outbox by the daily budget and sent
+   * from there (since 17 Nov 2026 — before that both were recorded as 'sent').
+   * resendId: Resend's id for the message, when it was handed to Resend.
+   */
+  recipients: { email: string; name: string; memberId?: string | null; roles: RecipientRole[]; status: RecipientSendStatus; error?: string; resendId?: string
+    /** Added by the History API, never stored: the address is now on the suppression list. */
+    blocked?: 'bounce' | 'complaint' | 'unsubscribe' | 'manual' }[]
   started_at: string
   finished_at: string | null
 }

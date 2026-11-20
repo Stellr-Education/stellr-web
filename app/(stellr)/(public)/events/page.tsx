@@ -10,6 +10,7 @@ import { CARD_IMAGE_SIZES } from '@/components/ui/CoverImage'
 import { EventsBoard, type BoardItem } from '@/components/sections/EventsBoard'
 import { BookCallButton } from '@/components/sections/BookCallButton'
 import { matchesGradeFilter } from '@/lib/grade-band'
+import { getAddonKindsBySlug } from '@/lib/addons/catalog'
 
 export const metadata: Metadata = {
   alternates: { canonical: '/events' },
@@ -34,9 +35,10 @@ type GridItem =
 const NO_DATE = '9999-12-31'
 
 export default async function EventsPage() {
-  const [rawEvents, rawCampaigns] = await Promise.all([
+  const [rawEvents, rawCampaigns, extrasBySlug] = await Promise.all([
     getAllEvents().catch(() => []) as Promise<StellarEvent[]>,
     getAllCampaigns().catch(() => []) as Promise<StellarEvent[]>,
+    getAddonKindsBySlug(),
   ])
 
   const events: GridItem[] = (rawEvents ?? []).map((e) => ({
@@ -96,7 +98,7 @@ export default async function EventsPage() {
       <EventsBoard items={items.map((i) => i.filter)}>
         {items.map((item) =>
           item.kind === 'event' ? (
-            <EventCard key={item.event._id} event={item.event} />
+            <EventCard key={item.event._id} event={item.event} extras={extrasBySlug[item.event.slug.current] ?? []} />
           ) : (
             <CampaignGridCard key={item.campaign.slug} campaign={item.campaign} />
           ),

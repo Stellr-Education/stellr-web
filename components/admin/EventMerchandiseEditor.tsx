@@ -71,8 +71,8 @@ export function EventMerchandiseEditor({ eventSlug }: { eventSlug: string }) {
   return (
     <div className="bg-white rounded-xl border border-brand-border p-5">
       <p className="mb-3 text-xs text-brand-muted-soft">
-        Included items are given free to every participant, auto-sized from their t-shirt size at confirmation. Add-ons
-        are paid extras. Items are fulfilled in one bulk order to the venue (committed by the Event Manager).
+        Included items are given free to every participant, sized from their t-shirt size at confirmation. Paid merch
+        is set up under Add-ons. Everything is fulfilled in one bulk order to the venue (committed by the Event Manager).
       </p>
 
       {loading ? (
@@ -88,7 +88,7 @@ export function EventMerchandiseEditor({ eventSlug }: { eventSlug: string }) {
                     (o.treatment === 'included' ? 'bg-amber-100 text-amber-800' : 'bg-brand-blue/10 text-brand-blue')
                   }
                 >
-                  {o.treatment === 'included' ? 'Included' : 'Add-on'}
+                  {o.treatment === 'included' ? 'Included' : 'Add-on (now under Add-ons)'}
                 </span>
                 <span className="font-medium text-brand-blue-dark">{o.productName ?? 'Product'}</span>
                 {o.label && <span className="text-brand-muted-soft"> — {o.label}</span>}
@@ -134,7 +134,6 @@ export function EventMerchandiseEditor({ eventSlug }: { eventSlug: string }) {
           className="rounded-md border border-line-strong px-2 py-1 text-input mouse:text-sm"
         >
           <option value="included">Included (free)</option>
-          <option value="addon">Add-on (paid)</option>
         </select>
         <button
           onClick={add}

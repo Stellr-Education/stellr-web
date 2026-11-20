@@ -211,7 +211,7 @@ export function BillingHistory({ readOnly = false }: BillingHistoryProps = {}) {
                   <th className="px-6 py-3 font-medium text-brand-muted-soft text-xs uppercase tracking-wide">School</th>
                   <th className="px-6 py-3 font-medium text-brand-muted-soft text-xs uppercase tracking-wide">Organizer</th>
                   <th className="px-6 py-3 font-medium text-brand-muted-soft text-xs uppercase tracking-wide">Payment</th>
-                  <th className="px-6 py-3 font-medium text-brand-muted-soft text-xs uppercase tracking-wide">Receipt</th>
+                  <th className="px-6 py-3 font-medium text-brand-muted-soft text-xs uppercase tracking-wide">Documents</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-brand-hairline">
@@ -264,14 +264,23 @@ export function BillingHistory({ readOnly = false }: BillingHistoryProps = {}) {
                           readOnly ? (
                             <span className="text-xs text-brand-muted-soft">Available</span>
                           ) : (
-                            <a
-                              href={`/api/members/billing/receipt?participation=${p.id}`}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="text-brand-blue hover:text-brand-blue-dark text-xs font-medium"
-                            >
-                              Download
-                            </a>
+                            <div className="flex flex-col gap-1">
+                              <a
+                                href={`/api/members/billing/receipt?participation=${p.id}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-primary hover:text-ink text-xs font-medium"
+                              >
+                                Receipt
+                              </a>
+                              {/* Stripe's paid invoice PDF, or a paid invoice Stellr issues for the payment. */}
+                              <a
+                                href={`/api/members/billing/paid-invoice?participation=${p.id}`}
+                                className="text-primary hover:text-ink text-xs font-medium"
+                              >
+                                Invoice
+                              </a>
+                            </div>
                           )
                         ) : (
                           <span className="text-xs text-brand-muted-soft">—</span>

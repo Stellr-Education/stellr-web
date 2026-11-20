@@ -21,8 +21,12 @@
  * the high-school range twice. One source now.
  */
 
-/** Bounds of the K-12 range. A band is clamped into this before anything reads it. */
-const FLOOR = 1
+/**
+ * Bounds of the range Stellr accepts. Grade 7 is the youngest grade any event or
+ * Classroom Qualifier takes (owner, 16 Nov 2026); a band is clamped into this
+ * before anything reads it, so a Studio override of 6 still reads 7.
+ */
+const FLOOR = 7
 const CEILING = 12
 
 /** Where high school starts. Below this a grade is middle school or younger. */
@@ -39,7 +43,7 @@ export interface GradeBand {
   min: number
   /** Highest eligible grade. */
   max: number
-  /** Pill text — "High School", or "Grades 7–12" when the band is an override. */
+  /** Pill text — always the range, e.g. "Grades 9–12" or "Grades 7–12". */
   label: string
   /** Full audience clause: "middle and high school students (grades 7–12)". */
   audience: string
@@ -53,9 +57,9 @@ export interface GradeBand {
 function defaultBand(gradeLevel?: string | null): { min: number; max: number } {
   switch (gradeLevel?.trim()) {
     case 'Middle School':
-      return { min: 6, max: 8 }
+      return { min: 7, max: 8 }
     case 'Both':
-      return { min: 6, max: 12 }
+      return { min: 7, max: 12 }
     // "High School", and anything unset or unrecognised, keeps the historic
     // default — the same fallback the two forked copies of this used.
     default:
@@ -91,9 +95,10 @@ export function gradeBand(input: GradeBandInput): GradeBand {
   return {
     min,
     max,
-    // An override names the grades outright — "High School" would be a lie on a
-    // 7–12 event, and "Both" tells a teacher nothing about where it starts.
-    label: hasOverride ? `Grades ${min}–${max}` : (gradeLevel?.trim() || 'High School'),
+    // Always the grades outright: "High School" would be a lie on a 7–12 event,
+    // and "Both" tells a teacher nothing about where it starts. One wording on
+    // every card and hero (owner, 16 Nov 2026).
+    label: `Grades ${min}–${max}`,
     audience: `${audienceShort} students (grades ${min}–${max})`,
     audienceShort,
     isOverride: hasOverride,

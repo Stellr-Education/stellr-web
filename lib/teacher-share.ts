@@ -3,6 +3,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { getEventBySlug } from '@/lib/events/repo'
 import { isAdultRole, isSharedGroup, payerOf, type PayerGroup } from '@/lib/group-payer'
 import type { CouponTerms } from '@/lib/group-billing'
+import { checkoutInvoiceParams } from '@/lib/payments/checkout-invoice'
 import type { ParticipantRow, RegistrationRow } from '@/lib/database.types'
 
 // Students share the teacher's cost (9 Nov 2026). Owner decisions, recorded in
@@ -490,6 +491,8 @@ export interface SharedSeatCheckoutOptions {
   registrationId: string
   eventSlug: string
   eventTitle: string
+  /** Whose place this is, for the invoice description. */
+  participantName?: string | null
   successUrl: string
   cancelUrl: string
   /** What the student typed, if anything. */
@@ -599,6 +602,14 @@ export async function createSharedSeatCheckout(db: Db, stripe: Stripe, opts: Sha
       },
     })
   }
+  // A paid invoice and an emailed receipt for the place (lib/payments/checkout-invoice.ts).
+  const invoiceParams = checkoutInvoiceParams({
+    registrationId: opts.registrationId,
+    eventSlug: opts.eventSlug,
+    eventTitle: opts.eventTitle,
+    participantId: opts.participantId,
+    forName: opts.participantName ?? null,
+  })
   const session = await stripe.checkout.sessions.create({
     custom_text: GUARANTEE_CHECKOUT_TEXT,
     mode: 'payment',
@@ -616,7 +627,9 @@ export async function createSharedSeatCheckout(db: Db, stripe: Stripe, opts: Sha
       shareCents: String(charge.shareCents),
       ...(discount.code ? { discountCode: discount.code } : {}),
     },
+    ...invoiceParams,
     payment_intent_data: {
+      ...invoiceParams.payment_intent_data,
       metadata: { registrationId: opts.registrationId, participantId: opts.participantId, teacherShare: 'true' },
     },
     success_url: opts.successUrl,

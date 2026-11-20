@@ -1,6 +1,7 @@
 'use client'
 
 import { Button } from '@stellr/web-ui'
+import Link from '@/components/ui/SiteLink'
 import { useMemberCampaigns } from './useMemberCampaigns'
 
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? 'https://app.stellreducation.org'
@@ -64,14 +65,33 @@ export function CampaignMembershipNote({
   )
 }
 
-/** A campaign card's action: "Registered" or "Register group". */
-export function CampaignCardAction({ slug, registered: initialRegistered = false }: { slug: string; registered?: boolean }) {
+/**
+ * A Qualifier card's action, styled like a Challenge card's "Register Now":
+ * "Registered" for a member already in (whatever the window is doing), "Compete
+ * Now" while registration is open, and nothing otherwise — the card's details
+ * link is then the only way on, as on a closed Challenge card.
+ */
+export function CampaignCardAction({
+  slug,
+  isOpen = true,
+  registered: initialRegistered = false,
+}: {
+  slug: string
+  isOpen?: boolean
+  registered?: boolean
+}) {
   const registered = useRegistered(slug, initialRegistered)
-  return registered ? (
-    <span className="rounded-pill bg-enviro-green-bg px-3 py-1 text-xs font-semibold text-enviro-green-text">Registered</span>
-  ) : (
-    <Button href={`/register/${slug}/group`} variant="primaryStrong" className="!px-4 !py-2 text-sm">
-      Register group →
-    </Button>
+  if (registered) {
+    return (
+      <span className="rounded-pill bg-enviro-green-bg px-3 py-1 text-xs font-semibold text-enviro-green-text">Registered</span>
+    )
+  }
+  if (!isOpen) return null
+  // No prefetch: /register is dynamic, so every card in view would render it
+  // on the server (Vercel Hobby CPU, 21 Oct 2026) — same as EventCard.
+  return (
+    <Link prefetch={false} href={`/register/${slug}/group`} className="btn-energy !px-4 !py-2">
+      Compete Now
+    </Link>
   )
 }

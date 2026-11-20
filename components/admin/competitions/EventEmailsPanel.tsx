@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Collapsible } from '@stellr/web-ui'
 import { EVENT_EMAIL_DEFAULTS } from '@/lib/event-emails/defaults'
 import { scheduledSendDate } from '@/lib/event-emails/schedule'
@@ -8,6 +8,7 @@ import type { EventEmailTemplateRow } from '@/lib/event-emails/templates'
 import { AUDIENCES, type EventEmailRow, type EventEmailSendRow } from '@/lib/event-emails/types'
 import { EventEmailEditor } from './EventEmailEditor'
 import { EventEmailHistory } from './EventEmailHistory'
+import { groupSends } from '@/lib/event-emails/send-groups'
 
 const STATUS_PILL: Record<EventEmailRow['status'], { label: string; className: string }> = {
   draft:     { label: 'Draft',     className: 'bg-brand-hairline text-brand-muted' },
@@ -22,7 +23,7 @@ function shortDate(ymd: string): string {
   return new Date(`${ymd}T00:00:00Z`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' })
 }
 
-// The event's "Email Reminders" tab: compose, schedule and send merge-field
+// The event's "Email Engagement" tab: compose, schedule and send merge-field
 // emails to groups on this event's roster, and see what has been sent.
 export function EventEmailsPanel({ eventSlug, eventDate }: { eventSlug: string; eventDate: string | null }) {
   const [emails, setEmails] = useState<EventEmailRow[]>([])
@@ -54,6 +55,9 @@ export function EventEmailsPanel({ eventSlug, eventDate }: { eventSlug: string; 
 
   useEffect(() => { void load() }, [load])
   useEffect(() => { void loadTemplates() }, [loadTemplates])
+
+  // History shows an email's runs as one send, so count sends, not runs.
+  const sendCount = useMemo(() => groupSends(history, emails).length, [history, emails])
 
   const sortTemplates = (list: EventEmailTemplateRow[]) => [...list].sort((a, b) => a.name.localeCompare(b.name))
 
@@ -233,10 +237,18 @@ export function EventEmailsPanel({ eventSlug, eventDate }: { eventSlug: string; 
       <Collapsible
         id="emails-history"
         title="History"
-        summary={`${history.length} send${history.length === 1 ? '' : 's'}`}
+        summary={`${sendCount} send${sendCount === 1 ? '' : 's'}`}
         bodyClassName="p-4"
       >
-        <EventEmailHistory history={history} />
+        <EventEmailHistory
+          history={history}
+          emails={emails}
+          onOpenEmail={(id) => {
+            setSelected(id)
+            // The editor (with "Resume now") renders once selected.
+            requestAnimationFrame(() => document.querySelector('[data-email-editor]')?.scrollIntoView({ behavior: 'smooth', block: 'start' }))
+          }}
+        />
       </Collapsible>
     </div>
   )

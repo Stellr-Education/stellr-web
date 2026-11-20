@@ -145,6 +145,8 @@ export async function GET(
       token: freshToken,
       registration_id: id,
       event_slug: regAny.event_slug,
+      // S5 A8b: the registration's tenant, already checked against this host's above.
+      tenant_id: rowTenant(registration.tenant_id),
       event_title: regAny.event_title,
       expires_at: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
     })
