@@ -35,7 +35,8 @@ export interface IndividualBody {
   emergency_contact_email: string
   emergency_contact_phone: string
   emergency_contact_relationship: string
-  merch_addons?: { variantId: string; qty: number }[]
+  /** Extras chosen on the form (lib/addons/registration.ts), booked once the place is saved. */
+  extras?: unknown
 }
 
 /**

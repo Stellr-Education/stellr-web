@@ -60,7 +60,7 @@ async function readSurvey(req: Request, { params }: Ctx) {
   const db = supabaseServer()
   const view = await adminSurveyView(db, slug, new Date(), () => loadEventTenantId(db, slug))
   if (view.rows.length) {
-    await logSurveyAccess(db, { actor: crew.userId, action: 'view', eventSlug: slug, distributionId: view.distribution?.id, rowCount: view.rows.length, detail: { what: 'completion_table' } })
+    await logSurveyAccess(db, { actor: crew.userId, tenantId: crew.tenantId, action: 'view', eventSlug: slug, distributionId: view.distribution?.id, rowCount: view.rows.length, detail: { what: 'completion_table' } })
   }
   noteAuditSubject(req, { id: view.distribution?.id ?? null })
   return NextResponse.json({ ...view, isAdmin: crew.isAdmin || (await hasCapability('competitions:write', { route: ROUTE })) })

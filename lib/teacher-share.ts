@@ -3,7 +3,9 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { getEventBySlug } from '@/lib/events/repo'
 import { isAdultRole, isSharedGroup, payerOf, type PayerGroup } from '@/lib/group-payer'
 import type { CouponTerms } from '@/lib/group-billing'
+import { checkoutInvoiceParams } from '@/lib/payments/checkout-invoice'
 import type { ParticipantRow, RegistrationRow } from '@/lib/database.types'
+import { loadRegistrationTenantId } from '@/lib/tenancy/registration-tenant'
 
 // Students share the teacher's cost (9 Nov 2026). Owner decisions, recorded in
 // docs/PLAN-group-payment-options-2026-11-09.md:
@@ -229,7 +231,9 @@ async function refundShare(
   kind: 'share_true_up' | 'share_unwind',
 ): Promise<ShareRefund> {
   if (cents <= 0) return { participantId: p.id, cents: 0, refundId: null, error: null }
-  const row = { participant_id: p.id, registration_id: reg.id, member_id: p.member_id ?? null, event_slug: reg.event_slug, paid_cents: p.share_paid_cents, kind }
+  // S5 wave 8: the registration's tenant, explicit beside event_slug (Lane C optional-event writers).
+  const tenantId = await loadRegistrationTenantId(db, reg.id)
+  const row = { tenant_id: tenantId, participant_id: p.id, registration_id: reg.id, member_id: p.member_id ?? null, event_slug: reg.event_slug, paid_cents: p.share_paid_cents, kind }
   if (!p.stripe_payment_intent_id) {
     const error = 'no payment recorded to refund against'
     await db.from('event_refunds').insert({ ...row, refund_type: 'manual_required', refund_cents: cents })
@@ -490,6 +494,8 @@ export interface SharedSeatCheckoutOptions {
   registrationId: string
   eventSlug: string
   eventTitle: string
+  /** Whose place this is, for the invoice description. */
+  participantName?: string | null
   successUrl: string
   cancelUrl: string
   /** What the student typed, if anything. */
@@ -599,6 +605,14 @@ export async function createSharedSeatCheckout(db: Db, stripe: Stripe, opts: Sha
       },
     })
   }
+  // A paid invoice and an emailed receipt for the place (lib/payments/checkout-invoice.ts).
+  const invoiceParams = checkoutInvoiceParams({
+    registrationId: opts.registrationId,
+    eventSlug: opts.eventSlug,
+    eventTitle: opts.eventTitle,
+    participantId: opts.participantId,
+    forName: opts.participantName ?? null,
+  })
   const session = await stripe.checkout.sessions.create({
     custom_text: GUARANTEE_CHECKOUT_TEXT,
     mode: 'payment',
@@ -616,7 +630,9 @@ export async function createSharedSeatCheckout(db: Db, stripe: Stripe, opts: Sha
       shareCents: String(charge.shareCents),
       ...(discount.code ? { discountCode: discount.code } : {}),
     },
+    ...invoiceParams,
     payment_intent_data: {
+      ...invoiceParams.payment_intent_data,
       metadata: { registrationId: opts.registrationId, participantId: opts.participantId, teacherShare: 'true' },
     },
     success_url: opts.successUrl,

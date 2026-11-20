@@ -1,4 +1,4 @@
-// The starter emails for the "Email Reminders" tab, generalised from the
+// The starter emails for the "Email Engagement" tab, generalised from the
 // Colorado SDC emails sent by hand on 26–28 Sept 2026. Copy approved in the
 // plan review; tone per VOICE.md ("Transactional emails: warm but functional").
 //

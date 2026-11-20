@@ -2,6 +2,6 @@
 # back for a fresh look. docs/RUNBOOK-security-scans.md.
 
 [[IgnoredVulns]]
-id = "GHSA-gcqx-w48m-w2h4"
-ignoreUntil = 2027-02-05
-reason = "deepmerge 4.3.1 has no fixed release. It is a dev dependency of style-dictionary, which only merges this repo's own design/tokens.json at build time, so no outside input reaches it and it is not in the app's runtime. Re-check for a fixed release, or a style-dictionary without it, by the expiry."
+id = "GHSA-fc5q-39xc-vjpf"
+ignoreUntil = 2027-02-17
+reason = "picomatch ReDoS on single-branch repeated extglobs (published 19 Oct 2026). No fixed release on any line on 17 Nov 2026: the advisory covers <= 4.0.7, and 2.3.2 and 4.0.7 are the newest 2.x and 4.x. Every copy is build, test or CI tooling (fast-glob via @next/eslint-plugin-next; vite, vitest, @rollup/pluginutils via Storybook, @rolldown/plugin-babel; @sanity/cli; tinyglobby via lockfile-lint), matching glob patterns from this repo's own config. Nothing in app/, lib/ or components/ imports a glob matcher, so no outside input reaches it. When a fixed picomatch ships, bump it (an override if a parent pins the range) and delete this entry."

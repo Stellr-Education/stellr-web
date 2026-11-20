@@ -37,8 +37,11 @@ gives them Stellr's id. Every exception is caught. The reasons are:
 - `no_key`: the event key is null and the row has no `tenant_id`. Enforce
   refuses these. They are expected on tables where the event is optional:
   `store_orders`, `member_groups`, `refund_policies`, `community_resources`,
-  `community_spaces`, `mentoring_cohorts` and `training_modules`. The app must
-  write an explicit `tenant_id` on those tables before enforce (S5).
+  `community_spaces`, `mentoring_cohorts` and `training_modules`, and (found in
+  S5 wave 8, A8b) `credentials`, `event_participations`, `event_refunds`,
+  `group_invoices`, `scholarship_applications`, `store_event_discounts`,
+  `survey_access_log` and `survey_responses`, whose `event_slug` is nullable.
+  The app must write an explicit `tenant_id` on those tables before enforce (S5).
 - `no_event`: the key is set, the mirror has no such event, and the row has
   no `tenant_id`. **Orphan.**
 - `mismatch`: a `tenant_id` on the row disagrees with the event's tenant. The

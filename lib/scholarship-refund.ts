@@ -5,6 +5,7 @@ import { assertLiveCredentials } from '@/lib/env-guards'
 import { logActivity } from '@/lib/activity-log'
 import { stripeRefundState, remainingCents } from '@/lib/refunds/stripe-state'
 import { discountedCents, formatUsd } from '@/lib/scholarship-levels'
+import { loadRegistrationTenantId } from '@/lib/tenancy/registration-tenant'
 
 // The reimbursement for a scholarship awarded after the student had already
 // registered and paid (owner, 2 Oct 2026). Plan: docs/PLAN-scholarship-offers-2026-10-02.md.
@@ -21,8 +22,6 @@ import { discountedCents, formatUsd } from '@/lib/scholarship-levels'
 // path ignores (lib/refunds/execute.ts) — the student is still registered.
 // Card refunds carry metadata.source='stellr_app' so the charge.refunded
 // webhook doesn't record them again as made-in-the-dashboard.
-
-export type ScholarshipRefundMethod = 'cash' | 'credit'
 
 export interface ScholarshipRefundQuote {
   /**
@@ -75,6 +74,11 @@ async function feePaidFromCheckout(stripe: Stripe, paymentIntentId: string, pric
   }
 }
 
+/** The quote for a registration that cannot be found (or, C20b, is not one of Stellr's). */
+export function registrationNotFoundQuote(): ScholarshipRefundQuote {
+  return { refundCents: 0, feeCents: null, feePaidCents: null, targetCents: null, currency: 'usd', status: 'manual', detail: 'Registration not found' }
+}
+
 export async function quoteScholarshipRefund(
   db: SupabaseClient,
   stripe: Stripe | null,
@@ -83,7 +87,7 @@ export async function quoteScholarshipRefund(
 ): Promise<ScholarshipRefundQuote> {
   const base = { refundCents: 0, feeCents: null, feePaidCents: null, targetCents: null, currency: 'usd' }
   const reg = await loadRegistration(db, registrationId)
-  if (!reg) return { ...base, status: 'manual', detail: 'Registration not found' }
+  if (!reg) return registrationNotFoundQuote()
   if (reg.status !== 'confirmed') {
     return { ...base, status: 'not_paid', detail: 'Not paid yet — the scholarship comes off at checkout' }
   }
@@ -93,7 +97,7 @@ export async function quoteScholarshipRefund(
     .select('refund_cents, refund_type')
     .eq('registration_id', registrationId)
     .eq('kind', 'scholarship')
-    .in('refund_type', ['cash', 'credit'])
+    .eq('refund_type', 'cash')
     .limit(1)
   const done = (prior ?? [])[0] as { refund_cents: number | null; refund_type: string } | undefined
   if (done) {
@@ -101,7 +105,7 @@ export async function quoteScholarshipRefund(
       ...base,
       status: 'already_done',
       refundCents: done.refund_cents ?? 0,
-      detail: `Scholarship reimbursement already issued (${formatUsd(done.refund_cents ?? 0)} ${done.refund_type === 'credit' ? 'credit' : 'refund'})`,
+      detail: `Scholarship reimbursement already issued (${formatUsd(done.refund_cents ?? 0)} refund)`,
     }
   }
 
@@ -148,11 +152,10 @@ export async function quoteScholarshipRefund(
 }
 
 export interface ScholarshipRefundResult {
-  type: 'cash' | 'credit' | 'manual_required' | 'none'
+  type: 'cash' | 'manual_required' | 'none'
   refundCents: number
   detail: string
   stripeRefundId?: string
-  creditId?: string
 }
 
 /**
@@ -166,7 +169,6 @@ export async function issueScholarshipRefund(
     applicationId: string
     registrationId: string
     percent: number
-    method: ScholarshipRefundMethod
     actorMemberId: string | null
   },
 ): Promise<ScholarshipRefundResult> {
@@ -185,8 +187,11 @@ export async function issueScholarshipRefund(
     .maybeSingle()
   const participant = part as { id: string; member_id: string | null } | null
 
+  // S5 wave 8: the registration's tenant, explicit beside event_slug (Lane C optional-event writers).
+  const tenantId = await loadRegistrationTenantId(db, reg.id)
   const audit = async (result: ScholarshipRefundResult, note: string | null) => {
     const { error } = await db.from('event_refunds').insert({
+      tenant_id: tenantId,
       participant_id: participant?.id ?? null,
       registration_id: reg.id,
       member_id: participant?.member_id ?? null,
@@ -196,7 +201,6 @@ export async function issueScholarshipRefund(
       refund_pct: input.percent,
       refund_cents: result.refundCents,
       stripe_refund_id: result.stripeRefundId ?? null,
-      account_credit_id: result.creditId ?? null,
       decided_by: input.actorMemberId,
       source: 'admin',
       kind: 'scholarship',
@@ -212,47 +216,6 @@ export async function issueScholarshipRefund(
   if (quote.status === 'manual') {
     const result: ScholarshipRefundResult = { type: 'manual_required', refundCents: 0, detail: quote.detail }
     await audit(result, quote.detail)
-    return result
-  }
-
-  if (input.method === 'credit') {
-    if (!participant?.member_id) {
-      const result: ScholarshipRefundResult = { type: 'manual_required', refundCents: quote.refundCents, detail: 'No member account to hold the credit — reimburse manually' }
-      await audit(result, result.detail)
-      return result
-    }
-    // No expiry: this is the student's scholarship, not a cancellation credit.
-    const { data: credit, error } = await db
-      .from('account_credits')
-      .insert({
-        member_id: participant.member_id,
-        currency: quote.currency,
-        amount_cents: quote.refundCents,
-        remaining_cents: quote.refundCents,
-        source_type: 'scholarship',
-        source_participant_id: participant.id,
-        source_registration_id: reg.id,
-        reason: `${input.percent}% scholarship — ${reg.event_title}`,
-        expires_at: null,
-      })
-      .select('id')
-      .single()
-    if (error || !credit) {
-      const result: ScholarshipRefundResult = { type: 'manual_required', refundCents: quote.refundCents, detail: `Account credit could not be issued: ${error?.message ?? 'no row returned'}` }
-      await audit(result, result.detail)
-      return result
-    }
-    const result: ScholarshipRefundResult = { type: 'credit', refundCents: quote.refundCents, creditId: (credit as { id: string }).id, detail: `${amount} account credit issued` }
-    await audit(result, `${input.percent}% scholarship — ${quote.detail}`)
-    await logActivity({
-      memberId: participant.member_id,
-      category: 'billing',
-      action: 'scholarship_refund_issued',
-      summary: `Scholarship reimbursement — ${amount} account credit`,
-      metadata: { kind: 'credit', registrationId: reg.id, refundCents: quote.refundCents, scholarshipId: input.applicationId },
-      actorType: 'admin',
-      actorMemberId: input.actorMemberId,
-    }, db)
     return result
   }
 

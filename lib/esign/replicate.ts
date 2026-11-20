@@ -38,6 +38,34 @@ export const backupName = (
   return `${envelopeRow}-${kind}.${kind === 'audit' ? 'json' : 'pdf'}.enc`
 }
 
+/**
+ * The off-site copy of a record's signed PDF. Copies made since deep review
+ * ES-5 carry the first 16 hex of the PDF's SHA-256 in their name; copies made
+ * before it (and rows with no recorded hash) use the plain legacy name. Looks
+ * for the hash-named copy first, then the legacy one; with no hash at all,
+ * takes the newest copy whose name starts `<row>-signed`.
+ */
+export async function findSignedCopy(
+  store: BackupStore,
+  envelopeRow: string,
+  sha?: string | null,
+): Promise<{ name: string; bytes: Uint8Array } | null> {
+  const names = [...(sha ? [backupName(envelopeRow, 'signed', sha)] : []), backupName(envelopeRow, 'signed')]
+  for (const name of names) {
+    const bytes = await store.get(name)
+    if (bytes) return { name, bytes }
+  }
+  // No recorded hash to go on (the row is gone, or never had one): the newest
+  // signed copy is the sealed one when both a pre-seal and sealed copy exist.
+  if (!sha) {
+    for (const name of await store.list(SIGNED_BACKUP_PREFIX(envelopeRow))) {
+      const bytes = await store.get(name)
+      if (bytes) return { name, bytes }
+    }
+  }
+  return null
+}
+
 interface ReplicableRow {
   id: string
   provider: string | null

@@ -172,12 +172,13 @@ export const event = {
       description:
         'The broad bracket — drives the /events grade filter and the HubSpot demographic. ' +
         'Use "Both" for anything spanning middle and high school, then set the exact grades ' +
-        'below if the range is narrower than 6–12.',
+        'below if the range is narrower than 7–12.',
       options: { list: ['Middle School', 'High School', 'Both'] },
     },
 
     // ── Exact grade band (optional override) ──────────────────────────────────
-    // "High School" implies 9–12 and "Both" implies 6–12. Colorado 2027 opened to
+    // "High School" implies 9–12 and "Both" implies 7–12 (grade 7 is the youngest
+    // grade Stellr accepts). Colorado 2027 opened to
     // 7–12, which is neither — and the eligibility copy is generated rather than
     // authored, so there was no way to say it. Set BOTH of these and they become
     // the band; leave them blank and the bracket above decides, exactly as it
@@ -189,9 +190,9 @@ export const event = {
       description:
         'Optional. Set together with "Highest grade" to state the exact range — e.g. 7 and 12 ' +
         'for a grades 7–12 event. Leave both blank to inherit the bracket (High School = 9–12, ' +
-        'Middle School = 6–8, Both = 6–12). One without the other is ignored.',
+        'Middle School = 7–8, Both = 7–12). Grade 7 is the youngest we accept. One without the other is ignored.',
       validation: (Rule: { min: (n: number) => { max: (n: number) => unknown } }) =>
-        Rule.min(1).max(12),
+        Rule.min(7).max(12),
     },
     {
       name: 'gradeMax',
@@ -207,7 +208,7 @@ export const event = {
           }
         }
       }) =>
-        Rule.min(1)
+        Rule.min(7)
           .max(12)
           .custom((value, context) => {
             const min = context.document?.gradeMin

@@ -26,6 +26,8 @@ export interface DeskParticipant {
   company: DeskCompany | null
   merch: { name: string; qty: number }[]
   merchCollected: boolean
+  /** Extras to tick off at the desk: accommodation, tours (lib/addons). Absent on older payloads. */
+  extras?: { lineId: string; title: string; status: string; checkedAt: string | null }[]
 }
 
 /** A school group: one group registration, organised by a teacher. */
@@ -287,6 +289,8 @@ export interface QueuedAction {
   participantIds?: string[]
   /** A mentor or event manager (crew_check_in / crew_undo). */
   crewKey?: string
+  /** An add-on line (addon_checked / addon_unchecked). */
+  lineId?: string
   code?: string
   /** When the tap happened (ISO). */
   at?: string

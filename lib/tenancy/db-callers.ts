@@ -43,6 +43,10 @@ export const TENANT_DB_CALLERS: readonly string[] = [
   // through the kit and this module, so it is not listed itself.
   'lib/events/admin-config.ts',
   'lib/events/admin-config.test.ts',
+  // The events facade with a tenant (C8-PG callers, S5 wave 8): the 'events-read' area.
+  // Its two-tenant test is test/integration/two-tenant/events-read.int.test.ts.
+  'lib/events/tenant-facade.ts',
+  'lib/events/tenant-facade.test.ts',
   // The pooler TLS canary (S5 wave 7, O3): a script the owner runs by hand
   // against the dev pooler, through tenantDb as the app runs it. Never bundled:
   // scripts/tenant-db-canary.test.ts holds lib/, app/, components/ and packages/

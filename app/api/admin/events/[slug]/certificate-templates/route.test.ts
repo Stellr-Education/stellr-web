@@ -13,7 +13,9 @@ const h = vi.hoisted(() => ({
 
 vi.mock('@/lib/supabase', () => ({
   supabaseServer: () => ({
-    from: () => ({
+    from: (table: string) => ({
+      // The events mirror, for stellrOnlyEvent (C19a): a slug it does not hold is Stellr's.
+      ...(table === 'events' ? { select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: null, error: null }) }) }) } : {}),
       upsert: async (row: Record<string, unknown>) => {
         h.calls.push({ op: 'upsert', row, filters: [] })
         return row.artwork_path
@@ -32,7 +34,10 @@ vi.mock('@/lib/supabase', () => ({
     }),
   }),
 }))
-vi.mock('@/lib/event-access', () => ({ requireEventAccess: async () => ({ ok: true }) }))
+vi.mock('@/lib/authz', async () => {
+  const { eventRouteFor } = await import('@/test/fixtures/event-route')
+  return { requireEventRoute: async (slug: string) => eventRouteFor(slug) }
+})
 vi.mock('@/lib/uploads', () => ({ claimUpload: async () => ({ ok: true }) }))
 vi.mock('@/lib/event-certificates', () => ({
   loadEventTemplate: async () => h.existing,

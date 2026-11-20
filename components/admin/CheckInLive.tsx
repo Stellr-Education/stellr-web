@@ -817,6 +817,22 @@ export default function CheckInLive({
             </p>
             {p.consentPending && !p.checkedInAt && <ConsentPendingMarker />}
             <CheckInFlags flags={flags[p.id]} />
+            {(p.extras ?? []).map((x) => (
+              <button
+                key={x.lineId}
+                onClick={() =>
+                  act(
+                    { action: x.checkedAt ? 'addon_unchecked' : 'addon_checked', participantId: p.id, lineId: x.lineId, label: `${p.firstName} ${p.lastName}` },
+                    { [p.id]: { extras: (p.extras ?? []).map((e) => (e.lineId === x.lineId ? { ...e, checkedAt: e.checkedAt ? null : new Date().toISOString() } : e)) } },
+                  )
+                }
+                className={cn('mr-4 mt-1 min-h-11 text-sm font-medium', x.checkedAt ? 'text-enviro-green-text' : 'text-gold-ink')}
+              >
+                {x.checkedAt ? `✓ ${x.title}` : `Tick off: ${x.title}`}
+                {x.status === 'pending_payment' && ' (not paid)'}
+                {x.status === 'pending_consent' && ' (consent pending)'}
+              </button>
+            ))}
             {p.merch.length > 0 && (
               <button
                 onClick={() =>

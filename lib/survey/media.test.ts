@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { isNyCo, mediaPermission, mediaReasonDetail, type MediaFacts } from './media'
+import type { SupabaseClient } from '@supabase/supabase-js'
+import { isNyCo, loadMediaAgreements, mediaPermission, mediaReasonDetail, type MediaFacts } from './media'
 
 const signed = { exists: true, restricted: false, optOut: false, optOutKnown: true }
 const facts = (over: Partial<MediaFacts> = {}): MediaFacts => ({
@@ -80,5 +81,42 @@ describe('media permission resolver', () => {
     expect(isNyCo(['Colorado'])).toBe(true)
     expect(isNyCo(['ny'])).toBe(true)
     expect(isNyCo([null, 'Nebraska'])).toBe(false)
+  })
+})
+
+// S5 wave 8, A11b: a member's newest form counts only when it is this tenant's.
+describe('loadMediaAgreements across tenants', () => {
+  const CANARY = '00000000-0000-4000-8000-0000000ca4a2'
+  function fakeDb(rows: Record<string, unknown>[]): SupabaseClient {
+    const result = (table: string, cols: string) => ({
+      data: table === 'agreements' && cols.includes('template_id') ? rows : [],
+      error: null,
+    })
+    return {
+      from: (table: string) => ({
+        select: (cols: string) => {
+          const chain = {
+            in: () => chain,
+            eq: () => chain,
+            then: (ok: (v: unknown) => unknown) => Promise.resolve(result(table, cols)).then(ok),
+          }
+          return chain
+        },
+      }),
+    } as unknown as SupabaseClient
+  }
+  const subject = { key: 'member:m1', memberId: 'm1', participantId: null }
+  const row = (id: string, tenant: string | null, at: string) => ({
+    id, member_id: 'm1', participant_id: null, completed_at: at, reused_from: null, restricted_at: null, template_id: null, tenant_id: tenant,
+  })
+
+  it('leaves out a newer form signed for another tenant and uses the Stellr one', async () => {
+    const out = await loadMediaAgreements(fakeDb([row('a-stellr', null, '2026-01-01'), row('a-canary', CANARY, '2026-06-01')]), [subject])
+    expect(out.get('member:m1')?.signedAt).toBe('2026-01-01')
+  })
+
+  it('finds nothing when the only form is another tenant\'s', async () => {
+    const out = await loadMediaAgreements(fakeDb([row('a-canary', CANARY, '2026-06-01')]), [subject])
+    expect(out.get('member:m1')?.exists ?? false).toBe(false)
   })
 })

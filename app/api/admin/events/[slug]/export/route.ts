@@ -3,6 +3,7 @@ import { withAudit } from '@/lib/audit/route'
 import { requireEventRoute } from '@/lib/authz'
 import { getEventRoster } from '@/lib/event-admin'
 import { toCsv } from '@/lib/csv'
+import { extrasByParticipant } from '@/lib/addons/admin'
 import { logRecordAccess } from '@/lib/record-access-log'
 import { displayGrade } from '@/lib/member-enums'
 import { supabaseServer } from '@/lib/supabase'
@@ -36,6 +37,9 @@ async function exportRoster(_req: Request, { params }: { params: Promise<{ slug:
     ? await mediaForParticipants(supabaseServer(), roster.groups.flatMap((g) => g.participants.map((p) => p.id)))
     : null
   const optOuts = stellr ? await rosterOptOuts(supabaseServer(), roster.groups.flatMap((g) => g.participants)) : null
+  // Extras (lib/addons): Stellr's events only.
+  type Extra = { lineId: string; title: string; status: string; checkedAt: string | null }
+  const extras: Map<string, Extra[]> = stellr ? await extrasByParticipant(supabaseServer(), slug).catch(() => new Map<string, Extra[]>()) : new Map<string, Extra[]>()
 
   const header = [
     'Registration Type', 'Group', 'First Name', 'Last Name', 'Email', 'Role', 'School', 'Grade',
@@ -43,7 +47,7 @@ async function exportRoster(_req: Request, { params }: { params: Promise<{ slug:
     'Emergency Contact First Name', 'Emergency Contact Last Name', 'Emergency Contact Relationship',
     'Emergency Contact Email', 'Emergency Contact Phone',
     'Paid', 'Payment Status', 'DocuSign', 'DocuSign Status', 'Checked In At', 'media_ok', 'Media Note',
-    'Quote opt-out', 'Digital comms opt-out',
+    'Quote opt-out', 'Digital comms opt-out', 'Extras',
   ]
   const rows = roster.groups.flatMap((g) =>
     g.participants.map((p) => [
@@ -74,6 +78,7 @@ async function exportRoster(_req: Request, { params }: { params: Promise<{ slug:
       media ? MEDIA_REASON_LABEL[media.get(p.id)?.reason ?? 'form_unread'] : TENANT_MEDIA_NOTE,
       optOutCell(optOuts?.get(p.id)?.quotes),
       optOutCell(optOuts?.get(p.id)?.digital_comms),
+      (extras.get(p.id) ?? []).map((x) => (x.status === 'confirmed' ? x.title : `${x.title} (${x.status === 'pending_payment' ? 'unpaid' : 'consent pending'})`)).join('; '),
     ])
   )
 

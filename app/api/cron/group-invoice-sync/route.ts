@@ -7,8 +7,10 @@ import { guardCron } from '@/lib/cron'
 import { withCronAudit } from '@/lib/cron-audit'
 import { startCronRun } from '@/lib/cron-runs'
 import { partitionByTenant, runPerTenant, type TenantJob } from '@/lib/cron-tenants'
-import { getEventBySlug } from '@/lib/events/repo'
+import { getEventBySlugIn } from '@/lib/events/tenant-facade'
 import { syncGroupInvoice } from '@/lib/group-billing'
+import { syncAddonInvoice } from '@/lib/addons/invoice'
+import { sweepUnpaidAddons } from '@/lib/addons/sweep'
 import { eventIsOver, settleShare } from '@/lib/teacher-share'
 import { STELLR_TENANT_ID } from '@/lib/tenancy/constants'
 import { STELLR_OR_NULL } from '@/lib/tenancy/stellr-scope'
@@ -81,6 +83,13 @@ async function syncDue(db: Db, stripe: Stripe, job: TenantJob, stop: () => boole
     }
     const result = await syncGroupInvoice(db, stripe, id)
     tally[result] = (tally[result] ?? 0) + 1
+    // Add-ons on the group's invoice (lib/addons/invoice.ts): an update that found the invoice busy.
+    const { count } = await db.from('registration_addons').select('id', { count: 'exact', head: true })
+      .eq('registration_id', id).eq('payer', 'group').eq('group_method', 'invoice').eq('status', 'pending_payment')
+    if (count) {
+      const addons = await syncAddonInvoice(db, stripe, id, { memberId: null, label: 'add-on change' })
+      tally[`addons_${addons}`] = (tally[`addons_${addons}`] ?? 0) + 1
+    }
   }
   return tally
 }
@@ -97,7 +106,8 @@ async function settleDue(db: Db, stripe: Stripe, job: TenantJob, stop: () => boo
       continue
     }
     if (!events.has(row.event_slug)) {
-      const event = (await getEventBySlug(row.event_slug).catch(() => null)) as { date?: string; endDate?: string } | null
+      // S5 wave 8, C8-PG: the job's tenant reads its own events (lib/events/tenant-facade.ts).
+      const event = (await getEventBySlugIn(job.tenant.id, row.event_slug).catch(() => null)) as { date?: string; endDate?: string } | null
       events.set(row.event_slug, eventIsOver(event))
     }
     if (!events.get(row.event_slug)) { tally.not_due++; continue }
@@ -168,6 +178,17 @@ export const GET = withCronAudit('group-invoice-sync', async (req: NextRequest) 
           const detail = e instanceof Error ? e.message : String(e)
           console.error('[cron:group-invoice-sync] share settlement failed:', detail)
           job.fail('share-settle', detail)
+        }
+        // Event add-ons (lib/addons/sweep.ts): unpaid places released at their cut-off,
+        // and a reminder the week before. Counted only when there is something to count.
+        try {
+          const addons = await sweepUnpaidAddons(db, stripe)
+          if (addons.released) tally.addons_released = addons.released
+          if (addons.reminded) tally.addons_reminded = addons.reminded
+        } catch (e) {
+          const detail = e instanceof Error ? e.message : String(e)
+          console.error('[cron:group-invoice-sync] add-on sweep failed:', detail)
+          job.fail('addon-sweep', detail)
         }
         return { tally, shares }
       },

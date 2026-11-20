@@ -276,10 +276,13 @@ export async function openSession(db: SupabaseClient, s: SurveySession, from: Op
   if (s.response) return s.response
   const ctx = await buildContext(db, s)
   const memberId = await memberIdOf(db, inv)
+  // S5 wave 8: the response is the invitation's tenant's (it inherits from its distribution).
+  const tenantId = inv.tenant_id ?? STELLR_TENANT_ID
   const { data, error } = await db
     .from('survey_responses')
     .upsert(
       {
+        tenant_id: tenantId,
         invitation_id: inv.id,
         definition_id: s.distribution.definition_id,
         distribution_id: s.distribution.id,

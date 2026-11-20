@@ -95,7 +95,7 @@ describe('optionalEventWrites', () => {
   it('ignores reads, updates, other tables and other inserts', () => {
     expect(scan("await db.from('store_orders').select('id').eq('id', 1)")).toEqual([])
     expect(scan("await db.from('store_orders').update({ total: 2 }).eq('id', 1)")).toEqual([])
-    expect(scan("await db.from('credentials').insert({ id: 1 })")).toEqual([])
+    expect(scan("await db.from('registrations').insert({ id: 1 })")).toEqual([])
     expect(scan("const s = new Set(); s.insert?.('store_orders')")).toEqual([])
   })
 

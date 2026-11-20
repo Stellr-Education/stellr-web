@@ -86,7 +86,12 @@ export interface PaymentLine {
   participantName: string
   /** Durable pay page; null when paid by invoice or per-member links. */
   payUrl: string | null
-  method: 'link' | 'invoice' | 'individual'
+  /**
+   * link/invoice/individual: the recipient's own (or their child's, or their
+   * group's) payment. member: a group member who still owes by their own link,
+   * on the organiser's email; their link is theirs alone, so none is given here.
+   */
+  method: 'link' | 'invoice' | 'individual' | 'member'
 }
 
 export interface RecipientForRender {
@@ -148,15 +153,20 @@ function whoIsRegistered(r: RecipientForRender): string {
 
 function paymentText(lines: PaymentLine[]): string {
   if (lines.length === 0) return ''
-  const multi = lines.length > 1
-  return lines
-    .map((l) => {
-      const who = multi ? ` for ${l.participantName}` : ''
-      if (l.method === 'link' && l.payUrl) return `You can pay securely${who} here: ${l.payUrl}`
-      if (l.method === 'invoice') return `This registration${who} is paid by invoice. Reply here if you need a copy of it.`
-      return `Your payment link${who} was emailed to you separately. Reply here if you need it re-sent.`
-    })
-    .join('\n')
+  const own = lines.filter((l) => l.method !== 'member')
+  const members = lines.filter((l) => l.method === 'member').map((l) => l.participantName)
+  const multi = own.length > 1
+  const out = own.map((l) => {
+    const who = multi ? ` for ${l.participantName}` : ''
+    if (l.method === 'link' && l.payUrl) return `You can pay securely${who} here: ${l.payUrl}`
+    if (l.method === 'invoice') return `This registration${who} is paid by invoice. Reply here if you need a copy of it.`
+    return `Your payment link${who} was emailed to you separately. Reply here if you need it re-sent.`
+  })
+  // The organiser's view of members paying their own way: names only, never their links.
+  if (members.length) {
+    out.push(`Still to pay for their own place: ${joinNames(members)}. Each was sent their own payment link; reply here if one needs re-sending.`)
+  }
+  return out.join('\n')
 }
 
 function agreementText(lines: AgreementLine[]): string {

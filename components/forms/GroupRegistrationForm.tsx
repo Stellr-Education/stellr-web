@@ -21,6 +21,9 @@ import { MemberIdLookup, type MemberMatch } from '@/components/forms/MemberIdLoo
 import type { RegistrationPrefill } from '@/lib/registration-prefill'
 import { authPath } from '@/lib/auth-path'
 import { ageFromDob } from '@/lib/utils'
+import { RegistrationExtras, EMPTY_EXTRAS, type ExtrasPerson, type ExtrasValue } from '@/components/forms/RegistrationExtras'
+import type { PublicAddon } from '@/lib/addons/types'
+import { isKnownMinorOn } from '@/lib/age'
 import { OnFilePrompt, adoptSessionFromAnotherTab, needsAnAdultToRegister, signedInAsSomeoneElse } from '@/components/forms/OnFilePrompt'
 import { StepBar as SharedStepBar } from '@/components/registration/StepBar'
 
@@ -560,8 +563,10 @@ function StudentManagerCard({ data, onEdit }: { data: StudentManagerFormData; on
 }
 
 // ── Main component ────────────────────────────────────────────────────────────
-export default function GroupRegistrationForm({ eventSlug, eventTitle, prefill, isCampaign = false, isFree = false, gradeMin = DEFAULT_GRADE_BAND.min, gradeMax = DEFAULT_GRADE_BAND.max }: {
+export default function GroupRegistrationForm({ eventSlug, eventTitle, prefill, isCampaign = false, isFree = false, gradeMin = DEFAULT_GRADE_BAND.min, gradeMax = DEFAULT_GRADE_BAND.max, extras = null }: {
   eventSlug: string; eventTitle: string; prefill?: RegistrationPrefill | null
+  /** The event's extras (lib/addons) and whether merch is promoted; null when none are offered. */
+  extras?: { addons: PublicAddon[]; settings: { merchUpsell: boolean } } | null
   isCampaign?: boolean; isFree?: boolean
   /**
    * The event's eligible grade range, as primitives so the memoised band below
@@ -660,6 +665,7 @@ export default function GroupRegistrationForm({ eventSlug, eventTitle, prefill, 
   const [discountCode, setDiscountCode] = useState('')
   const [additionalAdults, setAdditionalAdults] = useState<AdultData[]>([])
   const [students, setStudents] = useState<StudentData[]>([emptyStudent(), emptyStudent()])
+  const [extrasValue, setExtrasValue] = useState<ExtrasValue>(EMPTY_EXTRAS)
   const [expandedAdult, setExpandedAdult] = useState<number | null>(null)
   const [expandedStudent, setExpandedStudent] = useState<number | null>(0)
   const [submitting, setSubmitting] = useState(false)
@@ -855,6 +861,21 @@ export default function GroupRegistrationForm({ eventSlug, eventTitle, prefill, 
   }
 
   // ── Final submit ──────────────────────────────────────────────────────────────
+  // The people extras can be chosen for: everyone entered with an email (lib/addons books by it).
+  const extrasPeople = (): ExtrasPerson[] => {
+    const reg = registrantRole === 'teacher' ? tf.getValues() : sf.getValues()
+    const out: ExtrasPerson[] = []
+    const add = (email: string | undefined, label: string, adult: boolean, dob: string | undefined) => {
+      const key = (email ?? '').trim().toLowerCase()
+      if (!key || out.some((p) => p.key === key)) return
+      out.push({ key, label: label.trim() || key, adult, minor: !adult && isKnownMinorOn(dob ?? '') })
+    }
+    add(reg.email, `${reg.first_name ?? ''} ${reg.last_name ?? ''} (you)`, registrantRole === 'teacher', reg.date_of_birth)
+    additionalAdults.forEach((a) => add(a.email, `${a.first_name} ${a.last_name}`, true, a.date_of_birth))
+    students.forEach((st) => add(st.email, `${st.first_name} ${st.last_name}`, false, st.date_of_birth))
+    return out
+  }
+
   async function handleFinalSubmit() {
     setSubmitting(true)
     setError(null)
@@ -987,6 +1008,10 @@ export default function GroupRegistrationForm({ eventSlug, eventTitle, prefill, 
                 .filter(s => s.linked || s.first_name || s.last_name || s.email)
             : [],
           school_dpa_agreed: dpaAgreed,
+          // Extras (lib/addons): booked for named people once the group is saved.
+          ...(detailsMethod === 'add_now' && !isCampaign && extrasValue.items.length
+            ? { extras: { items: extrasValue.items, payer: extrasValue.payer, groupMethod: extrasValue.groupMethod } }
+            : {}),
         }),
       })
 
@@ -1512,6 +1537,24 @@ export default function GroupRegistrationForm({ eventSlug, eventTitle, prefill, 
           signedIn={!!isSignedIn}
           needsAnAdult={needsAnAdultToRegister(ageFromDob((registrantRole === 'teacher' ? tf.getValues('date_of_birth') : sf.getValues('date_of_birth')) ?? ''))}
         />
+      )}
+
+      {extras && !isCampaign && (
+        detailsMethod === 'add_now' ? (
+          <RegistrationExtras
+            addons={extras.addons}
+            merchUpsell={extras.settings.merchUpsell}
+            mode="group"
+            isStudentManager={registrantRole === 'student_manager'}
+            people={extrasPeople()}
+            value={extrasValue}
+            onChange={setExtrasValue}
+          />
+        ) : (
+          <p className="rounded-ds-card border border-line bg-white p-4 text-sm text-content-body">
+            This event offers extras such as accommodation and tours. Once your roster is in, add them for your group from your account.
+          </p>
+        )
       )}
 
       <div className="flex gap-3">

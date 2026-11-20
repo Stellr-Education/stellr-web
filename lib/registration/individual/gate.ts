@@ -232,7 +232,7 @@ export async function gateIndividualRegistration(body: IndividualBody, deps: Gat
   // S5 A7: a tenant event takes no money until S9: no fee, no add-ons and no
   // scholarship, so nothing here can reach Stellr's Stripe account for a tenant.
   // Refused before the duplicate check, which can open a Checkout.
-  if (!context.isPlatformOwner && (event.stripePriceId || body.scholarship_token || (body.merch_addons ?? []).length > 0)) {
+  if (!context.isPlatformOwner && (event.stripePriceId || body.scholarship_token || hasExtras(body.extras))) {
     return refuse(tenantPaymentsUnavailable())
   }
 
@@ -372,4 +372,10 @@ export async function gateIndividualRegistration(body: IndividualBody, deps: Gat
       consent,
     },
   }
+}
+
+/** Extras were chosen on the form (lib/addons/registration.ts). */
+function hasExtras(extras: unknown): boolean {
+  const items = (extras as { items?: unknown } | null | undefined)?.items
+  return Array.isArray(items) && items.length > 0
 }

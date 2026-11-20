@@ -1,7 +1,9 @@
 import { NextResponse } from 'next/server'
 import { PDFDocument } from 'pdf-lib'
 import { supabaseServer } from '@/lib/supabase'
-import { requireEventAccess } from '@/lib/event-access'
+import { requireEventRoute } from '@/lib/authz'
+import { stellrOnlyDb } from '@/lib/events/admin-records'
+import { stellrOnlyEvent } from '@/lib/tenancy/load-scoped'
 import { CertificateArtworkError, generateCertificatesPdf } from '@/lib/event-pdf'
 import { markWatermarked } from '@/lib/watermark/pdf'
 import { eventArtworkTheme } from '@/lib/artwork-defaults'
@@ -21,6 +23,12 @@ import {
 
 export const dynamic = 'force-dynamic'
 
+// S5 wave 8, C19a: tenant_crew, and Stellr-only for other tenants. Certificates print on Stellr's artwork and say Stellr Education, so the
+// handler asks stellrOnlyEvent right after the access check: a tenant's staff get its 503,
+// another tenant's event is a 404 for everyone, a Stellr admin included, and a failed read of
+// the event's owner is a retryable 503. Stellr's own events answer as before.
+const ROUTE = '/api/admin/events/[slug]/certificates'
+
 // GET /api/admin/events/[slug]/certificates?award=<type>|all&format=us_letter|a4
 // Print certificates: each award's artwork (the event's own, else its theme's
 // default) with the recipient's name, one page each. participation = every student who took part (attendees()); the judged awards = their assignees
@@ -28,8 +36,10 @@ export const dynamic = 'force-dynamic'
 // every certificate in one file, award by award.
 export async function GET(req: Request, { params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params
-  const access = await requireEventAccess(slug)
-  if (!access.ok) return NextResponse.json({ error: 'Forbidden' }, { status: access.status })
+  const crew = await requireEventRoute(slug, { route: ROUTE })
+  if (!crew.ok) return crew.response
+  const foreign = await stellrOnlyEvent(crew.scope, supabaseServer(), slug, ROUTE)
+  if (foreign) return foreign
 
   const search = new URL(req.url).searchParams
   const format = search.get('format') === 'a4' ? 'a4' : 'us_letter'
@@ -39,7 +49,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ slug: st
   }
   const awards: AwardType[] = awardParam === 'all' ? [...AWARD_TYPES] : [awardParam as AwardType]
 
-  const db = supabaseServer()
+  const db = stellrOnlyDb(crew.scope, supabaseServer())
   const theme = await eventArtworkTheme(slug)
   const [templates, students, assignments, companies, mentors] = await Promise.all([
     loadTemplates(db, slug, theme),

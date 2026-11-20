@@ -82,7 +82,8 @@ export interface EventContext {
 
 async function loadEventContext(slug: string, cache?: Map<string, EventContext | null>): Promise<EventContext | null> {
   if (cache?.has(slug)) return cache.get(slug)!
-  const [meta, email] = await Promise.all([loadSurveyEvent(slug), loadEventForEmail(slug)])
+  // S5 wave 8, C8-PG: team profiles go to Stellr's students only (A10a), so the event is read as Stellr's.
+  const [meta, email] = await Promise.all([loadSurveyEvent(slug), loadEventForEmail(slug, STELLR_TENANT_ID)])
   const ctx = meta && email ? { meta, email } : null
   cache?.set(slug, ctx)
   return ctx
@@ -567,7 +568,7 @@ export async function resendOutstanding(
 }
 
 /**
- * For the Email Reminders audience: each outstanding student's link, creating
+ * For the Email Engagement audience: each outstanding student's link, creating
  * rows as needed when `mint` (a real send). A preview gets placeholders and
  * writes nothing.
  */

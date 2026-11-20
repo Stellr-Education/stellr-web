@@ -13,6 +13,7 @@ import { SendPayLinkButton } from '@/components/admin/SendPayLinkButton'
 import { ReissueDocusignButton } from '@/components/admin/ReissueDocusignButton'
 import { CorrectSignerEmailButton } from '@/components/admin/CorrectSignerEmailButton'
 import { FixGuardianEmailButton } from '@/components/admin/FixGuardianEmailButton'
+import { ResendGuardianConsentButton } from '@/components/admin/ResendGuardianConsentButton'
 import { FinishSetupButton } from '@/components/admin/FinishSetupButton'
 import { GroupInvoiceButton } from '@/components/admin/GroupInvoiceButton'
 import { GroupPaymentMethod } from '@/components/registration/GroupPaymentMethod'
@@ -44,6 +45,9 @@ const PAYMENT_PILLS: Record<PaymentPill, { label: string; className: string }> =
   // A teacher whose place the students' shares pay for (lib/teacher-share.ts).
   covered:        { label: 'Shared by Students', className: 'bg-brand-hairline text-brand-muted-soft' },
 }
+
+// The pills that mean money was received for the place: it has a receipt and an invoice.
+const PAID_PILLS = new Set<PaymentPill>(['invoice_paid', 'link_paid'])
 
 // Label and colour both come from lib/docusign-status now. This file used to
 // keep its own copy, which is how the roster, the admin table and the portal
@@ -203,12 +207,32 @@ export default function EventRoster({
     </select>
   )
 
-  const paymentCell = (p: RosterParticipant) => (
+  const paymentCell = (p: RosterParticipant, registrationId: string) => (
     <>
       <Pill {...PAYMENT_PILLS[p.payment_pill]} />
       {/* Refunded in the Stripe dashboard. The pill stays "paid"
           because the money did arrive; this says it went back. */}
       {p.refund_detail && <p className="mt-1 text-xs leading-tight text-brand-grey-dark">{p.refund_detail}</p>}
+      {/* Payment documents to download and pass on (lib/payments). Paid places only:
+          a free place ('waived') or a teacher the students cover has nothing to prove. */}
+      {PAID_PILLS.has(p.payment_pill) && (
+        <p className="mt-1 flex gap-2 text-xs">
+          <a
+            href={`/api/admin/registrations/${registrationId}/receipt?participant=${p.id}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="font-medium text-primary hover:text-ink"
+          >
+            Receipt
+          </a>
+          <a
+            href={`/api/admin/registrations/${registrationId}/paid-invoice?participant=${p.id}`}
+            className="font-medium text-primary hover:text-ink"
+          >
+            Invoice
+          </a>
+        </p>
+      )}
     </>
   )
 
@@ -278,6 +302,10 @@ export default function EventRoster({
           emphasise={p.docusign_pill === 'bounced'}
           className={card ? TAP : undefined}
         />
+      )}
+      {/* Another organiser's event: the guardian's consent form, resent or chased. */}
+      {pending.has(p.id) && !p.checked_in_at && (
+        <ResendGuardianConsentButton eventSlug={eventSlug} participantId={p.id} className={card ? TAP_WRAPPED : undefined} />
       )}
       {p.minor && GUARDIAN_FIXABLE_PILLS.has(p.docusign_pill) && (
         <FixGuardianEmailButton
@@ -359,14 +387,14 @@ export default function EventRoster({
           {shown} of {roster.summary.totalParticipants} participants
           {roster.summary.scholarshipHolders > 0 && ` · ${roster.summary.scholarshipHolders} on scholarship`}
         </span>
-        {/* Bulk reminders moved to the Email Reminders tab (editable copy,
+        {/* Bulk reminders moved to the Email Engagement tab (editable copy,
             attachments, scheduling, history). The old one-click route,
             /api/admin/events/[slug]/remind, is left in place for now. */}
         <Link
           href={`/admin/competitions/${eventSlug}?tab=emails`}
           className="ml-auto text-sm font-medium text-white bg-brand-blue hover:bg-brand-blue-dark rounded-lg px-3 py-1.5"
         >
-          Email Reminders
+          Email Engagement
         </Link>
         <a
           href={exportHref}
@@ -552,7 +580,7 @@ export default function EventRoster({
                       </CardField>
                       <CardField label="Grade">{displayGrade(p.grade) ?? '—'}</CardField>
                       <CardField label="Shirt">{p.t_shirt_size ?? '—'}</CardField>
-                      <CardField label="Payment">{paymentCell(p)}</CardField>
+                      <CardField label="Payment">{paymentCell(p, group.registrationId)}</CardField>
                       <CardField label="DocuSign">{docusignCell(p)}</CardField>
                       <CardField label="Background">
                         <Pill {...COMPLIANCE_PILLS[p.compliance_pill]} />
@@ -634,7 +662,7 @@ export default function EventRoster({
                             <span className="text-brand-muted-soft">n/a</span>
                           )}
                         </td>
-                        <td className={TD}>{paymentCell(p)}</td>
+                        <td className={TD}>{paymentCell(p, group.registrationId)}</td>
                         <td className={TD}>{docusignCell(p)}</td>
                         <td className={TD}>
                           <Pill {...COMPLIANCE_PILLS[p.compliance_pill]} />

@@ -3,10 +3,12 @@ import { NextResponse } from 'next/server'
 import { supabaseServer } from '@/lib/supabase'
 import { handleResendEvent } from '@/lib/esign/bounces'
 import { handleSuppressionEvent, type ResendDeliveryEvent } from '@/lib/email/suppressions'
+import { withAudit } from '@/lib/audit/route'
+import { noteWebhook, webhookAudit, webhookEvent } from '@/lib/audit/webhook'
 
 // POST /api/webhooks/resend — Resend's delivery events, signed with svix.
-// Set up in Resend → Webhooks with the email.bounced and email.complained
-// events, pointing here; the signing secret goes in RESEND_WEBHOOK_SECRET.
+// Set up in Resend → Webhooks with the email.bounced, email.complained and
+// email.suppressed events, pointing here; the signing secret goes in RESEND_WEBHOOK_SECRET.
 // Without the secret every call is refused.
 //
 // Two consumers:
@@ -17,7 +19,14 @@ import { handleSuppressionEvent, type ResendDeliveryEvent } from '@/lib/email/su
 // Both are idempotent, so a redelivered event changes nothing. A failure in
 // either returns 500 and Resend retries; one failing never stops the other.
 
-export async function POST(req: Request) {
+// S5 A13a: one audit event per delivery, by webhook:resend, on Stellr's chain.
+// Off unless PLATFORM_AUDIT_ENABLED is on (lib/audit/webhook.ts).
+export const POST = withAudit(
+  ({ args: [req] }: { args: [Request] }) => webhookAudit('webhook.event.process', webhookEvent('resend', req)),
+  handleDeliveryEvent,
+)
+
+async function handleDeliveryEvent(req: Request) {
   const secret = process.env.RESEND_WEBHOOK_SECRET
   if (!secret) {
     console.error('[webhooks/resend] RESEND_WEBHOOK_SECRET not set')
@@ -41,6 +50,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'Invalid signature' }, { status: 400 })
   }
   if (!event || typeof event.type !== 'string') return NextResponse.json({ error: 'Malformed event' }, { status: 400 })
+  noteWebhook(req, { metadata: { event_type: event.type } })
 
   // The two consumers run independently, signing bounces first: they were here
   // before the suppression list, and a failed suppression write (the table

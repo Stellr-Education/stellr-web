@@ -8,6 +8,7 @@
 
 import { supabaseServer } from '@/lib/supabase'
 import type { EventDiscount, TierDiscount } from './types'
+import { STELLR_TENANT_ID } from '@/lib/tenancy/constants'
 
 export async function listTierDiscounts(): Promise<TierDiscount[]> {
   const db = supabaseServer()
@@ -42,6 +43,8 @@ export async function upsertTierDiscount(input: Partial<TierDiscount>): Promise<
 export async function upsertEventDiscount(input: Partial<EventDiscount>): Promise<void> {
   const db = supabaseServer()
   const row = {
+    // S5 wave 8: the store is Stellr-only (SQ-16), and a global discount has no event to derive from.
+    tenant_id: STELLR_TENANT_ID,
     scope: input.scope ?? 'global',
     event_slug: input.scope === 'event' ? input.event_slug ?? null : null,
     product_id: input.product_id ?? null,

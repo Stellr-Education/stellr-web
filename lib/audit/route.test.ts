@@ -17,7 +17,7 @@ vi.mock('@clerk/nextjs/server', () => ({ auth: () => auth() }))
 const after = vi.fn()
 vi.mock('next/server', () => ({ after: (task: () => unknown) => after(task) }))
 
-const { auditMutation, isStorableTargetId, resolveActor, resolveTenant, withAudit } = await import('./route')
+const { AUDIT_SKIP, auditMutation, isStorableTargetId, resolveActor, resolveTenant, withAudit } = await import('./route')
 const { AUDIT_FLAG, RECORD_FAILURE_TIMEOUT_MS } = await import('./platform')
 const nextNavigation = await import('next/navigation')
 
@@ -298,6 +298,15 @@ describe('withAudit', () => {
     expect(await withAudit((() => null) as never, async () => res, { ...on, db })()).toBe(res)
     expect(rpc).not.toHaveBeenCalled()
     expect(capture).toHaveBeenCalledTimes(1)
+  })
+
+  it('a spec that returns AUDIT_SKIP records nothing and no failure, for a success or a 5xx', async () => {
+    const { db, rpc } = fakeDb()
+    const handler = withAudit(() => AUDIT_SKIP as typeof import('./route').AUDIT_SKIP, async (status: number) => new Response(null, { status }), { ...on, db })
+    expect((await handler(200)).status).toBe(200)
+    expect((await handler(500)).status).toBe(500)
+    expect(rpc).not.toHaveBeenCalled()
+    expect(capture).not.toHaveBeenCalled()
   })
 
   it('a spec function sees the request and the answer, and one that throws costs only the event', async () => {

@@ -64,7 +64,21 @@ export function driveBackupStore(folderId = process.env.ESIGN_BACKUP_DRIVE_FOLDE
     async remove(name) {
       const id = await find(name)
       if (!id) return false
-      await drive.files.delete({ fileId: id, supportsAllDrives: true })
+      try {
+        await drive.files.delete({ fileId: id, supportsAllDrives: true })
+      } catch (err) {
+        // A shared drive lets only a Manager delete permanently. With the
+        // Content manager role Drive answers 404 "File not found" (or 403)
+        // for a file the same account has just found, which reads like a
+        // missing file rather than a missing permission.
+        const code = (err as { code?: number }).code
+        if (code === 403 || code === 404) {
+          throw new Error(
+            `Drive refused to delete ${name} (${code}): the backup service account needs the Manager role on the shared drive; Content manager cannot delete permanently`,
+          )
+        }
+        throw err
+      }
       return true
     },
     async list(prefix) {

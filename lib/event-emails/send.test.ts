@@ -43,7 +43,7 @@ const R = (email: string, firstName: string) => ({
 // Supabase stand-in with a real claim: the conditional UPDATE only matches
 // while the row's status is draft/scheduled.
 function fakeDb(row: typeof EMAIL) {
-  const state = { row: { ...row }, sends: [] as Record<string, unknown>[], statusWrites: [] as string[] }
+  const state = { row: { ...row }, sends: [] as Record<string, unknown>[], statusWrites: [] as string[], heartbeats: 0 as number | undefined }
   const db = {
     state,
     from(table: string) {
@@ -66,6 +66,14 @@ function fakeDb(row: typeof EMAIL) {
                   state.statusWrites.push(values.status)
                   resolve({ error: null })
                 },
+                // The heartbeat: .eq('id').eq('status','sending'). Counted
+                // apart from statusWrites so release/claim assertions stay exact.
+                eq: (_c: string, v: string) => ({
+                  then: (resolve: (v: unknown) => void) => {
+                    if (state.row.status === v) state.heartbeats = (state.heartbeats ?? 0) + 1
+                    resolve({ error: null })
+                  },
+                }),
               }
               return claim
             },
@@ -170,10 +178,10 @@ describe('sendEventEmail', () => {
     const out = await sendEventEmail(db as never, 'e1', { trigger: 'schedule', spacingMs: 0 })
 
     expect(out).toMatchObject({ ok: true, sent: 1, failed: 0, incomplete: true })
-    // Only Al was attempted; Bo was not emailed and not recorded.
+    // Al went out; Bo hit the cap, so is listed as not reached (still owed), not as tried.
     expect(sendEmail.mock.calls.map((c) => c[0].to)).toEqual(['a@example.com', 'b@example.com'])
-    const recorded = (db.state.sends[0].recipients as { email: string }[]) ?? []
-    expect(recorded.map((r) => r.email)).toEqual(['a@example.com'])
+    const recorded = (db.state.sends[0].recipients as { email: string; status: string }[]) ?? []
+    expect(recorded.map((r) => [r.email, r.status])).toEqual([['a@example.com', 'sent'], ['b@example.com', 'not_reached']])
     // Returned to 'scheduled' (its prior status) so the next cron slot resumes it.
     expect(db.state.row.status).toBe('scheduled')
     expect(db.state.statusWrites).toEqual(['sending', 'scheduled'])
@@ -218,13 +226,13 @@ describe('sendEventEmail', () => {
 // 'scheduled'. reclaimStuckSending re-drives a row that has been 'sending'
 // longer than the stale window, and the resumed send skips whoever the killed
 // run already emailed.
-function reclaimDb(opts: { updatedAt: string; priorSent: { email: string; status: string }[] }) {
+function reclaimDb(opts: { updatedAt: string; priorSent: { email: string; status: string }[]; priorFinished?: boolean }) {
   const state = {
     row: { ...EMAIL, status: 'sending' as string, updated_at: opts.updatedAt },
     sends: [] as Record<string, unknown>[],
     statusWrites: [] as string[],
-    // Seed a prior (killed) send row so alreadyTried has something to skip.
-    seeded: [{ trigger: 'schedule', recipients: opts.priorSent }] as Record<string, unknown>[],
+    // Seed a prior send row (killed unless priorFinished) so alreadyTried has something to skip.
+    seeded: [{ trigger: 'schedule', recipients: opts.priorSent, finished_at: opts.priorFinished ? new Date().toISOString() : null }] as Record<string, unknown>[],
   }
   const db = {
     state,
@@ -252,7 +260,16 @@ function reclaimDb(opts: { updatedAt: string; priorSent: { email: string; status
                   select: async () => {
                     if (state.row.status !== wantStatus || !(state.row.updated_at < stale)) return { data: [] }
                     state.row.status = values.status
-                    state.row.updated_at = new Date().toISOString() // trigger bump: no second reclaim
+                    state.row.updated_at = new Date(Date.now() + 1).toISOString() // trigger bump: no second reclaim
+                    state.statusWrites.push(values.status)
+                    return { data: [{ id: state.row.id }] }
+                  },
+                }),
+                // continue after a cleanly stopped run: .eq('updated_at', asRead).select('id')
+                eq: (_c3: string, asRead: string) => ({
+                  select: async () => {
+                    if (state.row.status !== wantStatus || state.row.updated_at !== asRead) return { data: [] }
+                    state.row.updated_at = new Date(Date.now() + 1).toISOString()
                     state.statusWrites.push(values.status)
                     return { data: [{ id: state.row.id }] }
                   },
@@ -272,12 +289,21 @@ function reclaimDb(opts: { updatedAt: string; priorSent: { email: string; status
       return {
         select: () => ({
           eq: () => ({
-            neq: async (_c: string, v: string) => ({
-              data: [...state.seeded, ...state.sends]
-                .filter((s) => (s as { trigger?: string }).trigger !== v)
-                .map((s) => ({ recipients: (s as { recipients?: unknown }).recipients ?? [] })),
-              error: null,
-            }),
+            neq: (_c: string, v: string) => {
+              const rows = [...state.seeded, ...state.sends].filter((s) => (s as { trigger?: string }).trigger !== v)
+              return {
+                // alreadyTriedAddresses awaits this directly
+                then: (resolve: (x: unknown) => void) => resolve({
+                  data: rows.map((s) => ({ recipients: (s as { recipients?: unknown }).recipients ?? [] })),
+                  error: null,
+                }),
+                // latestRunFinished: .order().limit(1).maybeSingle()
+                order: () => ({ limit: () => ({ maybeSingle: async () => ({
+                  data: rows.length ? { finished_at: (rows[rows.length - 1] as { finished_at?: string | null }).finished_at ?? null } : null,
+                  error: null,
+                }) }) }),
+              }
+            },
           }),
         }),
         insert: (values: Record<string, unknown>) => ({
@@ -360,5 +386,129 @@ describe('recipients with no valid email address', () => {
     const out = await sendEventEmail(db as never, 'e1', { trigger: 'manual', spacingMs: 0 })
     expect(out).toMatchObject({ ok: false, status: 400 })
     expect(sendEmail).not.toHaveBeenCalled()
+  })
+})
+
+// 17 Nov 2026: a manual send to the MN consent group spent its 60s function on
+// DocuSign re-sends, was killed after two emails, showed "Send failed." and was
+// left stuck in 'sending'. A run now stops cleanly at its deadline, re-sends
+// DocuSign only on the first run, and can be continued straight away.
+describe('time-limited runs', () => {
+  it('stops between recipients at its deadline, records the run, and stays sending to be continued', async () => {
+    const db = fakeDb(EMAIL)
+    // Room for the first recipient only: the second would start inside the margin.
+    const out = await sendEventEmail(db as never, 'e1', { trigger: 'manual', spacingMs: 200, deadline: Date.now() + 3_100 })
+    expect(out).toMatchObject({ ok: true, sent: 1, incomplete: true, stoppedFor: 'time', remaining: 1 })
+    expect(sendEmail.mock.calls.map((c) => c[0].to)).toEqual(['a@example.com'])
+    // Claimed, never released: still 'sending' for the continue.
+    expect(db.state.statusWrites).toEqual(['sending'])
+    expect(db.state.row.status).toBe('sending')
+    // The run itself is finished, with honest counts.
+    expect(db.state.sends[0]).toMatchObject({ recipient_count: 2, sent_count: 1, finished_at: expect.any(String) })
+  })
+
+  it('a continued run skips everyone already reached and does not re-send DocuSign', async () => {
+    const recent = new Date(Date.now() - 60_000).toISOString()
+    const db = reclaimDb({ updatedAt: recent, priorSent: [{ email: 'a@example.com', status: 'sent' }] })
+    resolveAudience.mockResolvedValue({ recipients: [R('a@example.com', 'Al'), R('b@example.com', 'Bo')], docusignParticipantIds: ['p1'] })
+    const out = await sendEventEmail(db as never, 'e1', { trigger: 'manual', spacingMs: 0, resume: true, staleMs: 20_000 })
+    expect(out).toMatchObject({ ok: true, sent: 1 })
+    expect(sendEmail.mock.calls.map((c) => c[0].to)).toEqual(['b@example.com'])
+    expect(reissue).not.toHaveBeenCalled()
+    expect(db.state.row.status).toBe('sent')
+  })
+
+  it('a continue is refused while the last run is still alive (fresh heartbeat)', async () => {
+    const db = reclaimDb({ updatedAt: new Date().toISOString(), priorSent: [] })
+    const out = await sendEventEmail(db as never, 'e1', { trigger: 'manual', spacingMs: 0, resume: true, staleMs: 20_000 })
+    expect(out).toMatchObject({ ok: false, status: 409, error: expect.stringContaining('still sending') })
+    expect(sendEmail).not.toHaveBeenCalled()
+  })
+
+  it('a continue takes over at once from a run that stopped cleanly (fresh heartbeat, finished run)', async () => {
+    const db = reclaimDb({ updatedAt: new Date().toISOString(), priorSent: [{ email: 'a@example.com', status: 'sent' }], priorFinished: true })
+    const out = await sendEventEmail(db as never, 'e1', { trigger: 'manual', spacingMs: 0, resume: true, staleMs: 20_000 })
+    expect(out).toMatchObject({ ok: true, sent: 1 })
+    expect(sendEmail.mock.calls.map((c) => c[0].to)).toEqual(['b@example.com'])
+    expect(db.state.row.status).toBe('sent')
+  })
+
+  it('a continue with nobody left marks the email sent instead of refusing', async () => {
+    const old = new Date(Date.now() - 60_000).toISOString()
+    const db = reclaimDb({ updatedAt: old, priorSent: [{ email: 'a@example.com', status: 'sent' }, { email: 'b@example.com', status: 'sent' }] })
+    const out = await sendEventEmail(db as never, 'e1', { trigger: 'manual', spacingMs: 0, resume: true, staleMs: 20_000 })
+    expect(out).toMatchObject({ ok: true, sent: 0 })
+    expect(db.state.row.status).toBe('sent')
+  })
+
+  it('the DocuSign step stops at its time cap instead of using up the run', async () => {
+    resolveAudience.mockResolvedValue({ recipients: [R('a@example.com', 'Al')], docusignParticipantIds: ['p1', 'p2', 'p3', 'p4', 'p5', 'p6'] })
+    // Deadline leaves no room for DocuSign at all (cap = deadline − margin − 10s).
+    const out = await sendEventEmail(fakeDb(EMAIL) as never, 'e1', { trigger: 'manual', spacingMs: 0, deadline: Date.now() + 12_500 })
+    expect(reissue).not.toHaveBeenCalled()
+    expect(out).toMatchObject({ ok: true, sent: 1 })
+  })
+
+  it('heartbeats while it works, so a live run is never taken as stuck', async () => {
+    const db = fakeDb(EMAIL)
+    await sendEventEmail(db as never, 'e1', { trigger: 'manual', spacingMs: 0 })
+    expect(db.state.heartbeats).toBeGreaterThanOrEqual(2)
+  })
+})
+
+// 17 Nov 2026: a run killed after Resend accepted a message but before the
+// result was saved emailed that parent again on the next run.
+describe('nobody is emailed twice, and History can tell who is still owed', () => {
+  it('records the address as sending BEFORE handing it to Resend', async () => {
+    const db = fakeDb(EMAIL)
+    let atSend: unknown = null
+    sendEmail.mockImplementationOnce(async () => {
+      atSend = JSON.parse(JSON.stringify(db.state.sends[0].recipients))
+      return { id: 're_1' } as never
+    })
+    await sendEventEmail(db as never, 'e1', { trigger: 'manual', spacingMs: 0 })
+    expect(atSend).toEqual([expect.objectContaining({ email: 'a@example.com', status: 'sending' })])
+    const rec = db.state.sends[0].recipients as { status: string }[]
+    expect(rec.map((r) => r.status)).toEqual(['sent', 'sent'])
+  })
+
+  it('a run stopped at its deadline lists who it did not reach as not_reached', async () => {
+    const db = fakeDb(EMAIL)
+    await sendEventEmail(db as never, 'e1', { trigger: 'manual', spacingMs: 200, deadline: Date.now() + 3_100 })
+    const rec = db.state.sends[0].recipients as { email: string; status: string }[]
+    expect(rec.map((r) => [r.email, r.status])).toEqual([['a@example.com', 'sent'], ['b@example.com', 'not_reached']])
+  })
+
+  it('the next run emails the not_reached, and skips an address caught mid-send', async () => {
+    const old = new Date(Date.now() - 60_000).toISOString()
+    const db = reclaimDb({
+      updatedAt: old,
+      priorSent: [{ email: 'a@example.com', status: 'sending' }, { email: 'b@example.com', status: 'not_reached' }],
+    })
+    resolveAudience.mockResolvedValue({ recipients: [R('a@example.com', 'Al'), R('b@example.com', 'Bo')], docusignParticipantIds: [] })
+    const out = await sendEventEmail(db as never, 'e1', { trigger: 'manual', spacingMs: 0, resume: true, staleMs: 20_000 })
+    expect(out).toMatchObject({ ok: true, sent: 1 })
+    expect(sendEmail.mock.calls.map((c) => c[0].to)).toEqual(['b@example.com'])
+  })
+})
+
+describe('recipients sendEmail did not deliver', () => {
+  it('records suppressed and queued recipients as such, not as sent', async () => {
+    sendEmail.mockResolvedValueOnce({ id: null, suppressed: true } as never)
+    sendEmail.mockResolvedValueOnce({ id: null, queued: true } as never)
+    const db = fakeDb(EMAIL)
+    const out = await sendEventEmail(db as never, 'e1', { trigger: 'manual', spacingMs: 0 })
+    expect(out).toMatchObject({ ok: true, sent: 1, suppressed: 1, failed: 0 })
+    const rec = db.state.sends[0].recipients as { email: string; status: string }[]
+    expect(rec.map((r) => r.status)).toEqual(['suppressed', 'queued'])
+    expect(db.state.sends[0]).toMatchObject({ sent_count: 1, failed_count: 0 })
+  })
+
+  it('keeps Resend’s id on each recipient it accepted', async () => {
+    sendEmail.mockResolvedValueOnce({ id: 're_1' } as never)
+    const db = fakeDb(EMAIL)
+    await sendEventEmail(db as never, 'e1', { trigger: 'manual', spacingMs: 0 })
+    const rec = db.state.sends[0].recipients as { resendId?: string }[]
+    expect(rec[0].resendId).toBe('re_1')
   })
 })

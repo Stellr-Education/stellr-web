@@ -15,8 +15,8 @@ const ROUTE = '/api/admin/events/[slug]/offerings'
 
 const arr = <T>(x: T | T[] | null | undefined): T | undefined => (Array.isArray(x) ? x[0] : (x ?? undefined))
 
-// Which store products/variants an event offers, and how: 'included' (free shirt,
-// allocated per size at confirmation) or 'addon' (paid extra). Admins and the
+// Which store products/variants an event includes: the free shirt, allocated per size at
+// confirmation. Paid event merch is an add-on (app/api/admin/events/[slug]/addons). Admins and the
 // event's managers. The products are Stellr's store, so a tenant's staff are refused,
 // and a tenant's event is refused for everyone (stellrOnlyEvent).
 export async function GET(_req: Request, { params }: Ctx) {
@@ -60,8 +60,8 @@ async function addOffering(req: Request, { params }: Ctx) {
   const body = await req.json().catch(() => ({}))
   const variantId = body?.variantId
   const treatment = body?.treatment
-  if (!variantId || (treatment !== 'included' && treatment !== 'addon')) {
-    return NextResponse.json({ error: 'variantId and treatment (included|addon) required' }, { status: 400 })
+  if (!variantId || treatment !== 'included') {
+    return NextResponse.json({ error: 'variantId and treatment (included) required; paid merch is set up under Add-ons' }, { status: 400 })
   }
   noteAuditSubject(req, { detail: { treatment } })
   const { error } = await addEventOffering(stellrOnlyDb(crew.scope, supabaseServer()), slug, variantId, treatment)

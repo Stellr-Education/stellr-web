@@ -210,6 +210,10 @@ export const TENANT_SURFACE_DENY: readonly TenantSurfaceRule[] = [
   { match: 'app/api/cron/', reason: 'Vercel Cron calls the platform host only' },
   { match: 'app/api/webhooks/', reason: 'third parties call the platform host only' },
   { match: 'app/api/stripe/webhook/route.ts', reason: 'Stripe calls the platform host only' },
+  // Event add-ons are Stellr's events only until tenant add-ons (docs/PLAN-event-add-ons-2026-11-17.md).
+  { match: 'app/(stellr)/(member)/account/extras/', reason: "event add-ons: Stellr's events only" },
+  { match: 'app/(stellr)/(flow)/register/[slug]/addons/', reason: "event add-ons: Stellr's events only" },
+  { match: 'app/api/register/addons-pay/route.ts', reason: "event add-ons: Stellr's events only" },
   { match: 'app/api/printful/webhook/route.ts', reason: 'Printful calls the platform host only' },
   { match: 'app/(stellr)/(public)/store/', reason: "Stellr's own store" },
   { match: 'app/api/store/', reason: "Stellr's own store" },

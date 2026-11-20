@@ -368,7 +368,7 @@ export const UPLOAD_PURPOSES: Record<UploadPurpose, PurposeSpec> = {
     },
   },
 
-  // Attachments for the event "Email Reminders" tab (schedule, RFP…). Event
+  // Attachments for the event "Email Engagement" tab (schedule, RFP…). Event
   // managers attach to their own event's emails, so this is the event gate.
   // 10MB keeps a message under Resend's 40MB total once base64-encoded, with
   // room for more than one file.

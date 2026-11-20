@@ -44,14 +44,23 @@ const MANIFEST_CLASS_COUNTS: Record<RouteClass, number> = {
   platform_destined: 9,
   // +1 tenant_crew, -1 stellr_only: admin registrations/[id]/payment-method (C16 follow-up)
   // +3 tenant_crew, -3 stellr_only: admin events/[slug]/{companies,offerings,merch/commit} (C18)
-  tenant_crew: 38,
-  participant: 131,
+  // +7 tenant_crew, -7 stellr_only: admin events/[slug]/{credentials,badge-templates(+preview),badges,
+  //   certificate-templates(+preview),certificates} (C19a, S5 wave 8)
+  // +1 tenant_crew: admin events/[slug]/participants/[pid]/guardian-consent/resend (wave 8 CONSENT (c))
+  // +2 tenant_crew, +1 participant on 17 Nov 2026: admin registrations/[id]/{receipt,paid-invoice}, members/billing/paid-invoice
+  // +3 tenant_crew: admin events/[slug]/addons, addons/[id], addons/settings (event add-ons, 17 Nov)
+  // +1 tenant_crew: admin events/[slug]/addons/bookings (event add-ons staff tools, 17 Nov)
+  tenant_crew: 52,
+  // +2 on 17 Nov 2026: members/addons/[registrationId] and account/extras/[registrationId] (event add-ons)
+  participant: 134,
   // +6 on 16 Nov 2026: the Classroom Qualifier hub, its two window pages, the library and the teacher stories list and detail.
-  public: 139,
+  // +2 on 17 Nov 2026: register/addons-pay and register/[slug]/addons/pay/[token] (event add-ons, denied on tenant hosts)
+  public: 141,
   webhook: 12,
   cron: 24,
   // -1 on 14 Nov 2026: the embedded Sanity Studio page left the app for Sanity's hosting.
-  stellr_only: 163,
+  // -7 on 16 Nov 2026: C19a (see tenant_crew).
+  stellr_only: 156,
 }
 // +3 on 9 Nov 2026: members/compliance/external-check (participant) and the
 // admin members/[id]/event-manager and members/[id]/external-check (stellr_only).
@@ -64,17 +73,21 @@ const MANIFEST_CLASS_COUNTS: Record<RouteClass, number> = {
 // +1 on 14 Nov 2026: cq-lead, the Classroom Qualifier curriculum request (public, Stellr lead capture, denied on tenant hosts like lp-lead).
 // -1 on 14 Nov 2026: studio/[[...tool]] (stellr_only, denied on tenant hosts), gone: the Studio is hosted by Sanity.
 // +6 on 16 Nov 2026: classroom-qualifier hub, 2026-27, spring-2027, resources, stories and stories/[slug] (public pages, denied on tenant hosts like the other Stellr marketing pages).
-const MANIFEST_TOTAL = 516
+// +1 on 16 Nov 2026: admin events/[slug]/participants/[pid]/guardian-consent/resend, the staff resend of a guardian's consent form (tenant_crew, denied on tenant hosts like every admin route).
+// +3 on 17 Nov 2026: payment documents, admin registrations/[id]/receipt and paid-invoice (tenant_crew, denied on tenant hosts like every admin route) and members/billing/paid-invoice (participant, pending like the other member routes).
+// +7 on 17 Nov 2026: event add-ons (3 admin, 2 member, 2 pay link; members/addons pending like every member API, the rest denied).
+// +1 on 17 Nov 2026: admin events/[slug]/addons/bookings (tenant_crew, denied on tenant hosts like every admin route).
+const MANIFEST_TOTAL = 528
 
 // The decisions. Moving a route between them is a deliberate diff here.
 const DECISION_COUNTS: Record<TenantSurfaceDecision, number> = {
   allow: 50,
-  // members 37, schools 2, privacy request pages 2 and APIs 2, the bounce-notice
+  // members 39, schools 2, privacy request pages 2 and APIs 2, the bounce-notice
   // link page and API 2, and the 4 held
   // files pinned under 'routes held back' below
-  pending: 49,
+  pending: 51,
   bypass: 4,
-  deny: 413,
+  deny: 423,
 }
 
 /** A concrete URL a manifest file serves, with sample values for its params. */
@@ -100,7 +113,7 @@ function sampleUrl(file: string): string {
 }
 
 describe('the manifest this classifies', () => {
-  it('has the measured class counts, 516 in total', () => {
+  it('has the measured class counts, 520 in total', () => {
     expect(FILES).toHaveLength(MANIFEST_TOTAL)
     const counts = Object.fromEntries(Object.keys(MANIFEST_CLASS_COUNTS).map((c) => [c, 0])) as Record<
       RouteClass,

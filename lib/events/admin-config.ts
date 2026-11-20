@@ -236,7 +236,7 @@ export async function loadEventOfferings(db: StellrOnlyDb, slug: string) {
   return { offs, products }
 }
 
-export async function addEventOffering(db: StellrOnlyDb, slug: string, variantId: unknown, treatment: 'included' | 'addon') {
+export async function addEventOffering(db: StellrOnlyDb, slug: string, variantId: unknown, treatment: 'included') {
   return db.from('event_store_offerings').insert({ event_slug: slug, variant_id: variantId, treatment })
 }
 
