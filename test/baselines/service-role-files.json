@@ -563,7 +563,7 @@
     },
     "app/api/admin/events/[slug]/badge-templates/route.ts": {
       "class": "convert",
-      "reason": "auto: touches tenant or event-scoped tables; tables: event_badge_templates, event_companies"
+      "reason": "auto: reaches tables it does not name (dynamic .from, rpc, or a client passed to a helper); review before converting"
     },
     "app/api/admin/events/[slug]/badges/route.ts": {
       "class": "convert",
@@ -575,7 +575,7 @@
     },
     "app/api/admin/events/[slug]/certificate-templates/route.ts": {
       "class": "convert",
-      "reason": "auto: touches tenant or event-scoped tables; tables: event_certificate_templates"
+      "reason": "auto: reaches tables it does not name (dynamic .from, rpc, or a client passed to a helper); review before converting"
     },
     "app/api/admin/events/[slug]/certificates/route.ts": {
       "class": "convert",
@@ -591,7 +591,7 @@
     },
     "app/api/admin/events/[slug]/credentials/route.ts": {
       "class": "convert",
-      "reason": "auto: touches tenant or event-scoped tables; tables: credentials, event_settings, participants, registrations"
+      "reason": "auto: reaches tables it does not name (dynamic .from, rpc, or a client passed to a helper); review before converting"
     },
     "app/api/admin/events/[slug]/docusign-reissue/route.ts": {
       "class": "convert",

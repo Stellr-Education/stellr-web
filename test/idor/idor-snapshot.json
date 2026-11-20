@@ -871,7 +871,7 @@
       }
     },
     "app/api/admin/events/[slug]/badge-templates/preview/route.ts": {
-      "class": "stellr_only",
+      "class": "tenant_crew",
       "segments": [
         "slug"
       ],
@@ -884,7 +884,7 @@
       }
     },
     "app/api/admin/events/[slug]/badge-templates/route.ts": {
-      "class": "stellr_only",
+      "class": "tenant_crew",
       "segments": [
         "slug"
       ],
@@ -901,7 +901,7 @@
       }
     },
     "app/api/admin/events/[slug]/badges/route.ts": {
-      "class": "stellr_only",
+      "class": "tenant_crew",
       "segments": [
         "slug"
       ],
@@ -912,7 +912,7 @@
       }
     },
     "app/api/admin/events/[slug]/certificate-templates/preview/route.ts": {
-      "class": "stellr_only",
+      "class": "tenant_crew",
       "segments": [
         "slug"
       ],
@@ -923,7 +923,7 @@
       }
     },
     "app/api/admin/events/[slug]/certificate-templates/route.ts": {
-      "class": "stellr_only",
+      "class": "tenant_crew",
       "segments": [
         "slug"
       ],
@@ -936,7 +936,7 @@
       }
     },
     "app/api/admin/events/[slug]/certificates/route.ts": {
-      "class": "stellr_only",
+      "class": "tenant_crew",
       "segments": [
         "slug"
       ],
@@ -976,7 +976,7 @@
       }
     },
     "app/api/admin/events/[slug]/credentials/route.ts": {
-      "class": "stellr_only",
+      "class": "tenant_crew",
       "segments": [
         "slug"
       ],

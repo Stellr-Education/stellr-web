@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server'
 import { supabaseServer } from '@/lib/supabase'
-import { requireEventAccess } from '@/lib/event-access'
+import { requireEventRoute } from '@/lib/authz'
+import { stellrOnlyDb } from '@/lib/events/admin-records'
+import { stellrOnlyEvent } from '@/lib/tenancy/load-scoped'
 import { getEventBySlug } from '@/lib/events/repo'
 import { generateBadgesPdf } from '@/lib/event-pdf'
 import { DEFAULT_BADGE_FORMAT, isBadgeFormat } from '@/lib/badge-layout'
@@ -17,6 +19,12 @@ import { artworkTheme } from '@/lib/artwork-theme'
 
 export const dynamic = 'force-dynamic'
 
+// S5 wave 8, C19a: tenant_crew, and Stellr-only for other tenants. Badges print on Stellr's artwork, so the
+// handler asks stellrOnlyEvent right after the access check: a tenant's staff get its 503,
+// another tenant's event is a 404 for everyone, a Stellr admin included, and a failed read of
+// the event's owner is a retryable 503. Stellr's own events answer as before.
+const ROUTE = '/api/admin/events/[slug]/badges'
+
 // GET /api/admin/events/[slug]/badges?format=avery_5392|avery_8395[&order=school][&codes=1][&who=teachers] — one badge
 // per registered participant and per assigned volunteer mentor, on the chosen
 // Avery sheet. Each badge uses its company's template, else the mentors' (for
@@ -30,8 +38,10 @@ export const dynamic = 'force-dynamic'
 // (else Everyone's), spares included.
 export async function GET(req: Request, { params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params
-  const access = await requireEventAccess(slug)
-  if (!access.ok) return NextResponse.json({ error: 'Forbidden' }, { status: access.status })
+  const crew = await requireEventRoute(slug, { route: ROUTE })
+  if (!crew.ok) return crew.response
+  const foreign = await stellrOnlyEvent(crew.scope, supabaseServer(), slug, ROUTE)
+  if (foreign) return foreign
 
   const search = new URL(req.url).searchParams
   const requested = search.get('format')
@@ -43,7 +53,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ slug: st
   const who = isBadgeWho(requestedWho) ? requestedWho : 'all'
   const teachers = who === 'teachers'
 
-  const db = supabaseServer()
+  const db = stellrOnlyDb(crew.scope, supabaseServer())
   const [event, holders, own] = await Promise.all([
     getEventBySlug(slug),
     loadBadgeHolders(db, slug, { order, codes, who }),
