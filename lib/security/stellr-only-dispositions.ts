@@ -51,7 +51,6 @@ const GROUPS: readonly DispositionGroup[] = [
     reason: 'event operations by slug: a tenant runs its own events. C18 moved companies, offerings and merch/commit; C19a credentials and the badge and certificate artwork',
     routes: [
       'events/[slug]/awards', 'events/[slug]/awards/issue',
-      'events/[slug]/check-in',
     ],
   },
   {

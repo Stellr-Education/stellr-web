@@ -57,6 +57,16 @@ vi.mock('@/lib/event-access', () => ({
     return h.access
   },
 }))
+// C19c: the route asks lib/authz requireEventRoute; it answers for the caller h.access describes.
+vi.mock('@/lib/authz', async () => {
+  const { eventRouteFromAccess } = await import('@/test/fixtures/event-route')
+  return {
+    requireEventRoute: async (slug: string) => {
+      if (h.access.throws) throw new Error('auth backend down')
+      return eventRouteFromAccess(slug, h.access as never)
+    },
+  }
+})
 vi.mock('@/lib/sanity', () => ({ getEventBySlug: async () => ({ setting: 'in_person', date: '2027-03-06' }) }))
 vi.mock('@/lib/events/repo', () => ({ getEventBySlug: async () => ({ setting: 'in_person', date: '2027-03-06' }) }))
 vi.mock('@/lib/check-in-banner', async (importOriginal) => ({

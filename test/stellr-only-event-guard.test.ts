@@ -22,7 +22,7 @@ import { STELLR_ONLY_DISPOSITIONS } from '@/lib/security/stellr-only-disposition
 //     and carry the option instead.
 //   - every events/[slug] route still in the Stellr-only register
 //     (lib/security/stellr-only-dispositions.ts). Those not yet on the option are listed in
-//     PENDING_C19A, which only shrinks: C19a converted seven; awards and the admin check-in
+//     PENDING_C19A, which only shrinks: C19a converted seven and C19c the admin check-in; awards
 //     follow in C19's later parts.
 
 const OPTION = 'stellrOnlyEvent'
@@ -69,7 +69,6 @@ const STELLR_ACCOUNT_ROUTES = [
 const PENDING_C19A = new Set([
   `${EVENTS_DIR}/awards/route.ts`,
   `${EVENTS_DIR}/awards/issue/route.ts`,
-  `${EVENTS_DIR}/check-in/route.ts`,
 ])
 
 /** What is wrong with each handler of a Stellr-only event route; empty when it is guarded. */

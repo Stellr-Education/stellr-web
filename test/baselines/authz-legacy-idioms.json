@@ -20,8 +20,8 @@
     "roleTableRead"
   ],
   "totals": {
-    "files": 75,
-    "sites": 104,
+    "files": 74,
+    "sites": 102,
     "byIdiom": {
       "CREW_CLERK_ROLES": 1,
       "adminName": 5,
@@ -34,7 +34,7 @@
       "isEventManagerClaims": 2,
       "pageRequireAdmin": 1,
       "requireAdminPage": 17,
-      "requireEventAccess": 15,
+      "requireEventAccess": 13,
       "roleTableRead": 2
     }
   },
@@ -223,9 +223,6 @@
       "requireEventAccess": 1
     },
     "app/api/admin/events/[slug]/awards/route.ts": {
-      "requireEventAccess": 2
-    },
-    "app/api/admin/events/[slug]/check-in/route.ts": {
       "requireEventAccess": 2
     },
     "app/api/admin/events/slug-guard/route.ts": {
