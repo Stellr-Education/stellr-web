@@ -106,7 +106,9 @@ export const RECORD_PAGES: RecordPageCase[] = [
     path: (o, code) => `/check-in/${o.eventSlug}/code?c=${code(o)}`,
     missing: `/check-in/${MISSING_SLUG}/code?c=p.00000000-0000-4000-8000-000000000000.nope`,
     ownHost: { kind: 'shows', text: (o) => `${o.marker}-person` },
-    onStellrHost: { kind: 'answers', owner: 'A12', text: (o) => `${o.marker}-person` },
+    // A12 (S5 wave 8): Stellr's code page answers another tenant's code as an invalid one,
+    // what a slug nobody has gets (app/(stellr)/(flow)/check-in/[slug]/code/page.tsx).
+    onStellrHost: { kind: 'sameAsUnknown', owner: 'A12' },
   },
   {
     file: 'app/(stellr)/(flow)/survey/[token]/page.tsx',

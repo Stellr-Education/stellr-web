@@ -141,14 +141,6 @@
       "class": "convert",
       "reason": "auto: reaches tables it does not name (dynamic .from, rpc, or a client passed to a helper); review before converting; tables: survey_definitions"
     },
-    "app/(stellr)/(flow)/check-in/[slug]/code/page.tsx": {
-      "class": "convert",
-      "reason": "auto: touches tenant or event-scoped tables; tables: participants, registrations"
-    },
-    "app/(stellr)/(flow)/check-in/[slug]/page.tsx": {
-      "class": "convert",
-      "reason": "auto: reaches tables it does not name (dynamic .from, rpc, or a client passed to a helper); review before converting"
-    },
     "app/(stellr)/(flow)/check-in/page.tsx": {
       "class": "convert",
       "reason": "auto: reaches tables it does not name (dynamic .from, rpc, or a client passed to a helper); review before converting"
@@ -1844,6 +1836,18 @@
     "scripts/watermark-worker.ts": {
       "class": "script",
       "reason": "auto: operator script, run by hand; tables: video_watermark_jobs"
+    },
+    "app/(stellr)/(flow)/check-in/[slug]/check-in-body.tsx": {
+      "class": "convert",
+      "reason": "Moved from check-in/[slug]/page.tsx (S5 wave 8, A12), unchanged: the participant check-in page body, shared with the tenant tree, whose pages check the event's owner first. auto: reaches tables it does not name (dynamic .from, rpc, or a client passed to a helper); review before converting"
+    },
+    "app/(stellr)/(flow)/check-in/[slug]/code/code-body.tsx": {
+      "class": "convert",
+      "reason": "Moved from check-in/[slug]/code/page.tsx (S5 wave 8, A12), unchanged: the check-in code page body, shared with the tenant tree, whose pages check the event's owner first. auto: touches tenant or event-scoped tables; tables: participants, registrations"
+    },
+    "lib/tenancy/event-origin.ts": {
+      "class": "convert",
+      "reason": "S5 wave 8 A12: reads the event's owner (events mirror) and the tenant's primary host (tenant_domains) to build participant links on the event's own host. Server-only, no request input reaches the tenant id. Only when TENANT_ROUTING_ENABLED is on; off, it reads nothing."
     }
   }
 }

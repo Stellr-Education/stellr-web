@@ -35,7 +35,7 @@ const RECORDLESS: Record<string, string> = {
 
 /** Every headers() or cookies() call a tenant page can reach, and why it isn't deciding the tenant. */
 const REQUEST_READS: Record<string, string> = {
-  'app/(stellr)/(flow)/check-in/[slug]/page.tsx#CheckInPage:cookies': "the phone's signed check-in cookie for this event slug: who is checking in, not which tenant",
+  'app/(stellr)/(flow)/check-in/[slug]/check-in-body.tsx#CheckInBody:cookies': "the phone's signed check-in cookie for this event slug: who is checking in, not which tenant",
   'lib/impersonation.ts#viewAsState:cookies': 'the admin view-as cookie, read inside the identity helpers: who the person is, on any host',
   'lib/request-nonce.ts#requestNonce:headers': "this response's CSP nonce, for ClerkProvider's script tag",
   'lib/tenancy/request-tenant.ts#requestTenant:headers': 'for app/api only: it sits beside tenantFromParams, and the banned list below fails any call to it in the closure',

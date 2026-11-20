@@ -12,6 +12,7 @@ import { downloadArtwork } from '@/lib/event-certificates'
 import type { Badge, BadgeDesign, BadgePerson } from '@/lib/event-pdf'
 import { checkInCodeLink } from '@/lib/check-in-codes'
 import type { ArtworkTheme } from '@/lib/artwork-theme'
+import { eventSiteOrigin } from '@/lib/tenancy/event-origin'
 
 // ── Event name badges: database side ─────────────────────────────────────────
 // Templates (event_badge_templates: one artwork per format per audience —
@@ -243,6 +244,8 @@ export async function loadBadgeHolders(
   )
   const bySchool = opts.order === 'school'
   type Sortable = BadgeHolder & { sortSchool: string; sortName: string }
+  // S5 wave 8, A12: each badge's QR opens on the event's own host (read once, only with codes on).
+  const origin = opts.codes ? await eventSiteOrigin(slug) : null
   const holders: Sortable[] = participants.filter((p) => !teachersOnly || p.event_role === 'teacher').map((p) => {
     const company = p.event_companies as { number: number; name: string | null } | null
     const role = ROLE_LABELS[p.event_role as string] ?? 'Participant'
@@ -253,7 +256,7 @@ export async function loadBadgeHolders(
       companyId: (p.company_id as string | null) ?? null,
       mentor: p.event_role === 'mentor',
       teacher: p.event_role === 'teacher',
-      qr: opts.codes ? checkInCodeLink(slug, 'p', p.id as string) : null,
+      qr: opts.codes ? checkInCodeLink(slug, 'p', p.id as string, origin) : null,
       sortSchool: p.school,
       sortName: `${p.last_name} ${p.first_name}`,
     }

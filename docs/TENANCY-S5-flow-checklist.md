@@ -174,7 +174,7 @@ Mode is `AUTHZ_SOURCE` / `LOADSCOPED_MODE`. "Any" means the answer is the same i
 | P3 | An admin API on the canary host, even for a Stellr admin | `stellr-probe-admin` | `canary.<zone>` | Any: 404 |
 | P4 | `dev-canary`'s register page on Stellr's host (A7) | anonymous | Stellr | Any: 404 |
 | P5 | Registering for `dev-canary`'s event through Stellr's host; nothing written (A7) | anonymous | Stellr | Any: 404 |
-| P6 | `dev-canary`'s check-in page on Stellr's host | anonymous | Stellr | Any: 200, **known gap A12** |
+| P6 | `dev-canary`'s check-in page on Stellr's host | anonymous | Stellr | 404, as a slug nobody has; its code page answers as an invalid code (closed by A12, S5 wave 8) |
 | P7 | `canary-manager`'s desk for their own event, and the pending minor's consent marker | `canary-manager` | Stellr | Any: 200 with no marker, **known gap `.23`** |
 | P8 | `canary-manager` on a Stellr event's desk | `canary-manager` | Stellr | Any: 403 |
 | P9 | A group check-in of the adult and a pending minor | `canary-manager` | Stellr | Any: 409 for the whole group, **known gap `.24`** |
@@ -187,7 +187,7 @@ Mode is `AUTHZ_SOURCE` / `LOADSCOPED_MODE`. "Any" means the answer is the same i
 | P16 | A Stellr event's register page on the canary host | anonymous | `canary.<zone>` | Any: 404 |
 | P17 | Registering for a Stellr event through the canary host; nothing written | anonymous | `canary.<zone>` | Any: 404 |
 
-**Known gaps and who closes them:** A11 (slice A11: the e-sign participant side has no tenant check on Stellr's host), A12 (slice A12: `/check-in/<slug>` answers for another tenant's event on Stellr's host), `.23` (tracker `s5-programme.23`: no "waiting for guardian consent" marker on the desk), `.24` (`.24`: a group check-in with one pending minor refuses the whole group), `.29` (`.29`: a Stellr-only admin list includes another tenant's rows). A probe that answers the closed state instead is reported as differing, and the table changes in the same PR that closes the gap.
+**Known gaps and who closes them:** A11 (slice A11: the e-sign participant side has no tenant check on Stellr's host), `.23` (tracker `s5-programme.23`: no "waiting for guardian consent" marker on the desk), `.24` (`.24`: a group check-in with one pending minor refuses the whole group), `.29` (`.29`: a Stellr-only admin list includes another tenant's rows). A probe that answers the closed state instead is reported as differing, and the table changes in the same PR that closes the gap.
 
 ### Pass, and the run record
 

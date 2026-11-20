@@ -491,7 +491,7 @@ describe('what the tenant tree’s own code asks of the policy', () => {
     expect(browser.size).toBeGreaterThan(0)
     expect(scan(closure, readRepoFile, browser)).toEqual([
       // The QR code: a data: URL from the encoder. See below.
-      'app/(stellr)/(flow)/check-in/[slug]/code/page.tsx: an image from a value',
+      'app/(stellr)/(flow)/check-in/[slug]/code/code-body.tsx: an image from a value',
       // /api/register/pay, or /api/register/pay-seat from its one other caller.
       'app/(stellr)/(flow)/register/[slug]/pay/[token]/PayNowButton.tsx: a call to a host from a value',
       // /api/sign/document, from its one caller.
@@ -515,7 +515,7 @@ describe('what the tenant tree’s own code asks of the policy', () => {
 
   it('has no QR code or image the policy would stop', () => {
     // A data: URL from the encoder, which img-src allows.
-    const src = readFileSync('app/(stellr)/(flow)/check-in/[slug]/code/page.tsx', 'utf8')
+    const src = readFileSync('app/(stellr)/(flow)/check-in/[slug]/code/code-body.tsx', 'utf8')
     expect(src).toContain('src={qr}')
     expect(src).toContain('data:')
     expect(directive(tenantPagePolicy('abc', ENV), 'img-src')).toContain('data:')
