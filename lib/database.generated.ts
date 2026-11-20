@@ -9,66 +9,6 @@ export type Json =
 export type Database = {
   public: {
     Tables: {
-      account_credits: {
-        Row: {
-          amount_cents: number
-          created_at: string
-          currency: string
-          expires_at: string | null
-          id: string
-          member_id: string
-          reason: string | null
-          remaining_cents: number
-          source_participant_id: string | null
-          source_registration_id: string | null
-          source_type: string
-          status: string
-        }
-        Insert: {
-          amount_cents: number
-          created_at?: string
-          currency: string
-          expires_at?: string | null
-          id?: string
-          member_id: string
-          reason?: string | null
-          remaining_cents: number
-          source_participant_id?: string | null
-          source_registration_id?: string | null
-          source_type?: string
-          status?: string
-        }
-        Update: {
-          amount_cents?: number
-          created_at?: string
-          currency?: string
-          expires_at?: string | null
-          id?: string
-          member_id?: string
-          reason?: string | null
-          remaining_cents?: number
-          source_participant_id?: string | null
-          source_registration_id?: string | null
-          source_type?: string
-          status?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "account_credits_member_id_fkey"
-            columns: ["member_id"]
-            isOneToOne: false
-            referencedRelation: "members"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "account_credits_source_registration_id_fkey"
-            columns: ["source_registration_id"]
-            isOneToOne: false
-            referencedRelation: "registrations"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
       addon_orders: {
         Row: {
           created_at: string
@@ -2266,60 +2206,6 @@ export type Database = {
           },
         ]
       }
-      credit_redemptions: {
-        Row: {
-          amount_cents: number
-          applied_to: string | null
-          created_at: string
-          credit_id: string
-          id: string
-          member_id: string
-          reservation_id: string | null
-          reserved_expires_at: string | null
-          status: string
-          stripe_checkout_session_id: string | null
-        }
-        Insert: {
-          amount_cents: number
-          applied_to?: string | null
-          created_at?: string
-          credit_id: string
-          id?: string
-          member_id: string
-          reservation_id?: string | null
-          reserved_expires_at?: string | null
-          status?: string
-          stripe_checkout_session_id?: string | null
-        }
-        Update: {
-          amount_cents?: number
-          applied_to?: string | null
-          created_at?: string
-          credit_id?: string
-          id?: string
-          member_id?: string
-          reservation_id?: string | null
-          reserved_expires_at?: string | null
-          status?: string
-          stripe_checkout_session_id?: string | null
-        }
-        Relationships: [
-          {
-            foreignKeyName: "credit_redemptions_credit_id_fkey"
-            columns: ["credit_id"]
-            isOneToOne: false
-            referencedRelation: "account_credits"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "credit_redemptions_member_id_fkey"
-            columns: ["member_id"]
-            isOneToOne: false
-            referencedRelation: "members"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
       cron_runs: {
         Row: {
           errors: Json
@@ -3799,10 +3685,8 @@ export type Database = {
       }
       event_refunds: {
         Row: {
-          account_credit_id: string | null
           addon_line_id: string | null
           created_at: string
-          credit_validity_days: number | null
           currency: string | null
           days_out: number | null
           decided_by: string | null
@@ -3822,10 +3706,8 @@ export type Database = {
           tenant_id: string | null
         }
         Insert: {
-          account_credit_id?: string | null
           addon_line_id?: string | null
           created_at?: string
-          credit_validity_days?: number | null
           currency?: string | null
           days_out?: number | null
           decided_by?: string | null
@@ -3845,10 +3727,8 @@ export type Database = {
           tenant_id?: string | null
         }
         Update: {
-          account_credit_id?: string | null
           addon_line_id?: string | null
           created_at?: string
-          credit_validity_days?: number | null
           currency?: string | null
           days_out?: number | null
           decided_by?: string | null
@@ -3868,13 +3748,6 @@ export type Database = {
           tenant_id?: string | null
         }
         Relationships: [
-          {
-            foreignKeyName: "event_refunds_account_credit_id_fkey"
-            columns: ["account_credit_id"]
-            isOneToOne: false
-            referencedRelation: "account_credits"
-            referencedColumns: ["id"]
-          },
           {
             foreignKeyName: "event_refunds_addon_line_id_fkey"
             columns: ["addon_line_id"]
