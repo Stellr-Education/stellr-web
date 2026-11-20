@@ -4,7 +4,7 @@ import { guardCron } from '@/lib/cron'
 import { withCronAudit } from '@/lib/cron-audit'
 import { startCronRun } from '@/lib/cron-runs'
 import { partitionByTenant, runPerTenant, type TenantJob } from '@/lib/cron-tenants'
-import { getEventBySlug } from '@/lib/events/repo'
+import { getEventBySlugIn } from '@/lib/events/tenant-facade'
 import { sendEventEmail, reclaimStuckSending } from '@/lib/event-emails/send'
 import { scheduleDecision } from '@/lib/event-emails/schedule'
 import { todayInMountain, todayInZone } from '@/lib/event-emails/render'
@@ -45,6 +45,12 @@ const START_BUDGET_MS = 15_000
  * start budget has gone.
  */
 const SEND_OVERRUN_MS = 45_000
+/**
+ * Every send in this run stops between recipients by this point (17 Nov 2026),
+ * well inside maxDuration, so a long send ends recorded and resumable instead of
+ * being killed mid-loop. What is left goes at the next run (or "Resume now").
+ */
+const SEND_DEADLINE_MS = 50_000
 
 type Counts = {
   due: number
@@ -105,12 +111,15 @@ export const GET = withCronAudit('event-emails', async (req: NextRequest) => {
   }
 
   const eventDates = new Map<string, string | null>()
-  const eventDate = async (slug: string) => {
-    if (!eventDates.has(slug)) {
-      const e = (await getEventBySlug(slug).catch(() => null)) as { date?: string } | null
-      eventDates.set(slug, e?.date ?? null)
+  // S5 wave 8, C8-PG: each tenant's job reads its own events (lib/events/tenant-facade.ts),
+  // cached per tenant and slug. With TENANT_DB_AREAS unset this is today's Sanity read.
+  const eventDate = async (tenantId: string, slug: string) => {
+    const key = `${tenantId}:${slug}`
+    if (!eventDates.has(key)) {
+      const e = (await getEventBySlugIn(tenantId, slug).catch(() => null)) as { date?: string } | null
+      eventDates.set(key, e?.date ?? null)
     }
-    return eventDates.get(slug) ?? null
+    return eventDates.get(key) ?? null
   }
   const result = {
     due: 0, sent: 0, skipped: 0, deferred: 0, resumed: 0, catchUpEmailed: 0, catchUpDeferred: 0,
@@ -142,7 +151,7 @@ export const GET = withCronAudit('event-emails', async (req: NextRequest) => {
 
     for (const row of byTenant.get(tenantId) ?? []) {
       const slug = row.event_slug
-      const decision = scheduleDecision(await eventDate(slug), row.schedule_days_before, day)
+      const decision = scheduleDecision(await eventDate(tenantId, slug), row.schedule_days_before, day)
       if (decision === 'wait') continue
       if (decision === 'skip') {
         await db.from('event_emails').update({ status: 'skipped' }).eq('id', row.id).eq('status', 'scheduled')
@@ -155,7 +164,7 @@ export const GET = withCronAudit('event-emails', async (req: NextRequest) => {
         add('deferred')
         continue
       }
-      const out = await sendEventEmail(db, row.id, { trigger: 'schedule', triggeredBy: 'schedule', ...withSender })
+      const out = await sendEventEmail(db, row.id, { trigger: 'schedule', triggeredBy: 'schedule', deadline: started + SEND_DEADLINE_MS, ...withSender })
       if (out.ok) add('sent')
       else job.fail(row.id, out.error)
     }
@@ -163,11 +172,11 @@ export const GET = withCronAudit('event-emails', async (req: NextRequest) => {
     // deep review INT-1: pick up any send abandoned in 'sending' by a killed
     // function and finish it (skipping whoever the killed run already emailed),
     // before the catch-up pass re-checks who is owed.
-    const resumed = await reclaimStuckSending(db, budgetLeft, { tenantId, ...withSender })
+    const resumed = await reclaimStuckSending(db, budgetLeft, { tenantId, deadline: started + SEND_DEADLINE_MS, ...withSender })
     add('resumed', resumed.reclaimed)
     for (const e of resumed.errors) job.fail(`resume:${e.id}`, e.error)
 
-    const catchUps = await runCatchUps(db, eventDate, budgetLeft, day, { tenantId, ...withSender })
+    const catchUps = await runCatchUps(db, (slug) => eventDate(tenantId, slug), budgetLeft, day, { tenantId, ...withSender })
     add('catchUpEmailed', catchUps.emailed)
     add('catchUpDeferred', catchUps.deferred)
     for (const e of catchUps.errors) job.fail(`catch-up:${e.id}`, e.error)

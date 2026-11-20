@@ -117,7 +117,8 @@ describe('B19: Lane B holds no direct Sanity event-getter import', () => {
   it('every moved file is Lane B and imports the facade', () => {
     for (const f of MOVED) {
       expect(laneOf(f), f).toBe('B')
-      expect(readFileSync(f, 'utf8'), f).toMatch(/from '@\/lib\/events\/repo'/)
+      // lib/events/tenant-facade is the facade with a tenant (C8-PG, S5 wave 8); it reads through repo.
+      expect(readFileSync(f, 'utf8'), f).toMatch(/from '@\/lib\/events\/(repo|tenant-facade)'/)
     }
   })
 

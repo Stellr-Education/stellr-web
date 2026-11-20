@@ -92,11 +92,13 @@ export async function resolveRefundBasis(db: Db, stripe: Stripe | null, p: Parti
   if (paymentIntent) {
     const { data: rows } = await db
       .from('group_invoices')
-      .select('stripe_invoice_id, total_cents, seats, currency, kind')
+      .select('stripe_invoice_id, total_cents, addons_cents, seats, currency, kind')
       .eq('payment_intent_id', paymentIntent)
+      .in('kind', ['seats', 'additional'])
       .limit(1)
-    const row = (rows as { stripe_invoice_id: string; total_cents: number; seats: number; currency: string }[] | null)?.[0]
-    const perPlace = row ? perSeatPaidCents(row.total_cents, row.seats) : null
+    const row = (rows as { stripe_invoice_id: string; total_cents: number; addons_cents: number | null; seats: number; currency: string }[] | null)?.[0]
+    // The place part only: add-ons on the same invoice are refunded as add-ons (lib/addons).
+    const perPlace = row ? perSeatPaidCents(row.total_cents - (row.addons_cents ?? 0), row.seats) : null
     if (row && perPlace) {
       return { paymentIntent, paid, perPlaceCents: perPlace, currency: row.currency, stripeInvoiceId: row.stripe_invoice_id, payer: 'organiser' }
     }

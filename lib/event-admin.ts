@@ -80,6 +80,10 @@ export interface RosterParticipant {
   team_profile_submitted?: boolean
   /** The members row behind this participant, for the admin record link. */
   member_id: string | null
+  /** Who pays for this place: participants.payer (lib/group-payer.ts). NULL leaves it to the group's flags. */
+  payer?: string | null
+  /** participants.individual_payment_status, for lib/group-payer payerOf(). */
+  individual_payment_status?: string | null
   /** lib/school-ids: set only when getEventRoster is asked to resolve schools. */
   school_id?: string | null
 }
@@ -98,6 +102,17 @@ export interface RosterGroup {
   teacherEmail: string | null
   /** Organiser's first name, for greetings (group registrations). */
   teacherFirstName: string | null
+  /** Who registered the group: a teacher or a student manager. */
+  registrantRole?: 'teacher' | 'student_manager' | null
+  /** The teacher a student manager named as point of contact (group registrations). */
+  teacherPocEmail?: string | null
+  teacherPocFirstName?: string | null
+  teacherPocLastName?: string | null
+  /** "Invoice for some": how later joiners pay; set marks a split group (lib/group-payer.ts). */
+  lateJoinerPayer?: string | null
+  /** "Students share the teacher's cost" (lib/teacher-share.ts). */
+  shareEstimate?: number | null
+  shareFirstPaidAt?: string | null
   /** This group registration is settled by invoice (vs Stripe checkout). */
   invoiceRequested: boolean
   /** When the invoice was marked paid by an admin (null = outstanding). */
@@ -184,9 +199,11 @@ export async function getEventRoster(
         .select(
           `id, type, status, teacher_first_name, teacher_last_name, teacher_email, teacher_member_id, school_name,
          member_pays_individually, invoice_requested, invoice_paid_at,
+         registrant_role, teacher_poc_first_name, teacher_poc_last_name, teacher_poc_email,
+         late_joiner_payer, share_estimate, share_first_paid_at,
          participants(id, member_id, first_name, last_name, email, grade, gender, date_of_birth, t_shirt_size,
            school_name, event_role, dietary_requirements, health_conditions, company_id,
-           checked_in_at, individual_payment_status,
+           checked_in_at, individual_payment_status, payer,
            emergency_contact_first_name, emergency_contact_last_name, emergency_contact_email,
            emergency_contact_phone, emergency_contact_relationship)`
         )
@@ -218,7 +235,7 @@ export async function getEventRoster(
     .select('registration_id, refund_cents')
     .eq('event_slug', eventSlug))
     .eq('kind', 'scholarship')
-    .in('refund_type', ['cash', 'credit'])
+    .eq('refund_type', 'cash')
   const scholarshipRefundByReg = new Map(
     ((scholarshipRefunds ?? []) as { registration_id: string; refund_cents: number | null }[]).map((r) => [r.registration_id, r.refund_cents ?? 0]),
   )
@@ -405,6 +422,8 @@ export async function getEventRoster(
         refund_detail: refundDetail(p.id as string, reg.id as string),
         team_profile_submitted: profileSubmitted.has(p.id as string),
         member_id: (p.member_id as string | null) ?? null,
+        payer: (p.payer as string | null) ?? null,
+        individual_payment_status: (p.individual_payment_status as string | null) ?? null,
       }
     })
 
@@ -422,6 +441,13 @@ export async function getEventRoster(
       schoolName: reg.type === 'group' ? schoolName : null,
       teacherEmail: (reg.teacher_email as string | null) || null,
       teacherFirstName: (reg.teacher_first_name as string | null) || null,
+      registrantRole: reg.registrant_role === 'student_manager' ? 'student_manager' : reg.registrant_role === 'teacher' ? 'teacher' : null,
+      teacherPocEmail: (reg.teacher_poc_email as string | null) || null,
+      teacherPocFirstName: (reg.teacher_poc_first_name as string | null) || null,
+      teacherPocLastName: (reg.teacher_poc_last_name as string | null) || null,
+      lateJoinerPayer: (reg.late_joiner_payer as string | null) ?? null,
+      shareEstimate: (reg.share_estimate as number | null) ?? null,
+      shareFirstPaidAt: (reg.share_first_paid_at as string | null) ?? null,
       invoiceRequested: !!reg.invoice_requested,
       invoicePaidAt: (reg.invoice_paid_at as string | null) ?? null,
       memberPaysIndividually: !!reg.member_pays_individually,

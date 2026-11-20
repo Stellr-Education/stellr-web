@@ -123,8 +123,12 @@ describe('a tenant send and its cron slice', () => {
     const out = await sendEventEmail(db as never, 'e1', { trigger: 'schedule', spacingMs: 0, sender: SENDER, signal: controller.signal })
     expect(out).toMatchObject({ ok: true, sent: 1, incomplete: true })
     expect(sendEmail.mock.calls.map((c) => c[0].to)).toEqual(['a@example.com'])
-    // Claimed as 'sending', then returned to 'scheduled' rather than marked sent.
-    expect(db.state.writes.map((w) => w.status)).toEqual(['sending', 'scheduled'])
+    // Claimed as 'sending' (then heartbeats, also 'sending'), and returned to
+    // 'scheduled' rather than marked sent.
+    const statuses = db.state.writes.map((w) => w.status)
+    expect(statuses[0]).toBe('sending')
+    expect(statuses.at(-1)).toBe('scheduled')
+    expect(statuses).not.toContain('sent')
   })
 
   it('a catch-up stops the same way', async () => {

@@ -20,8 +20,8 @@
     "roleTableRead"
   ],
   "totals": {
-    "files": 82,
-    "sites": 117,
+    "files": 75,
+    "sites": 104,
     "byIdiom": {
       "CREW_CLERK_ROLES": 1,
       "adminName": 5,
@@ -34,7 +34,7 @@
       "isEventManagerClaims": 2,
       "pageRequireAdmin": 1,
       "requireAdminPage": 17,
-      "requireEventAccess": 28,
+      "requireEventAccess": 15,
       "roleTableRead": 2
     }
   },
@@ -225,29 +225,8 @@
     "app/api/admin/events/[slug]/awards/route.ts": {
       "requireEventAccess": 2
     },
-    "app/api/admin/events/[slug]/badge-templates/preview/route.ts": {
-      "requireEventAccess": 1
-    },
-    "app/api/admin/events/[slug]/badge-templates/route.ts": {
-      "requireEventAccess": 3
-    },
-    "app/api/admin/events/[slug]/badges/route.ts": {
-      "requireEventAccess": 1
-    },
-    "app/api/admin/events/[slug]/certificate-templates/preview/route.ts": {
-      "requireEventAccess": 1
-    },
-    "app/api/admin/events/[slug]/certificate-templates/route.ts": {
-      "requireEventAccess": 3
-    },
-    "app/api/admin/events/[slug]/certificates/route.ts": {
-      "requireEventAccess": 1
-    },
     "app/api/admin/events/[slug]/check-in/route.ts": {
       "requireEventAccess": 2
-    },
-    "app/api/admin/events/[slug]/credentials/route.ts": {
-      "requireEventAccess": 3
     },
     "app/api/admin/events/slug-guard/route.ts": {
       "currentUserHasScope": 1

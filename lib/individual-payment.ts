@@ -12,6 +12,7 @@ import { assertLiveCredentials } from '@/lib/env-guards'
 import { stripeClient } from '@/lib/stripe'
 import { GUARANTEE_CHECKOUT_TEXT } from '@/lib/guarantee'
 import { isSplitGroup, payerOf } from '@/lib/group-payer'
+import { checkoutInvoiceParams } from '@/lib/payments/checkout-invoice'
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://www.stellreducation.org'
 
@@ -308,6 +309,8 @@ export interface SeatCheckoutOptions {
   customerEmail?: string | null
   /** A discount an admin set on the group (registrations.invoice_coupon_id). */
   couponId?: string | null
+  /** Whose place this is, for the invoice description. */
+  participantName?: string | null
 }
 
 /**
@@ -367,6 +370,15 @@ export async function createSeatCheckout(
       participantEmail: opts.participantEmail,
       isIndividualGroupPayment: 'true',
     },
+    // A paid invoice and an emailed receipt for the place (lib/payments/checkout-invoice.ts).
+    ...checkoutInvoiceParams({
+      registrationId: opts.registrationId,
+      eventSlug: opts.eventSlug,
+      eventTitle: (event as { title?: string } | null)?.title ?? null,
+      participantId: opts.participantId,
+      forName: opts.participantName ?? null,
+      receiptEmail: opts.customerEmail ?? null,
+    }),
     success_url: opts.successUrl,
     cancel_url: opts.cancelUrl,
   })

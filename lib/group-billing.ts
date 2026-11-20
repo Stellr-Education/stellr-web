@@ -5,6 +5,8 @@ import { GUARANTEE_RECEIPT_LINE } from '@/lib/guarantee'
 import { normalizeEventRole } from '@/lib/member-enums'
 import { runAfterResponse } from '@/lib/after-response'
 import { loadPayerPeople, seatsOnInvoice } from '@/lib/group-payer'
+import { STELLR_TENANT_ID } from '@/lib/tenancy/constants'
+import { invoiceAddons, linkLinesToInvoice, settleInvoiceAddonLines, type InvoiceAddons } from '@/lib/addons/invoice-items'
 
 // What a group pays when its roster changes after registration (29 Oct 2026).
 //
@@ -52,6 +54,8 @@ const COUNT_WRITE_ATTEMPTS = 5
 
 export type GroupBillingMode = 'invoice' | 'card' | 'individual' | 'free'
 export type LedgerStatus = 'draft' | 'open' | 'paid' | 'void' | 'uncollectible'
+/** seats: the group's main invoice; additional: places added after it was paid; addons: add-ons after it was paid. */
+export type InvoiceKind = 'seats' | 'additional' | 'addons'
 
 export interface GroupInvoiceRow {
   id: string
@@ -59,13 +63,15 @@ export interface GroupInvoiceRow {
   event_slug: string | null
   stripe_invoice_id: string
   stripe_invoice_number: string | null
-  kind: 'seats' | 'additional'
+  kind: InvoiceKind
   status: LedgerStatus
   seats: number
   per_seat_cents: number
   subtotal_cents: number
   discount_cents: number
   total_cents: number
+  /** The add-on part of total_cents (lib/addons); the place part is total_cents - addons_cents. */
+  addons_cents: number
   currency: string
   coupon_id: string | null
   promotion_code: string | null
@@ -314,14 +320,49 @@ export async function invoicePaymentIntent(stripe: Stripe, invoiceId: string): P
   }
 }
 
-async function upsertLedger(db: Db, row: Partial<GroupInvoiceRow> & { stripe_invoice_id: string }) {
-  const { error } = await db.from('group_invoices').upsert(row, { onConflict: 'stripe_invoice_id' })
+/**
+ * The tenant a group's money belongs to (S5 A8b): its registration's tenant_id, or
+ * Stellr's for a row the backfill has not reached (lib/registration/event-context
+ * rowTenant, inlined to keep this module's imports light).
+ */
+export function billingTenant(reg: Pick<GroupRegistration, 'tenant_id'>): string {
+  return reg.tenant_id ?? STELLR_TENANT_ID
+}
+
+/**
+ * Thrown before Stripe is asked anything when a group invoice would be raised or
+ * revised for another tenant's registration (S5 A8b, BF-58 default). Nothing is billed
+ * for a tenant until S9; the register routes (A7) and the organiser and staff writers
+ * (A8) already refuse first, so this is the backstop under all of them.
+ */
+export class TenantBillingRefused extends Error {
+  constructor() {
+    super('Group billing is Stellr-only until S9')
+    this.name = 'TenantBillingRefused'
+  }
+}
+
+/** What an admin or organiser is told when another tenant's group would be billed (lib/registration/event-context TENANT_PAYMENTS_UNAVAILABLE). */
+export const TENANT_BILLING_UNAVAILABLE = 'Paid registration for this event isn’t available online yet. Please contact the event organiser.'
+
+function assertStellrBilling(reg: Pick<GroupRegistration, 'tenant_id'>) {
+  if (billingTenant(reg) !== STELLR_TENANT_ID) throw new TenantBillingRefused()
+}
+
+/**
+ * One ledger row. tenant_id is the registration's (S5 A8b), so the row keeps its
+ * tenant when derivation enforces; it is the value the trigger derives from the
+ * event for a mirrored event. NULL leaves it to the trigger, as before.
+ */
+async function upsertLedger(db: Db, tenantId: string | null, row: Partial<GroupInvoiceRow> & { stripe_invoice_id: string }) {
+  const write: Partial<GroupInvoiceRow> & { stripe_invoice_id: string; tenant_id?: string } = tenantId ? { ...row, tenant_id: tenantId } : row
+  const { error } = await db.from('group_invoices').upsert(write, { onConflict: 'stripe_invoice_id' })
   if (error) console.error('[group-billing] ledger write failed:', error.message, { invoice: row.stripe_invoice_id })
 }
 
 function ledgerRowFromInvoice(
   inv: Stripe.Invoice,
-  base: { registrationId: string; eventSlug: string; kind: 'seats' | 'additional'; seats: number; perSeatCents: number },
+  base: { registrationId: string; eventSlug: string; kind: InvoiceKind; seats: number; perSeatCents: number; addonsCents?: number },
 ): Partial<GroupInvoiceRow> & { stripe_invoice_id: string } {
   return {
     registration_id: base.registrationId,
@@ -335,8 +376,14 @@ function ledgerRowFromInvoice(
     subtotal_cents: inv.subtotal ?? 0,
     discount_cents: discountCents(inv),
     total_cents: inv.total ?? 0,
+    ...(base.addonsCents != null ? { addons_cents: base.addonsCents } : {}),
     currency: inv.currency ?? 'usd',
   }
+}
+
+/** The group's main invoice: kind 'seats', or a pre-ledger invoice with no kind. */
+function isSeatsKind(kind: string | undefined): boolean {
+  return kind !== 'additional' && kind !== 'addons'
 }
 
 /**
@@ -361,7 +408,7 @@ export async function currentSeatsInvoice(
       limit: 20,
     })
     // Main invoice only (not an "additional" one), never a draft revision.
-    const candidates = found.data.filter((inv) => inv.metadata?.kind !== 'additional' && inv.status !== 'draft')
+    const candidates = found.data.filter((inv) => isSeatsKind(inv.metadata?.kind) && inv.status !== 'draft')
     invoice = candidates.find((inv) => inv.status !== 'void') ?? candidates[0] ?? null
     if (!invoice) return null
   }
@@ -378,7 +425,7 @@ export async function currentSeatsInvoice(
       query: `metadata['registrationId']:'${reg.id.replace(/'/g, '')}'`,
       limit: 20,
     }).catch(() => null)
-    invoice = found?.data.find((inv) => inv.metadata?.kind !== 'additional' && inv.status !== 'draft' && inv.status !== 'void') ?? invoice
+    invoice = found?.data.find((inv) => isSeatsKind(inv.metadata?.kind) && inv.status !== 'draft' && inv.status !== 'void') ?? invoice
   }
   let row = ledger.find((r) => r.stripe_invoice_id === invoice!.id) ?? null
   if (!row) {
@@ -386,7 +433,7 @@ export async function currentSeatsInvoice(
     // declared size and its per-place price is what it charged per place.
     const seats = Number(invoice.metadata?.seats) || (reg.adult_count ?? 0) + (reg.student_count ?? 0)
     const perSeat = Number(invoice.metadata?.perSeatCents) || (seats > 0 ? Math.round((invoice.subtotal ?? 0) / seats) : 0)
-    await upsertLedger(db, {
+    await upsertLedger(db, billingTenant(reg), {
       ...ledgerRowFromInvoice(invoice, { registrationId: reg.id, eventSlug: reg.event_slug, kind: 'seats', seats, perSeatCents: perSeat }),
       reason: 'Group registration',
     })
@@ -411,8 +458,51 @@ interface InvoiceSpec {
   reason: string
   actor: Actor
   couponId: string | null
-  kind: 'seats' | 'additional'
+  kind: InvoiceKind
   participantIds?: string[]
+  /** Add-on lines the invoice carries (seats and addons kinds); loaded when absent. */
+  addons?: InvoiceAddons
+}
+
+/** Seats and add-ons invoices carry the group's unpaid add-on lines; an "additional places" one never does. */
+async function withAddons(db: Db, spec: InvoiceSpec): Promise<InvoiceSpec> {
+  if (spec.kind === 'additional' || spec.addons) return spec
+  return { ...spec, addons: await invoiceAddons(db, spec.reg.id, spec.reg.event_title) }
+}
+
+/** The invoice's line items: the places (unless an add-ons invoice) and each add-on. The group's code discounts the places only (Q6). */
+async function addInvoiceItems(stripe: Stripe, invoiceId: string, spec: InvoiceSpec) {
+  const lineDiscount = spec.couponId && hasAddonItems(spec) ? { discounts: [{ coupon: spec.couponId }] } : {}
+  if (spec.kind !== 'addons' && spec.seats > 0) {
+    await stripe.invoiceItems.create({
+      customer: spec.customerId,
+      invoice: invoiceId,
+      currency: spec.currency,
+      quantity: spec.seats,
+      unit_amount_decimal: Stripe.Decimal.from(spec.perSeatCents),
+      description: lineDescription(spec.reg.event_title, spec.kind === 'additional' ? 'additional' : 'seats'),
+      ...lineDiscount,
+    })
+  }
+  for (const item of spec.addons?.items ?? []) {
+    await stripe.invoiceItems.create({
+      customer: spec.customerId,
+      invoice: invoiceId,
+      currency: item.currency,
+      quantity: item.quantity,
+      unit_amount_decimal: Stripe.Decimal.from(item.unitCents),
+      description: item.description,
+    })
+  }
+}
+
+function hasAddonItems(spec: InvoiceSpec): boolean {
+  return (spec.addons?.items.length ?? 0) > 0
+}
+
+/** The invoice-level discount: only when the places are the only line (unchanged from before add-ons). */
+function invoiceDiscounts(spec: InvoiceSpec) {
+  return spec.couponId && !hasAddonItems(spec) && spec.kind !== 'addons' ? [{ coupon: spec.couponId }] : null
 }
 
 function lineDescription(eventTitle: string, kind: 'seats' | 'additional') {
@@ -429,6 +519,7 @@ function metadataFor(spec: InvoiceSpec, extra: Record<string, string> = {}): Rec
     kind: spec.kind,
     seats: String(spec.seats),
     perSeatCents: String(spec.perSeatCents),
+    ...(spec.addons?.totalCents ? { addonsCents: String(spec.addons.totalCents) } : {}),
     ...(spec.participantIds?.length ? { participantIds: spec.participantIds.join(',').slice(0, 480) } : {}),
     ...extra,
   }
@@ -445,8 +536,11 @@ async function finishAndRecord(
 ) {
   const finalized = await stripe.invoices.finalizeInvoice(draftId)
   if (afterFinalize) await afterFinalize(finalized)
-  await upsertLedger(db, {
-    ...ledgerRowFromInvoice(finalized, { registrationId: spec.reg.id, eventSlug: spec.reg.event_slug, kind: spec.kind, seats: spec.seats, perSeatCents: spec.perSeatCents }),
+  await upsertLedger(db, billingTenant(spec.reg), {
+    ...ledgerRowFromInvoice(finalized, {
+      registrationId: spec.reg.id, eventSlug: spec.reg.event_slug, kind: spec.kind, seats: spec.seats, perSeatCents: spec.perSeatCents,
+      addonsCents: spec.addons?.totalCents ?? 0,
+    }),
     coupon_id: spec.couponId,
     promotion_code: spec.couponId ? spec.reg.invoice_promotion_code : null,
     replaces_stripe_invoice_id: replaces,
@@ -458,6 +552,10 @@ async function finishAndRecord(
     await db.from('group_invoices')
       .update({ status: 'void', voided_at: new Date().toISOString() })
       .eq('stripe_invoice_id', replaces)
+  }
+  if (spec.addons?.lineIds.length) {
+    const { data: ledgerRow } = await db.from('group_invoices').select('id').eq('stripe_invoice_id', finalized.id as string).maybeSingle()
+    await linkLinesToInvoice(db, spec.addons.lineIds, (ledgerRow as { id: string } | null)?.id ?? null)
   }
   try {
     return await stripe.invoices.sendInvoice(finalized.id as string)
@@ -478,26 +576,21 @@ async function draftWithLine(stripe: Stripe, spec: InvoiceSpec, params: Stripe.I
     auto_advance: false,
     // The money-back guarantee, printed on the invoice.
     footer: GUARANTEE_RECEIPT_LINE,
-    ...(spec.couponId ? { discounts: [{ coupon: spec.couponId }] } : {}),
+    ...(invoiceDiscounts(spec) ? { discounts: invoiceDiscounts(spec)! } : {}),
     ...params,
   })
-  await stripe.invoiceItems.create({
-    customer: spec.customerId,
-    invoice: draft.id as string,
-    currency: spec.currency,
-    quantity: spec.seats,
-    unit_amount_decimal: Stripe.Decimal.from(spec.perSeatCents),
-    description: lineDescription(spec.reg.event_title, spec.kind),
-  })
+  await addInvoiceItems(stripe, draft.id as string, spec)
   return draft
 }
 
 /** A fresh invoice: the group's first, or one for places added after payment. */
-export async function createGroupInvoice(db: Db, stripe: Stripe, spec: InvoiceSpec): Promise<Stripe.Invoice> {
+export async function createGroupInvoice(db: Db, stripe: Stripe, specIn: InvoiceSpec): Promise<Stripe.Invoice> {
+  assertStellrBilling(specIn.reg)
+  const spec = await withAddons(db, specIn)
   const draft = await draftWithLine(stripe, spec, {
     days_until_due: 14,
     metadata: metadataFor(spec),
-    ...(spec.kind === 'additional' ? { description: spec.reason } : {}),
+    ...(spec.kind !== 'seats' ? { description: spec.reason } : {}),
   })
   return finishAndRecord(db, stripe, draft.id as string, spec, null)
 }
@@ -515,7 +608,8 @@ function replacementNote(reason: string, original: Stripe.Invoice) {
  * payable invoices. The organiser keeps the original due date while it is still
  * ahead.
  */
-async function replaceGroupInvoice(db: Db, stripe: Stripe, original: Stripe.Invoice, spec: InvoiceSpec): Promise<Stripe.Invoice> {
+async function replaceGroupInvoice(db: Db, stripe: Stripe, original: Stripe.Invoice, specIn: InvoiceSpec): Promise<Stripe.Invoice> {
+  const spec = await withAddons(db, specIn)
   const dueDate = original.due_date && original.due_date > Date.now() / 1000 ? original.due_date : null
   const draft = await draftWithLine(stripe, spec, {
     ...(dueDate ? { due_date: dueDate } : { days_until_due: 14 }),
@@ -543,7 +637,9 @@ async function replaceGroupInvoice(db: Db, stripe: Stripe, original: Stripe.Invo
  * cap on a revision chain, or a credit note on the invoice), the invoice is
  * replaced with a new one instead.
  */
-export async function reviseGroupInvoice(db: Db, stripe: Stripe, original: Stripe.Invoice, spec: InvoiceSpec): Promise<Stripe.Invoice> {
+export async function reviseGroupInvoice(db: Db, stripe: Stripe, original: Stripe.Invoice, specIn: InvoiceSpec): Promise<Stripe.Invoice> {
+  assertStellrBilling(specIn.reg)
+  const spec = await withAddons(db, specIn)
   let draft: Stripe.Invoice
   try {
     draft = await stripe.invoices.create({ from_invoice: { action: 'revision', invoice: original.id as string } })
@@ -565,25 +661,18 @@ export async function reviseGroupInvoice(db: Db, stripe: Stripe, original: Strip
       throw e
     }
   }
-  // Replace the copied line(s) with one per-place line at the new size.
+  // Replace the copied lines with the per-place line at the new size and the add-on lines.
   const lines = draft.lines?.data ?? []
   if (lines.length > 0) {
     await stripe.invoices.removeLines(draft.id as string, {
       lines: lines.map((l) => ({ id: l.id as string, behavior: 'delete' as const })),
     })
   }
-  await stripe.invoiceItems.create({
-    customer: spec.customerId,
-    invoice: draft.id as string,
-    currency: spec.currency,
-    quantity: spec.seats,
-    unit_amount_decimal: Stripe.Decimal.from(spec.perSeatCents),
-    description: lineDescription(spec.reg.event_title, spec.kind),
-  })
+  await addInvoiceItems(stripe, draft.id as string, spec)
   await stripe.invoices.update(draft.id as string, {
     metadata: metadataFor(spec, { replaces: original.id as string }),
     description: replacementNote(spec.reason, original),
-    discounts: spec.couponId ? [{ coupon: spec.couponId }] : '',
+    discounts: invoiceDiscounts(spec) ?? '',
     footer: GUARANTEE_RECEIPT_LINE,
   })
   return finishAndRecord(db, stripe, draft.id as string, spec, original.id as string)
@@ -733,6 +822,12 @@ async function applyRosterChangeToBilling(
   let reg = await loadRegistration(db, input.registrationId)
   if (!reg || reg.type !== 'group' || reg.status === 'withdrawn') {
     return { message: null, action: 'none', seatsAfter: 0 }
+  }
+  // S5 A8b (BF-58 default): another tenant's group is never billed until S9. The
+  // roster writers (A8) refuse a tenant group that takes money first; this keeps any
+  // other caller away from Stripe too.
+  if (billingTenant(reg) !== STELLR_TENANT_ID) {
+    return { message: null, action: 'none', seatsAfter: (reg.adult_count ?? 0) + (reg.student_count ?? 0) }
   }
   // Registrations from before migration 037 have no declared size: nothing to track.
   if (reg.adult_count == null || reg.student_count == null) {
@@ -1059,7 +1154,7 @@ async function settleGroupInvoice(
     })
     return 'additional'
   }
-  const perPlace = perSeatPaidCents(invoice.amount_paid ?? invoice.total ?? 0, invoiceSeats) ?? 0
+  const perPlace = perSeatPaidCents((invoice.amount_paid ?? invoice.total ?? 0) - (row?.addons_cents ?? 0), invoiceSeats) ?? 0
   const owed = (invoiceSeats - seats) * perPlace
   await alertTeam(
     `The ${reg.event_title} group registered by ${reg.teacher_email ?? 'an organiser'} paid invoice ${invoice.number ?? invoice.id} for ${plural(invoiceSeats, 'participant')} just after its roster dropped to ${seats}. Check the roster, and refund ${formatMoney(owed, currency)} in Stripe if the places really came off.`,
@@ -1266,6 +1361,8 @@ async function applyGroupDiscount(
 ): Promise<AdminInvoiceResult> {
   const reg = await loadRegistration(db, registrationId)
   if (!reg || reg.type !== 'group') return { ok: false, error: 'Group registration not found' }
+  // S5 A8b (BF-58 default): refused before anything is saved or Stripe is asked.
+  if (billingTenant(reg) !== STELLR_TENANT_ID) return { ok: false, error: TENANT_BILLING_UNAVAILABLE }
   if (!reg.invoice_requested) return { ok: false, error: 'This group is not paying by invoice.' }
   if (reg.invoice_paid_at) return { ok: false, error: 'This invoice has already been paid, so it can no longer be changed. Refund the difference in Stripe if a discount was owed.' }
   const current = await currentSeatsInvoice(db, stripe, reg)
@@ -1316,6 +1413,8 @@ async function correctGroupInvoice(
 ): Promise<AdminInvoiceResult> {
   const reg = await loadRegistration(db, registrationId)
   if (!reg || reg.type !== 'group') return { ok: false, error: 'Group registration not found' }
+  // S5 A8b (BF-58 default): refused before anything is saved or Stripe is asked.
+  if (billingTenant(reg) !== STELLR_TENANT_ID) return { ok: false, error: TENANT_BILLING_UNAVAILABLE }
   if (!reg.invoice_requested) return { ok: false, error: 'This group is not paying by invoice.' }
   if (reg.invoice_paid_at) return { ok: false, error: 'This invoice has already been paid, so it can no longer be changed.' }
   const current = await currentSeatsInvoice(db, stripe, reg)
@@ -1377,9 +1476,9 @@ export async function voidOpenGroupInvoices(db: Db, stripe: Stripe | null, regis
  * covered participant for an "additional" one). Returns the invoice kind so
  * the webhook confirms the registration only for the main invoice.
  */
-export async function recordGroupInvoicePaid(db: Db, stripe: Stripe, invoice: Stripe.Invoice): Promise<'seats' | 'additional'> {
+export async function recordGroupInvoicePaid(db: Db, stripe: Stripe, invoice: Stripe.Invoice): Promise<InvoiceKind> {
   const registrationId = invoice.metadata?.registrationId
-  const kind: 'seats' | 'additional' = invoice.metadata?.kind === 'additional' ? 'additional' : 'seats'
+  const kind: InvoiceKind = invoice.metadata?.kind === 'additional' ? 'additional' : invoice.metadata?.kind === 'addons' ? 'addons' : 'seats'
   if (!registrationId) return kind
   const paymentIntent = await invoicePaymentIntent(stripe, invoice.id as string)
   const { data: existing } = await db.from('group_invoices').select('id, participant_ids, seats').eq('stripe_invoice_id', invoice.id as string).maybeSingle()
@@ -1389,7 +1488,11 @@ export async function recordGroupInvoicePaid(db: Db, stripe: Stripe, invoice: St
     await db.from('group_invoices').update({ status: 'paid', paid_at: paidAt, payment_intent_id: paymentIntent }).eq('id', row.id)
   } else {
     const seats = Number(invoice.metadata?.seats) || 0
-    await upsertLedger(db, {
+    // S5 A8b: the registration's tenant. Read only here, where the row is new; a
+    // failed read leaves tenant_id to the trigger, as before, and never means Stellr.
+    const { data: owner, error: ownerError } = await db.from('registrations').select('tenant_id').eq('id', registrationId).maybeSingle()
+    const ledgerTenant = ownerError || !owner ? null : billingTenant(owner as Pick<GroupRegistration, 'tenant_id'>)
+    await upsertLedger(db, ledgerTenant, {
       ...ledgerRowFromInvoice(invoice, {
         registrationId, eventSlug: invoice.metadata?.eventSlug ?? '', kind,
         seats, perSeatCents: Number(invoice.metadata?.perSeatCents) || (seats > 0 ? Math.round((invoice.subtotal ?? 0) / seats) : 0),
@@ -1397,6 +1500,10 @@ export async function recordGroupInvoicePaid(db: Db, stripe: Stripe, invoice: St
       status: 'paid', paid_at: paidAt, payment_intent_id: paymentIntent, reason: 'Group registration',
     })
   }
+  // Add-on lines the invoice carried are paid with it (lib/addons).
+  const { data: settledRow } = await db.from('group_invoices').select('id').eq('stripe_invoice_id', invoice.id as string).maybeSingle()
+  if (settledRow) await settleInvoiceAddonLines(db, (settledRow as { id: string }).id, paidAt)
+  if (kind === 'addons') return kind
   if (!paymentIntent) return kind // paid outside Stripe (e.g. a cheque marked paid): nothing to refund against
   if (kind === 'seats') {
     await db.from('registrations').update({ stripe_payment_intent_id: paymentIntent })

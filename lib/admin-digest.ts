@@ -13,7 +13,7 @@
 import { EMPTY_STAFF_DIGEST, loadStaffDigest, type StaffDigest } from '@/lib/staff-digest'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { supabaseServer } from '@/lib/supabase'
-import { getEventsBySlugs } from '@/lib/events/repo'
+import { getEventsBySlugsIn } from '@/lib/events/tenant-facade'
 import { eventLastDay, todayInAppZone } from '@/lib/utils'
 import { isMinorOn } from '@/lib/age'
 import { registrationPaid } from '@/lib/payment-status'
@@ -743,7 +743,8 @@ async function loadOutstanding(db: SupabaseClient, section: Section): Promise<Me
     const { data, error } = await stellrRows(db.from('registrations').select('event_slug')).neq('status', 'withdrawn').range(0, ALL)
     if (error) throw new Error(error.message)
     const slugs = [...new Set(((data ?? []) as Row[]).map((r) => r.event_slug as string).filter(Boolean))]
-    const meta = await getEventsBySlugs(slugs)
+    // S5 wave 8, C8-PG: Stellr's registrations only (stellrRows), so Stellr's events.
+    const meta = await getEventsBySlugsIn(STELLR_TENANT_ID, slugs)
     const bySlug = new Map(meta.map((m) => [m.slug.current, m]))
     const today = todayInAppZone()
     return {

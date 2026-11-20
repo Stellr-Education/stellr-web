@@ -7,10 +7,11 @@ import { withAudit } from '@/lib/audit/route'
 import { insertEventEmailCopy } from '@/lib/events/admin-records'
 import { createFromDefault } from '@/lib/event-emails/store'
 import { createFromSavedTemplate, getTemplate } from '@/lib/event-emails/templates'
-import type { EventEmailRow } from '@/lib/event-emails/types'
+import type { EventEmailRow, EventEmailSendRow } from '@/lib/event-emails/types'
+import { lookupSuppressions, normaliseEmail } from '@/lib/email/suppressions'
 import { loadEventRecord, loadScopedRows } from '@/lib/tenancy/load-scoped'
 
-// /api/admin/events/[slug]/emails — the "Email Reminders" tab (admins + assigned
+// /api/admin/events/[slug]/emails — the "Email Engagement" tab (admins + assigned
 // event managers).
 //   GET  → { emails, history }
 //   POST { templateKey } → a new draft from one of the starter emails (or blank)
@@ -31,7 +32,32 @@ export async function GET(_req: Request, { params }: Ctx) {
     loadScopedRows(crew.scope, 'event_emails', { db, match: { event_slug: slug }, order: { column: 'created_at', ascending: true }, label: ROUTE }),
     loadScopedRows(crew.scope, 'event_email_sends', { db, match: { event_slug: slug }, order: { column: 'started_at', ascending: false }, limit: 100, label: ROUTE }),
   ])
-  return NextResponse.json({ emails: emails ?? [], history: history ?? [] })
+  return NextResponse.json({ emails: emails ?? [], history: await markBlocked(db, (history ?? []) as unknown as EventEmailSendRow[]) })
+}
+
+/**
+ * Flags recipients whose address is on the suppression list (a bounce or
+ * complaint, including ones Resend reports after it accepted the message), so
+ * History can say "not delivered" rather than "sent". Never fails the tab: a
+ * failed lookup just leaves the rows as recorded.
+ */
+async function markBlocked(db: ReturnType<typeof supabaseServer>, history: EventEmailSendRow[]): Promise<EventEmailSendRow[]> {
+  const addresses = history.flatMap((h) => (h.recipients ?? []).map((r) => r.email))
+  if (!addresses.length) return history
+  try {
+    const listed = await lookupSuppressions(db, addresses)
+    if (!listed.size) return history
+    return history.map((h) => ({
+      ...h,
+      recipients: (h.recipients ?? []).map((r) => {
+        const reason = listed.get(normaliseEmail(r.email))
+        return reason && r.status !== 'failed' ? { ...r, blocked: reason } : r
+      }),
+    }))
+  } catch (err) {
+    console.error('[event-emails] suppression lookup for History failed:', err)
+    return history
+  }
 }
 
 export const POST = withAudit(

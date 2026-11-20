@@ -1,6 +1,7 @@
 // @vitest-environment node
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { NextRequest } from 'next/server'
+import { STELLR_TENANT_ID } from '@/lib/tenancy/constants'
 
 // The team detail is assembled from one registrations query with participants
 // embedded; the fake returns that shape directly and records nothing else.
@@ -131,6 +132,22 @@ describe('GET /api/members/teams/[id] for the organiser', () => {
     const body = await (await get()).json()
     expect(inserts.map((i) => i.table)).toEqual(['group_join_tokens'])
     expect(body.registration.joinUrl).toMatch(/\/register\/colorado\/join\//)
+  })
+
+  // S5 A8b: the token carries the registration's tenant, so derivation enforce keeps
+  // it even for an event the mirror lacks. NULL on the registration is Stellr's.
+  it('the minted token carries the registration’s tenant (Stellr’s for a NULL row)', async () => {
+    state.member = { id: 'teacher-1', email: 't@school.test' }
+    await get()
+    expect(inserts[0].row).toMatchObject({ registration_id: 'reg-1', event_slug: 'colorado', tenant_id: STELLR_TENANT_ID })
+    inserts.length = 0
+    ;(registration as { tenant_id?: string }).tenant_id = STELLR_TENANT_ID
+    try {
+      await get()
+      expect(inserts[0].row).toMatchObject({ tenant_id: STELLR_TENANT_ID })
+    } finally {
+      delete (registration as { tenant_id?: string }).tenant_id
+    }
   })
 
   // S0 (Nov 2026): "is this view-as?" keyed off ?memberId=, so a full-portal

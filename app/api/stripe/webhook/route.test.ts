@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import type Stripe from 'stripe'
+import { STELLR_TENANT_ID as STELLR } from '@/lib/tenancy/constants'
 
 // Fixture-driven tests for the Stripe webhook's money paths (deep review PAY-13).
 // Covers the three fixes in this PR:
@@ -22,7 +23,6 @@ const h = vi.hoisted(() => ({
   confirmRegistration: vi.fn(async () => {}),
   handleStoreOrderPaid: vi.fn(async () => {}),
   finalizeRegistrationMerch: vi.fn(async () => {}),
-  finalizeRedemption: vi.fn(async () => {}),
   notifyCommunityAdmins: vi.fn(async () => {}),
   recordExternalChargeRefunds: vi.fn(async () => ({ recorded: 0 })),
   logActivity: vi.fn(async () => {}),
@@ -132,7 +132,6 @@ vi.mock('@/lib/app-errors', () => ({ reportError: h.reportError }))
 vi.mock('@/lib/registration-confirm', () => ({ confirmRegistration: h.confirmRegistration }))
 vi.mock('@/lib/store/orders', () => ({ handleStoreOrderPaid: h.handleStoreOrderPaid }))
 vi.mock('@/lib/store/event-merch', () => ({ finalizeRegistrationMerch: h.finalizeRegistrationMerch }))
-vi.mock('@/lib/refunds/redeem', () => ({ finalizeRedemption: h.finalizeRedemption }))
 vi.mock('@/lib/notify', () => ({ notifyCommunityAdmins: h.notifyCommunityAdmins }))
 vi.mock('@/lib/refunds/stripe-webhook', () => ({ recordExternalChargeRefunds: h.recordExternalChargeRefunds }))
 vi.mock('@/lib/activity-log', () => ({ logActivity: h.logActivity }))
@@ -369,7 +368,6 @@ describe('checkout.session.completed payment_status gate (PAY-6)', () => {
     expect(res.status).toBe(200)
     expect(h.confirmRegistration).not.toHaveBeenCalled()
     expect(h.handleStoreOrderPaid).not.toHaveBeenCalled()
-    expect(h.finalizeRedemption).not.toHaveBeenCalled()
   })
 
   it('fulfils a store order once the async payment succeeds', async () => {
@@ -388,7 +386,7 @@ describe('paid mentoring cohort booking: minor-agreement backstop', () => {
     data: { object: {
       id: `cs_${id}`, payment_status: 'paid', payment_intent: `pi_${id}`,
       amount_total: 12000, currency: 'usd', customer: null, customer_details: null,
-      metadata: { type: 'entitlement_booking', memberId: 'm1', offeringId: 'off1', creditAppliedCents: '0' },
+      metadata: { type: 'entitlement_booking', memberId: 'm1', offeringId: 'off1' },
     } },
   } as unknown as Stripe.Event)
 
@@ -471,6 +469,22 @@ describe('invoice.paid zero-amount guard (PAY-1)', () => {
 
     expect(h.confirmRegistration).toHaveBeenCalledTimes(1)
     expect(h.confirmRegistration).toHaveBeenCalledWith('r1', false, { paidViaInvoice: true })
+  })
+})
+
+describe('invoice.paid for a Checkout-issued invoice', () => {
+  it('records nothing: no group ledger write, no registration confirmed', async () => {
+    current = makeDb({ registrations: [{ id: 'r1', status: 'confirmed' }], group_invoices: [], stripe_webhook_events: [] })
+    const res = await post({
+      id: 'evt_checkout_inv', type: 'invoice.paid',
+      // Even if a group key were ever added by mistake, source=checkout wins.
+      data: { object: { id: 'in_checkout', amount_paid: 8245, metadata: { source: 'checkout', checkoutRegistrationId: 'r1', registrationId: 'r1', isGroup: 'true' } } },
+    } as unknown as Stripe.Event)
+
+    expect(res.status).toBe(200)
+    expect(h.confirmRegistration).not.toHaveBeenCalled()
+    expect(current.inserts.some((i) => i.table === 'group_invoices')).toBe(false)
+    expect(current.updates.some((u) => u.table === 'group_invoices' || u.table === 'registrations')).toBe(false)
   })
 })
 
@@ -620,7 +634,6 @@ describe('shared-cost seat: the share record', () => {
     // The seat is still settled and its intent kept; the rest of the seat ran.
     expect(await readRow('participants', 'pS')).toMatchObject({ individual_payment_status: 'paid', stripe_payment_intent_id: 'pi_evt_share_err', share_paid_cents: null })
     expect(await readRow('registrations', 'rS')).toMatchObject({ status: 'confirmed' })
-    expect(h.finalizeRedemption).toHaveBeenCalledTimes(1)
     // Processed: Stripe does not retry the paid seat.
     expect(current.inserts.find((i) => i.table === 'stripe_webhook_events')).toBeDefined()
     vi.mocked(console.error).mockRestore()
@@ -635,7 +648,7 @@ describe('entitlement_booking auto-refund is idempotent', () => {
     data: { object: {
       id: 'cs_book', payment_status: 'paid', payment_intent: 'pi_book',
       amount_total: 12000, currency: 'usd', customer: null, customer_details: null,
-      metadata: { type: 'entitlement_booking', memberId: 'm1', offeringId: 'off1', creditAppliedCents: '0' },
+      metadata: { type: 'entitlement_booking', memberId: 'm1', offeringId: 'off1' },
     } },
   } as unknown as Stripe.Event)
   const alreadyRefunded = () => Object.assign(new Error('Charge has already been refunded.'), { type: 'StripeInvalidRequestError', code: 'charge_already_refunded' })
@@ -648,8 +661,6 @@ describe('entitlement_booking auto-refund is idempotent', () => {
   afterEach(() => {
     h.confirmPaidBooking.mockReset()
     h.confirmPaidBooking.mockResolvedValue('b1')
-    h.finalizeRedemption.mockReset()
-    h.finalizeRedemption.mockResolvedValue(undefined)
     vi.mocked(console.error).mockRestore()
     vi.mocked(console.warn).mockRestore()
   })
@@ -674,10 +685,10 @@ describe('entitlement_booking auto-refund is idempotent', () => {
     expect(h.refundsCreate).toHaveBeenCalledTimes(1)
   })
 
-  it('a retry after a later step failed reuses the key, and charge_already_refunded counts as done', async () => {
+  it('a retry reuses the key, and charge_already_refunded counts as done', async () => {
     current = makeDb({ stripe_webhook_events: [] })
-    // First delivery: the refund goes through, then a later step fails → 500, not recorded.
-    h.finalizeRedemption.mockRejectedValueOnce(new Error('redemption write failed'))
+    // First delivery: Stripe refuses the refund for now → 500, not recorded.
+    h.refundsCreate.mockRejectedValueOnce(Object.assign(new Error('rate limited'), { code: 'rate_limit' }))
     expect((await post(bookingEvent())).status).toBe(500)
     // Stripe retries (past its 24-hour key window): the charge is already refunded.
     h.refundsCreate.mockRejectedValueOnce(alreadyRefunded())
@@ -723,5 +734,71 @@ describe('duplicate-payment refunds survive a late retry (legacy-12.4)', () => {
     expect(h.confirmRegistration).not.toHaveBeenCalled()
     expect(await readRow('registrations', 'r1')).toMatchObject({ stripe_payment_intent_id: 'pi_1' })
     vi.mocked(console.warn).mockRestore()
+  })
+})
+
+// S5 A13a: one audit event per delivery, by webhook:stripe. The tenant comes from the
+// stored registration, and BF-4's default keeps a tenant's event on Stellr's chain.
+describe('platform audit (S5 A13a)', () => {
+  const REG = 'cccccccc-0000-4000-8000-00000000000c'
+  const TENANT_B = 'bbbbbbbb-0000-4000-8000-00000000000b'
+  const paid = (id: string) => ({
+    id: `evt_${id}`, type: 'checkout.session.completed',
+    data: { object: {
+      id: `cs_${id}`, payment_status: 'paid', payment_intent: `pi_${id}`,
+      metadata: { registrationId: REG }, client_reference_id: REG,
+      amount_total: 7500, currency: 'usd', customer: null, customer_details: null,
+    } },
+  }) as unknown as Stripe.Event
+  const withRpc = (tenant: string) => {
+    current = makeDb({
+      registrations: [{ id: REG, status: 'pending', stripe_payment_intent_id: null, tenant_id: tenant }],
+      participants: [],
+      stripe_webhook_events: [],
+    })
+    const rpc = vi.fn(async (_fn: string, _args: Record<string, unknown>) => ({ data: { id: 1, chain_seq: 1 }, error: null }))
+    ;(current.db as unknown as { rpc: typeof rpc }).rpc = rpc
+    return rpc
+  }
+  afterEach(() => {
+    vi.unstubAllEnvs()
+  })
+
+  it('off, nothing is written to the audit chain and the answer is the same', async () => {
+    const rpc = withRpc(STELLR)
+    const res = await post(paid('off'))
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({ ok: true })
+    await new Promise((r) => setTimeout(r, 0))
+    expect(rpc).not.toHaveBeenCalled()
+  })
+
+  it("on, a tenant's registration payment is recorded on Stellr's chain with its owner, and the answer is the same", async () => {
+    vi.stubEnv('PLATFORM_AUDIT_ENABLED', 'true')
+    const rpc = withRpc(TENANT_B)
+    const res = await post(paid('on'))
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({ ok: true })
+    await vi.waitFor(() => expect(rpc).toHaveBeenCalledTimes(1))
+    expect(rpc.mock.calls[0][0]).toBe('platform_audit_append')
+    expect(rpc.mock.calls[0][1]).toMatchObject({
+      p_tenant: STELLR,
+      p_actor: 'webhook:stripe',
+      p_actor_kind: 'webhook',
+      p_action: 'webhook.event.process',
+      p_target_table: 'stripe_webhook_events',
+      p_target_id: 'evt_on',
+      p_metadata: { event_type: 'checkout.session.completed', owner_tenant_id: TENANT_B, verified: true, status: 200 },
+    })
+  })
+
+  it('on, a redelivery is recorded as a duplicate', async () => {
+    vi.stubEnv('PLATFORM_AUDIT_ENABLED', 'true')
+    const rpc = withRpc(STELLR)
+    current.db.from('stripe_webhook_events').insert({ id: 'evt_dup', type: 'checkout.session.completed' })
+    const res = await post(paid('dup'))
+    expect(await res.json()).toEqual({ ok: true, duplicate: true })
+    await vi.waitFor(() => expect(rpc).toHaveBeenCalledTimes(1))
+    expect(rpc.mock.calls[0][1]).toMatchObject({ p_tenant: STELLR, p_metadata: { duplicate: true, verified: true } })
   })
 })

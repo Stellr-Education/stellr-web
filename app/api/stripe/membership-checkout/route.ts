@@ -2,7 +2,6 @@ import { auth } from '@clerk/nextjs/server'
 import { NextResponse } from 'next/server'
 import Stripe from 'stripe'
 import { supabaseServer } from '@/lib/supabase'
-import { buildCreditDiscount } from '@/lib/refunds/redeem'
 import { ensureStripeCustomer } from '@/lib/stripe-customer'
 import { assertNotImpersonating } from '@/lib/impersonation'
 import { assertLiveCredentials } from '@/lib/env-guards'
@@ -68,18 +67,6 @@ export async function POST(req: Request) {
     // Resolve a valid Stripe customer (self-heals a stale/missing stored id).
     const customerId = await ensureStripeCustomer(stripe, db, member, userId)
 
-    // Apply any available account credit (issued from a prior refund) to the first
-    // invoice. Allocations are settled in the webhook once payment completes.
-    let discount: Awaited<ReturnType<typeof buildCreditDiscount>> = null
-    try {
-      const price = await stripe.prices.retrieve(priceId)
-      if (price.unit_amount && price.currency) {
-        discount = await buildCreditDiscount(stripe, member.id as string, price.currency, price.unit_amount)
-      }
-    } catch (e) {
-      console.error('[membership-checkout] credit application skipped:', e)
-    }
-
     // deep review PAY-15: refuse to open a subscription checkout on a production
     // deployment holding TEST keys — it would look successful and settle nothing.
     // No-op on real prod (live keys); reads above (price lookup) are not gated.
@@ -98,14 +85,10 @@ export async function POST(req: Request) {
       automatic_tax: { enabled: true },
       customer_update: { address: 'auto' },
       line_items: [{ price: priceId, quantity: 1 }],
-      // Account credit, or else a field for a promotion code (e.g. MNCOSE26, the
-      // Nov 2026 MnCOSE booth offer: free Catalyst). Stripe refuses a session
-      // that sets both, so a member with credit uses the credit.
-      ...(discount
-        ? { discounts: [{ coupon: discount.couponId }] }
-        : { allow_promotion_codes: true }),
-      // Ask for a card only when something is due today. A 100% code or full
-      // credit then needs no card, so a free first year never renews into a
+      // A field for a promotion code (e.g. MNCOSE26, the Nov 2026 MnCOSE booth
+      // offer: free Catalyst).
+      allow_promotion_codes: true,
+      // Ask for a card only when something is due today. A 100% code then needs no card, so a free first year never renews into a
       // charge the member did not expect: with no card on file the renewal
       // invoice fails and the membership lapses instead.
       payment_method_collection: 'if_required',
@@ -116,16 +99,6 @@ export async function POST(req: Request) {
         memberId: member.id,
         tierId: tier.id,
         billingInterval,
-        // deep review PAY-9: the credit is reserved at buildCreditDiscount time; the
-        // webhook settles that reservation by id (creditAllocations is kept only so a
-        // session minted before this deploy still settles via the back-compat path).
-        ...(discount
-          ? {
-              creditMemberId: member.id as string,
-              creditReservationId: discount.reservationId,
-              creditAllocations: JSON.stringify(discount.allocations),
-            }
-          : {}),
       },
       subscription_data: {
         metadata: {

@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server'
 import { createHmac, timingSafeEqual } from 'node:crypto'
 import { HS } from '@/lib/hubspot-fields'
 import { createNote, getContactByEmail, upsertContact } from '@/lib/hubspot'
+import { withAudit } from '@/lib/audit/route'
+import { noteWebhook, webhookAudit, webhookEvent } from '@/lib/audit/webhook'
 
 /**
  * Motion booking confirmation → HubSpot.
@@ -59,7 +61,14 @@ function findWhen(payload: unknown): string | undefined {
   return undefined
 }
 
-export async function POST(req: Request) {
+// S5 A13a: one audit event per delivery, by webhook:motion, on Stellr's chain.
+// Off unless PLATFORM_AUDIT_ENABLED is on (lib/audit/webhook.ts).
+export const POST = withAudit(
+  ({ args: [req] }: { args: [Request] }) => webhookAudit('webhook.event.process', webhookEvent('motion', req)),
+  handleBooking,
+)
+
+async function handleBooking(req: Request) {
   if (!SECRET) {
     console.error('[motion-webhook] MOTION_WEBHOOK_SECRET is not set — refusing to write')
     return NextResponse.json({ error: 'Not configured' }, { status: 503 })
@@ -77,6 +86,7 @@ export async function POST(req: Request) {
   if (!provided || !signatureMatches(raw, provided)) {
     return NextResponse.json({ error: 'Bad signature' }, { status: 401 })
   }
+  noteWebhook(req)
 
   let payload: unknown
   try {

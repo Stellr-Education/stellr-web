@@ -23,7 +23,7 @@ import { sendEmail } from '@/lib/email'
 import { emailLayout, escapeHtml as esc } from '@/lib/email-layout'
 import { logActivity } from '@/lib/activity-log'
 import { AUTH_APP_URL } from '@/lib/env'
-import { getEventBySlug } from '@/lib/events/repo'
+import { getEventBySlugIn } from '@/lib/events/tenant-facade'
 import { formatDate } from '@/lib/utils'
 import { daysUntil } from '@/lib/event-emails/schedule'
 import { CLEARANCE_PATH } from '@/lib/compliance-links'
@@ -35,6 +35,7 @@ import {
   loadComplianceRecordsForMembers,
   type ComplianceSummary,
 } from '@/lib/compliance'
+import { STELLR_TENANT_ID } from '@/lib/tenancy/constants'
 
 const NOTICE_ACTION = 'clearance_notice_sent'
 
@@ -377,7 +378,8 @@ export async function remindUnclearedAdults(
   // 2. Which of those events are 0–14 days away. Dates come from Sanity.
   const dated = await Promise.all(
     [...bySlug].map(async ([slug, regs]) => {
-      const e = (await getEventBySlug(slug).catch(() => null)) as { title?: string | null; date?: string | null } | null
+      // S5 wave 8, C8-PG: Stellr's registrations only (stellrRows), so Stellr's events.
+      const e = (await getEventBySlugIn(STELLR_TENANT_ID, slug).catch(() => null)) as { title?: string | null; date?: string | null } | null
       return { slug, title: e?.title || regs.title || slug, date: calendarDate(e?.date), registrationIds: regs.ids }
     }),
   )

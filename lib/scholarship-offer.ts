@@ -10,7 +10,6 @@ import { confirmRegistration } from '@/lib/registration-confirm'
 import {
   issueScholarshipRefund,
   scholarshipRefundFor,
-  type ScholarshipRefundMethod,
   type ScholarshipRefundResult,
 } from '@/lib/scholarship-refund'
 import {
@@ -58,8 +57,6 @@ export interface OfferInput {
   memberId?: string | null
   reviewer: Reviewer
   sendEmails: boolean
-  /** Already paid (retrospective case): reimburse to the card (default) or as account credit. */
-  refundMethod?: ScholarshipRefundMethod
 }
 
 export type OfferResult =
@@ -237,7 +234,6 @@ export async function offerScholarship(db: SupabaseClient, input: OfferInput): P
         applicationId: offer.id,
         registrationId: registration.id,
         percent: input.percent,
-        method: input.refundMethod ?? 'cash',
         actorMemberId: input.reviewer.memberId,
       })
     }
@@ -288,8 +284,8 @@ export async function sendScholarshipOfferEmails(db: SupabaseClient, application
       const r = await scholarshipRefundFor(db, app.registration_id)
       refund = !r
         ? { method: 'none', cents: 0 }
-        : r.type === 'cash' || r.type === 'credit'
-          ? { method: r.type, cents: r.refundCents }
+        : r.type === 'cash'
+          ? { method: 'cash' as const, cents: r.refundCents }
           : r.type === 'manual_required'
             ? { method: 'manual', cents: r.refundCents }
             : { method: 'none', cents: 0 }

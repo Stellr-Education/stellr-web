@@ -1,7 +1,6 @@
 import { getMemberEntitlementSummary } from '@/lib/entitlements'
 
-// Member dashboard card: included coaching/mentoring balances + store credit +
-// recent bookings, read from the entitlements ledger. Rendered in the Billing
+// Member dashboard card: included coaching/mentoring balances + recent bookings, read from the entitlements ledger. Rendered in the Billing
 // tab of /account. Defensive: if the entitlements schema isn't deployed yet (or
 // a read fails) it renders nothing rather than breaking the page.
 export async function EntitlementsSummary({ memberId }: { memberId: string }) {
@@ -12,21 +11,20 @@ export async function EntitlementsSummary({ memberId }: { memberId: string }) {
     return null
   }
 
-  const { coachingBalance, mentoringBalance, creditCents, bookings } = summary
-  const hasAnything = coachingBalance > 0 || mentoringBalance > 0 || creditCents > 0 || bookings.length > 0
+  const { coachingBalance, mentoringBalance, bookings } = summary
+  const hasAnything = coachingBalance > 0 || mentoringBalance > 0 || bookings.length > 0
   if (!hasAnything) return null
 
   const money = (c: number) => `$${(c / 100).toFixed(2)}`
 
   return (
     <div className="rounded-xl border border-brand-border bg-white p-6">
-      <h2 className="mb-1 text-base font-semibold text-brand-blue-dark">Sessions &amp; credit</h2>
-      <p className="mb-4 text-xs text-brand-muted-soft">Your included coaching/mentoring and account credit.</p>
+      <h2 className="mb-1 text-base font-semibold text-brand-blue-dark">Sessions</h2>
+      <p className="mb-4 text-xs text-brand-muted-soft">Your included coaching and mentoring.</p>
 
-      <div className="mb-5 grid grid-cols-1 gap-3 sm:grid-cols-3">
+      <div className="mb-5 grid grid-cols-1 gap-3 sm:grid-cols-2">
         <Stat label="Coaching sessions" value={String(coachingBalance)} hint="included, remaining" />
         <Stat label="Mentoring cohorts" value={String(mentoringBalance)} hint="included this period" />
-        <Stat label="Account credit" value={money(creditCents)} hint="applied at checkout" />
       </div>
 
       {bookings.length > 0 && (

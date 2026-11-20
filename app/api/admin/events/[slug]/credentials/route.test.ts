@@ -30,7 +30,10 @@ const h = vi.hoisted(() => ({
 }))
 
 vi.mock('@/lib/supabase', () => ({ supabaseServer: () => h.db.client }))
-vi.mock('@/lib/event-access', () => ({ requireEventAccess: async () => ({ ok: true }) }))
+vi.mock('@/lib/authz', async () => {
+  const { eventRouteFor } = await import('@/test/fixtures/event-route')
+  return { requireEventRoute: async (slug: string) => eventRouteFor(slug) }
+})
 vi.mock('@/lib/events/repo', () => ({ getEventBySlug: async () => ({ title: 'Test Event', type: 'space' }) }))
 // The real refusal class and recordSkip, so the route's handling is the one production runs.
 vi.mock('@/lib/credentials', async () => {

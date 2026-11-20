@@ -186,4 +186,56 @@ It decrypts each archive into a temp directory (deleted on exit), starts a throw
 | (to do) | Install (§2) | Owner | |
 | (to do) | Skip alarm proven (§2.6 step 5) | Owner | |
 | (to do) | First restore drill | Owner | |
+| 20 Nov 2026 | E-sign Drive folder: service account found to be Content manager; permanent delete refused (404), exports never pruned | Agent | Fix: make it Manager (owner) |
 | (to do) | `overlay-critical.sh --dry-run` against a scratch Supabase project (is `session_replication_role` allowed?) | Owner | |
+
+## 8. Opening the e-sign Drive copies
+
+The **E-Sign Backups** folder on the shared drive holds the second copy of every signed agreement (`lib/esign/replicate.ts`, nightly). Everything in it is encrypted (AES-256-GCM) before upload, so a `.enc` file will not open in Drive, and Google cannot read it. That is what the Privacy Policy promises ("encrypted before they leave our systems, with a key Google does not hold").
+
+**First choice is the app, not Drive.** While the stored copy is intact, admins download a signed agreement from the member's record (`/api/admin/docusigns/<id>/download`). Use the Drive copy only when that stored copy is lost, damaged, or the database is being rebuilt.
+
+What is in the folder:
+
+| Name | Contents |
+|---|---|
+| `<agreement id>-signed-<16 hex>.pdf.enc` | Executed PDF. The hex is the start of its SHA-256 (copies made since 10 Oct 2026) |
+| `<agreement id>-signed.pdf.enc` | Executed PDF, copies made before that |
+| `<agreement id>-certificate.pdf.enc` | DocuSign certificate of completion |
+| `<agreement id>-audit.json.enc` | Audit trail of an agreement signed in Stellr's own signing system |
+| `export-YYYY-MM-DD.json.enc` | Nightly dump of the agreement tables with the audit-chain heads. Last 30 kept |
+
+The `<agreement id>` is `agreements.id`; find it from the member's record or by name in the newest export.
+
+**You need** (owner, on the owner's machine; agents do not hold the key):
+
+1. `ESIGN_BACKUP_KEY` from the password manager. Without it nothing in the folder can be read. Vercel holds it as a sensitive variable, which cannot be read back, so the password manager is the only copy a person can get.
+2. A checkout of `stellr-web` with `npm ci` run, and `.env.local` holding the Google service account (`GOOGLE_SERVICE_ACCOUNT_EMAIL`, `GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY`).
+3. The folder id: `ESIGN_BACKUP_DRIVE_FOLDER_ID` (Vercel production env, or the id in the folder's Drive URL).
+4. For a signed PDF only: the production database (`NEXT_PUBLIC_SUPABASE_URL`, `SUPABASE_SECRET_KEY`), so the script can read the recorded hash and check the copy against it. Not needed for a table export.
+
+Pass the production values on the command line; they take precedence over `.env.local`, which points at dev. Leading space keeps the line out of shell history:
+
+```bash
+ export ESIGN_BACKUP_KEY='…' ESIGN_BACKUP_DRIVE_FOLDER_ID='…' NEXT_PUBLIC_SUPABASE_URL='…' SUPABASE_SECRET_KEY='…'
+```
+
+One agreement (executed PDF, plus its certificate or audit file):
+
+```bash
+npx tsx scripts/esign-restore-drill.ts --restore <agreement id> --out ~/restored
+```
+
+It prints `matches the recorded hash` when the copy is the exact bytes that were signed. If the database row is gone, it takes the newest signed copy for that id and cannot check the hash.
+
+A table export (all agreement rows, recipients, audit events, access log, as JSON):
+
+```bash
+npx tsx scripts/esign-restore-drill.ts --export latest --out ~/restored
+```
+
+Or name one: `--export export-2026-11-20.json.enc`.
+
+Decrypted files hold personal data, including minors'. Write them to an encrypted disk, never to Drive, email or a chat, and delete them when the job is done.
+
+**Deletion needs the Manager role.** The job deletes old exports and, at the end of retention, a record's copies, with Drive's permanent delete. On a shared drive only a Manager can do that; a Content manager gets `404 File not found`. On 20 Nov 2026 the service account (`stellr-sheets@…`) was found to be a Content manager, so no export had ever been pruned (45 present). Make it a Manager in the shared drive's **Manage members** (the role is set per shared drive, not per folder), and keep it one. The job now reports this refusal by name instead of as a missing file.

@@ -6,22 +6,20 @@ import { CoverImage, CARD_IMAGE_SIZES } from '@/components/ui/CoverImage'
 import { formatDate, formatDateRange, eventLastDay, registrationStatus } from '@/lib/utils'
 import { CardPills } from '@/components/ui/CardPills'
 import { gradeBand } from '@/lib/grade-band'
+import { RegistrationStatusPill } from '@/components/ui/RegistrationStatusPill'
 
 interface EventCardProps {
   event: StellarEvent
   /** The image's `sizes`: the grid the card sits in. Defaults to the /events board. */
   imageSizes?: string
+  /** Optional extras on sale (accommodation, experiences). Merch never shows on a card. */
+  extras?: ('accommodation' | 'experience')[]
 }
 
-const statusConfig = {
-  open: { label: 'Registration Open', className: 'bg-green-100 text-green-700' },
-  'coming-soon': { label: 'Coming Soon', className: 'bg-surface text-content-body' },
-  closed: { label: 'Registration Closed', className: 'bg-red-100 text-red-700' },
-}
+const EXTRA_LABEL = { accommodation: 'Accommodation available', experience: 'Optional tour' } as const
 
-export function EventCard({ event, imageSizes = CARD_IMAGE_SIZES.eventsBoard }: EventCardProps) {
+export function EventCard({ event, imageSizes = CARD_IMAGE_SIZES.eventsBoard, extras = [] }: EventCardProps) {
   const status = registrationStatus(event.registrationOpenDate, event.registrationCloseDate, eventLastDay(event))
-  const { label, className } = statusConfig[status]
 
   return (
     <div className="bg-white rounded-xl shadow-xs border border-line-light overflow-hidden hover:shadow-md transition-shadow flex flex-col">
@@ -38,9 +36,7 @@ export function EventCard({ event, imageSizes = CARD_IMAGE_SIZES.eventsBoard }: 
         {/* Standardised three-pill row (Event · Grade · Theme) + status */}
         <div className="flex flex-wrap items-center gap-2 mb-3">
           <CardPills kind="event" gradeLevel={gradeBand(event).label} type={event.type} />
-          <span className={`text-xs font-semibold px-2 py-1 rounded-full ${className}`}>
-            {label}
-          </span>
+          <RegistrationStatusPill status={status} />
         </div>
 
         <h3 className="font-bold text-brand-blue-dark mb-1 leading-snug">{event.title}</h3>
@@ -59,6 +55,16 @@ export function EventCard({ event, imageSizes = CARD_IMAGE_SIZES.eventsBoard }: 
 
         {event.tagline && (
           <p className="mt-2 text-sm text-brand-grey-dark line-clamp-2">{event.tagline}</p>
+        )}
+
+        {extras.length > 0 && (
+          <ul className="mt-3 flex flex-wrap gap-2" aria-label="Optional extras">
+            {extras.map((k) => (
+              <li key={k} className="rounded-pill bg-primary-soft px-2.5 py-1 text-xs font-medium text-primary-deep">
+                {EXTRA_LABEL[k]}
+              </li>
+            ))}
+          </ul>
         )}
 
         <div className="mt-auto pt-4">

@@ -12,6 +12,7 @@ import {
 } from '@/lib/scholarships'
 import { GUARANTEE_CHECKOUT_TEXT } from '@/lib/guarantee'
 import { billableSeats, paidSeatCount } from '@/lib/group-billing'
+import { checkoutInvoiceParams } from '@/lib/payments/checkout-invoice'
 
 // The one place that knows how to build a Stripe Checkout for a registration.
 //
@@ -243,6 +244,14 @@ export async function createRegistrationCheckout(
     // (the webhook persists session.customer onto the member row).
     customer_creation: 'always',
     metadata,
+    // A paid invoice and an emailed receipt for the payment (lib/payments/checkout-invoice.ts).
+    ...checkoutInvoiceParams({
+      registrationId: reg.id,
+      eventSlug: reg.event_slug,
+      eventTitle: reg.event_title,
+      forName: reg.type === 'individual' ? metadata.participantName : metadata.teacherName,
+      receiptEmail: customerEmail,
+    }),
     success_url: opts.successUrl,
     cancel_url: opts.cancelUrl,
   })

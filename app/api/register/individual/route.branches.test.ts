@@ -27,8 +27,7 @@ const h = vi.hoisted(() => ({
   dispatch: vi.fn(),
   participation: vi.fn(),
   grant: vi.fn(),
-  prepareAddons: vi.fn(),
-  addAddons: vi.fn(),
+  bookExtras: vi.fn(),
   checkout: vi.fn(),
   ensurePayToken: vi.fn(),
   pendingAddons: vi.fn(),
@@ -76,10 +75,7 @@ vi.mock('@/lib/school-link', () => ({ resolveAndLinkSchool: h.linkSchool }))
 vi.mock('@/lib/member-profile-options', () => ({ syncMemberOptionSelections: h.syncOptions }))
 vi.mock('@/lib/event-participation-sync', () => ({ recordEventParticipation: h.participation }))
 vi.mock('@/lib/auto-membership-grant', () => ({ autoGrantBaseMembership: h.grant }))
-vi.mock('@/lib/store/event-merch', () => ({
-  prepareRegistrationAddons: h.prepareAddons,
-  addRegistrationAddons: h.addAddons,
-}))
+vi.mock('@/lib/addons/registration', () => ({ bookExtrasAtRegistration: h.bookExtras }))
 vi.mock('@/lib/registration-confirm', () => ({ confirmRegistration: h.confirm }))
 vi.mock('@/lib/registration-pay-link', () => ({ sendPayLinkEmail: h.payLink }))
 vi.mock('@/lib/registration-checkout', () => ({
@@ -133,7 +129,6 @@ const HAPPY = [
   'hook dispatch',
   'hook provision',
   'update members',
-  'hook prepareAddons',
 ]
 
 /** An earlier registration of this person on this event. */
@@ -173,8 +168,7 @@ beforeEach(() => {
   hook(h.grant, 'hook grant')
   hook(h.dispatch, 'hook dispatch')
   hook(h.provision, 'hook provision', { signInToken: 'tkt', clerkUserId: 'user_new' })
-  hook(h.prepareAddons, 'hook prepareAddons', [])
-  hook(h.addAddons, 'hook addAddons')
+  hook(h.bookExtras, 'hook bookExtras', { booked: 1, refusals: [], payLinksSent: ['Kid'], invoiced: false })
   hook(h.confirm, 'hook confirm')
   hook(h.pendingAddons, 'hook pendingAddons', [])
   hook(h.checkout, 'hook checkout', { url: 'https://checkout.test' })
@@ -442,13 +436,13 @@ describe('POST /api/register/individual — scholarship offers', () => {
     expect(writes().at(-1)).toBe('hook confirm')
   })
 
-  it('a full scholarship with an add-on goes to checkout, and is not confirmed', async () => {
+  it('a full scholarship with extras still confirms here: extras are paid by their own link, never discounted (D1)', async () => {
     h.stripeOn = true
     h.findOffer.mockResolvedValue(FULL_OFFER)
-    h.prepareAddons.mockResolvedValue([{ id: 'line' }])
-    const res = await settle(await post({ scholarship_token: 'tok' }))
-    expect(res.body).toMatchObject({ checkoutUrl: 'https://checkout.test' })
-    expect(h.confirm).not.toHaveBeenCalled()
+    const res = await settle(await post({ scholarship_token: 'tok', extras: { items: [{ addonId: 'a', people: ['self'] }] } }))
+    expect(res.body).toMatchObject({ checkoutUrl: null, extras: { booked: 1, payLinksSent: ['Kid'] } })
+    expect(h.confirm).toHaveBeenCalledWith('reg-1', false)
+    expect(h.checkout).not.toHaveBeenCalled()
   })
 })
 
@@ -903,31 +897,25 @@ describe('POST /api/register/individual — members and the rows written', () =>
 })
 
 describe('POST /api/register/individual — add-ons and checkout', () => {
-  it('add-ons are priced from the submitted lines and added to the member, before the checkout', async () => {
+  it('extras are booked for the registrant before the checkout, and never put in it', async () => {
     h.stripeOn = true
-    const lines = [{ id: 'line' }]
-    h.prepareAddons.mockImplementation(async () => { rec.event('hook prepareAddons'); return lines })
-    await post({ merch_addons: [{ variantId: 'v1' }] })
-    expect(h.prepareAddons).toHaveBeenCalledWith(expect.anything(), 'colorado', [{ variantId: 'v1' }])
-    expect(h.addAddons).toHaveBeenCalledWith(expect.anything(), 'reg-1', lines, 'm-1')
-    expect(writes().slice(HAPPY.length - 1)).toEqual([
-      'hook prepareAddons', 'hook addAddons', 'hook checkout', 'hook payLink',
-    ])
+    const extras = { items: [{ addonId: 'a', people: ['self'] }] }
+    await post({ extras })
+    expect(h.bookExtras).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ registrationId: 'reg-1', choice: extras, bookedByMemberId: 'm-1' }))
+    expect(writes().slice(HAPPY.length)).toEqual(['hook bookExtras', 'hook checkout', 'hook payLink'])
   })
 
-  it('no add-ons submitted is an empty list, and none are added', async () => {
+  it('no extras submitted books none', async () => {
     await post()
-    expect(h.prepareAddons).toHaveBeenCalledWith(expect.anything(), 'colorado', [])
-    expect(h.addAddons).not.toHaveBeenCalled()
+    expect(h.bookExtras).not.toHaveBeenCalled()
   })
 
-  it('Stripe off: no checkout, and add-ons are still kept', async () => {
-    h.prepareAddons.mockResolvedValue([{ id: 'line' }])
-    expect(await settle(await post())).toEqual({
+  it('Stripe off: no checkout, and the extras are still booked', async () => {
+    expect(await settle(await post({ extras: { items: [{ addonId: 'a', people: ['self'] }] } }))).toEqual({
       status: 201,
-      body: { registrationId: 'reg-1', checkoutUrl: null, signInToken: 'tkt' },
+      body: { registrationId: 'reg-1', checkoutUrl: null, signInToken: 'tkt', extras: { booked: 1, refusals: [], payLinksSent: ['Kid'], invoiced: false } },
     })
-    expect(h.addAddons).toHaveBeenCalledTimes(1)
+    expect(h.bookExtras).toHaveBeenCalledTimes(1)
     expect(h.checkout).not.toHaveBeenCalled()
   })
 
@@ -950,7 +938,7 @@ describe('POST /api/register/individual — add-ons and checkout', () => {
     const errors = vi.spyOn(console, 'error').mockImplementation(() => {})
     h.getEventBySlug.mockResolvedValueOnce(OPEN_EVENT).mockRejectedValueOnce(new Error('sanity timeout'))
     expect(await settle(await post())).toEqual({ status: 500, body: { error: 'Internal server error' } })
-    expect(writes()).toEqual(HAPPY.slice(0, -1))
+    expect(writes()).toEqual(HAPPY)
     errors.mockRestore()
   })
 

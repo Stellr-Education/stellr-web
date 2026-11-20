@@ -428,6 +428,9 @@ export async function issueCredential(
     : isKnownMinorOn(input.recipient.dateOfBirth)
 
   const insert = {
+    // S5 wave 8: every credential issued here is Stellr's. The issuer check above refuses
+    // another tenant's event (W7-9), and a PD or module credential has no event to derive from.
+    tenant_id:      STELLR_TENANT_ID,
     number:         generateCredentialNumber(),
     source:         input.source,
     member_id:      input.memberId ?? null,

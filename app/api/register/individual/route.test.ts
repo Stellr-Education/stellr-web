@@ -80,7 +80,6 @@ vi.mock('@/lib/school-link', () => ({ resolveAndLinkSchool: async () => ({ state
 vi.mock('@/lib/member-profile-options', () => ({ syncMemberOptionSelections: async () => {} }))
 vi.mock('@/lib/event-participation-sync', () => ({ recordEventParticipation: async () => {} }))
 vi.mock('@/lib/auto-membership-grant', () => ({ autoGrantBaseMembership: async () => {} }))
-vi.mock('@/lib/store/event-merch', () => ({ prepareRegistrationAddons: async () => [], addRegistrationAddons: async () => {} }))
 vi.mock('@/lib/registration-confirm', () => ({ confirmRegistration: async () => {} }))
 vi.mock('@/lib/registration-checkout', () => ({
   createRegistrationCheckout: async () => ({ url: 'https://checkout.test' }),

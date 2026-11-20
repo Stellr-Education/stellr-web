@@ -6,6 +6,7 @@ import { assertNotImpersonating } from '@/lib/impersonation'
 import { assertLiveCredentials } from '@/lib/env-guards'
 import { stripeClient } from '@/lib/stripe'
 import { createRegistrationCheckout, RegistrationCheckoutError } from '@/lib/registration-checkout'
+import { checkoutInvoiceParams } from '@/lib/payments/checkout-invoice'
 import { GUARANTEE_CHECKOUT_TEXT } from '@/lib/guarantee'
 import { ensureSeatPayToken, seatDiscount, seatPayPageUrl } from '@/lib/individual-payment'
 import { auditMutation } from '@/lib/audit/route'
@@ -40,7 +41,7 @@ async function createPaymentLink(req: NextRequest) {
 
   const { data: member } = await db
     .from('members')
-    .select('id, email')
+    .select('id, email, first_name, last_name')
     .eq('clerk_user_id', userId)
     .eq('is_active', true)
     .maybeSingle()
@@ -141,6 +142,15 @@ async function createPaymentLink(req: NextRequest) {
     customer_email: member.email,
     customer_creation: 'always',
     metadata,
+    // A paid invoice and an emailed receipt for the place (lib/payments/checkout-invoice.ts).
+    ...checkoutInvoiceParams({
+      registrationId,
+      eventSlug: registration.event_slug,
+      eventTitle: registration.event_title as string | null,
+      participantId: participant.id as string,
+      forName: `${member.first_name ?? ''} ${member.last_name ?? ''}`.trim(),
+      receiptEmail: member.email,
+    }),
     success_url: `${APP_URL}/account?tab=billing&paid=1`,
     cancel_url: `${APP_URL}/account?tab=billing`,
   })

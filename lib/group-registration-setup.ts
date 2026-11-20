@@ -9,6 +9,7 @@ import { createAndSendGroupInvoice, findGroupInvoice } from '@/lib/group-invoice
 import { runGroupRegistrationFollowUp, type FollowUpPerson } from '@/lib/group-registration-followup'
 import { formatUsd } from '@/lib/mentoring-format'
 import { checkInCodeLink } from '@/lib/check-in-codes'
+import { STELLR_TENANT_ID } from '@/lib/tenancy/constants'
 
 // "Finish registration setup" (admin): completes a group registration whose
 // request was cut off after the records were written — on 28 Oct 2026 a team of
@@ -39,6 +40,8 @@ type Reg = {
   details_method: string | null; adult_count: number | null; student_count: number | null
   registrant_role: string | null
   late_joiner_payer?: string | null
+  /** S5 A8b. NULL is a Stellr row the backfill has not reached. */
+  tenant_id?: string | null
 }
 type Part = {
   id: string; member_id: string | null; first_name: string; last_name: string; email: string | null
@@ -57,7 +60,7 @@ async function load(db: SupabaseClient, registrationId: string) {
     .select(`id, type, status, event_slug, event_title, teacher_first_name, teacher_last_name, teacher_email,
       teacher_poc_email, teacher_member_id, school_name, school_address_state, spreadsheet_id, invoice_requested,
       invoice_paid_at, amount_due_cents, member_pays_individually, details_method, adult_count, student_count,
-      registrant_role, late_joiner_payer`)
+      registrant_role, late_joiner_payer, tenant_id`)
     .eq('id', registrationId)
     .maybeSingle()
   if (!reg || (reg as Reg).type !== 'group') return null
@@ -205,6 +208,8 @@ export async function finishGroupSetup(
         token,
         registration_id: reg.id,
         event_slug: reg.event_slug,
+        // S5 A8b: the registration's tenant (NULL is a Stellr row the backfill has not reached).
+        tenant_id: reg.tenant_id ?? STELLR_TENANT_ID,
         event_title: eventTitle,
         expires_at: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
       })
@@ -242,6 +247,7 @@ export async function finishGroupSetup(
             eventTitle,
             teacher,
             registrantMemberId: reg.teacher_member_id,
+            tenantId: reg.tenant_id ?? STELLR_TENANT_ID,
             amountCents: reg.amount_due_cents,
             perSeatCents: price?.unit_amount ?? Math.round(reg.amount_due_cents / Math.max(1, total)),
             currency: price?.currency ?? 'usd',

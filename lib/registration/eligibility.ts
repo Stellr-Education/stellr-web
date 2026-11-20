@@ -126,11 +126,12 @@ export type RegistrableResult = EligibilityResult | (RegistrationAgeOk & { guard
 export const TENANT_GUARDIAN_CONSENT_FLAG = 'TENANT_GUARDIAN_CONSENT_ENABLED'
 
 /**
- * Whether the flag itself is exactly "true". This is the sweep's gate (the
- * membership-expiry cron): with the flag on, pending, declined and expired rows go
- * on being settled even while a precondition below is missing, since settling only
- * expires, removes and voids. Nothing that admits a minor reads it: admission reads
- * tenantGuardianConsentReady(), which also needs every precondition.
+ * Whether the flag itself is exactly "true". Nothing that admits a minor reads it:
+ * admission reads tenantGuardianConsentReady(), which also needs every
+ * precondition. The membership-expiry cron's sweep is not gated on it either: it
+ * runs whenever an unsigned consent row exists (s5-programme.26), since settling
+ * only expires, removes and voids. The cron reads it to report a flag that is on
+ * while a precondition is missing.
  */
 export function tenantGuardianConsentEnabled(): boolean {
   return process.env[TENANT_GUARDIAN_CONSENT_FLAG] === 'true'

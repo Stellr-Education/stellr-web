@@ -6,6 +6,7 @@
 //   /sign, /sign/copy           Stellr signing (token in the URL fragment)
 //   /register/<slug>/pay/<tok>  pay-later link for a registration
 //   /register/<slug>/pay-seat/<tok> per-seat pay link (deep review PAY-8)
+//   /register/<slug>/addons/pay/<tok> pay link for event add-ons (lib/addons)
 //   /register/<slug>/join/<tok> join link for a group registration
 //   /privacy/request, …/confirm the privacy request form and its emailed
 //                               confirmation link (people describe their families)
@@ -38,7 +39,7 @@
 
 const PRIVATE = [
   /^\/sign(\/|$)/,
-  /^\/register\/[^/]+\/(pay|pay-seat|join)\//,
+  /^\/register\/[^/]+\/(pay|pay-seat|join|addons\/pay)\//,
   /^\/privacy\/request(\/|$)/,
   /^\/survey\//,
   /^\/team-profile\//,

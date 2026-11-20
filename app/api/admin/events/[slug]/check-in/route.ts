@@ -1,3 +1,4 @@
+import { extrasByParticipant } from '@/lib/addons/admin'
 import { NextResponse } from 'next/server'
 import { randomBytes } from 'crypto'
 import type { SupabaseClient } from '@supabase/supabase-js'
@@ -58,7 +59,7 @@ function eventAudit(req: Request, table: string): Omit<AuditMutation, 'action'> 
 // Which desk action (an enum) and how many people it named are the metadata, with the
 // participant as the target when there is one. Never a code, token, link or note.
 const DESK_ACTIONS = [
-  'open', 'close', 'regenerate', 'resources_url', 'merch_collected', 'merch_uncollected',
+  'open', 'close', 'regenerate', 'resources_url', 'merch_collected', 'merch_uncollected', 'addon_checked', 'addon_unchecked',
   'manual', 'undo', 'group_check_in', 'group_undo', 'crew_check_in', 'crew_undo', 'scan',
 ] as const
 const deskAudit = ({ args: [req] }: { args: [Request, Params] }) => ({ action: 'event.check_in.desk_action' as const, ...eventAudit(req, 'participants') })
@@ -142,6 +143,8 @@ export async function GET(req: Request, { params }: Params) {
   // Only a tenant event has consent rows, so a Stellr event's poll is unchanged. Null
   // on a hiccup: no markers this poll, and the write paths still refuse.
   const pendingConsent = await consentPendingParticipants(db, { registrationIds: (regs ?? []).map((r) => r.id as string) })
+  // Each person's extras (accommodation, tours: lib/addons), to tick off at the desk (US-23).
+  const extras: Awaited<ReturnType<typeof extrasByParticipant>> = await extrasByParticipant(db, slug).catch(() => new Map())
 
   const merchByMember = new Map<string, { name: string; qty: number }[]>()
   for (const m of (merchRows ?? []) as { name: string; qty: number; participant_member_id: string }[]) {
@@ -164,6 +167,7 @@ export async function GET(req: Request, { params }: Params) {
       company: p.event_companies ?? null,
       merch: p.member_id ? merchByMember.get(p.member_id as string) ?? [] : [],
       merchCollected: (p.merch_collected as boolean) ?? false,
+      ...(extras.get(p.id as string)?.length ? { extras: extras.get(p.id as string) } : {}),
       ...(pendingConsent?.has(p.id as string) ? { consentPending: true as const } : {}),
     }))
   )
@@ -354,6 +358,24 @@ async function deskAction(req: Request, { params }: Params) {
       .upsert({ event_slug: slug, resources_url: url }, { onConflict: 'event_slug' })
     if (error) return NextResponse.json({ error: 'Database error' }, { status: 500 })
     return NextResponse.json({ ok: true, resourcesUrl: url })
+  }
+
+  if (action === 'addon_checked' || action === 'addon_unchecked') {
+    const participantId = body?.participantId
+    const lineId = body?.lineId
+    if (typeof participantId !== 'string' || typeof lineId !== 'string') {
+      return NextResponse.json({ error: 'participantId and lineId required' }, { status: 400 })
+    }
+    if (!(await allInEvent(db, slug, [participantId]))) {
+      return NextResponse.json({ error: 'Participant not found for this event' }, { status: 404 })
+    }
+    const { error } = await db
+      .from('registration_addons')
+      .update({ checked_at: action === 'addon_checked' ? new Date().toISOString() : null })
+      .eq('id', lineId)
+      .eq('participant_id', participantId)
+    if (error) return NextResponse.json({ error: 'Database error' }, { status: 500 })
+    return NextResponse.json({ ok: true })
   }
 
   if (action === 'merch_collected' || action === 'merch_uncollected') {

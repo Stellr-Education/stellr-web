@@ -236,6 +236,9 @@ const nextConfig = {
     '/api/admin/events/**': ['./public/fonts/Aileron-SemiBold.otf'],
     '/api/credentials/**': ['./public/fonts/Aileron-SemiBold.otf', './public/fonts/Aileron-Regular.otf', './public/fonts/norwester.otf'],
     '/api/admin/pd-certificate/**': ['./public/fonts/Aileron-SemiBold.otf', './public/fonts/Aileron-Regular.otf', './public/fonts/norwester.otf'],
+    // The paid invoice Stellr issues carries the logo (lib/payments/paid-invoice-pdf.ts).
+    '/api/members/billing/**': ['./public/images/logo-horiz.png'],
+    '/api/admin/registrations/**': ['./public/images/logo-horiz.png'],
     // Stellr signing stamps names and values in Open Sans (lib/esign/native/render.ts).
     '/api/sign/**': ['./public/fonts/esign/OpenSans-Regular.ttf'],
     // The template editor checks documents with pdf.js on the server
@@ -305,6 +308,7 @@ const nextConfig = {
       { source: '/sign/:path*', headers: privateLink },
       { source: '/register/:slug/pay/:path*', headers: privateLink },
       { source: '/register/:slug/pay-seat/:path*', headers: privateLink },
+      { source: '/register/:slug/addons/pay/:path*', headers: privateLink },
       { source: '/register/:slug/join/:path*', headers: privateLink },
       { source: '/api/sign/:path*', headers: privateLink },
       { source: '/privacy/request', headers: privateLink },

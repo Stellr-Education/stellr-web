@@ -89,7 +89,6 @@ const system = (note?: string) => plain('system', note)
 
 export const TABLE_REGISTRY: Record<string, TableEntry> = {
   // ── entitlements schema: the coaching / mentoring allowance ledger ────────
-  'entitlements.account_credit_ledger': stellr('membership allowance ledger'),
   'entitlements.bookings': stellr(),
   'entitlements.coupon_redemptions': stellr(),
   'entitlements.discounts': stellr(),
@@ -123,7 +122,7 @@ export const TABLE_REGISTRY: Record<string, TableEntry> = {
 
   // ── Event-scoped, tenant derived from event_slug ─────────────────────────
   'public.agreements': slug('e-sign envelopes (renamed from docusign_envelopes)'),
-  'public.credentials': slug(),
+  'public.credentials': slug('event_slug optional: PD and module credentials log no_key'),
   'public.event_award_assignments': slug(),
   'public.event_badge_templates': slug(),
   'public.event_certificate_templates': slug(),
@@ -131,23 +130,26 @@ export const TABLE_REGISTRY: Record<string, TableEntry> = {
   'public.event_email_sends': slug(),
   'public.event_emails': slug(),
   'public.event_manager_assignments': slug(),
-  'public.event_participations': slug(),
-  'public.event_refunds': slug(),
+  'public.event_participations': slug('event_slug optional: self-reported history may name no event'),
+  'public.event_refunds': slug('event_slug optional: some add-on refunds carry none'),
   'public.event_settings': slug(),
   'public.event_crew_check_ins': slug('desk check-ins of volunteer mentors and event managers'),
   'public.event_store_offerings': slug(),
-  'public.group_invoices': slug(),
+  'public.event_addons': slug('add-ons catalogue (docs/PLAN-event-add-ons-2026-11-17.md); Stellr events only in the app'),
+  'public.event_addon_settings': slug('per-event merch upsell and inclusions'),
+  'public.addon_orders': slug('add-on Checkout or pay link'),
+  'public.group_invoices': slug('event_slug optional: a ledger row may carry none'),
   'public.group_join_tokens': slug(),
   'public.member_groups': slug('event_slug optional: a group with no event logs no_key'),
   'public.merch_batches': slug(),
   'public.refund_policies': slug('event_slug optional: global policies log no_key'),
   'public.registrations': slug(),
-  'public.scholarship_applications': slug(),
-  'public.store_event_discounts': slug(),
+  'public.scholarship_applications': slug('event_slug optional: an activity with no mirrored event'),
+  'public.store_event_discounts': slug('event_slug optional: global discounts log no_key'),
   'public.store_orders': slug('event_slug optional: non-event orders log no_key'),
-  'public.survey_access_log': slug(),
+  'public.survey_access_log': slug('event_slug optional: cross-event views log no_key'),
   'public.survey_distributions': slug(),
-  'public.survey_responses': slug(),
+  'public.survey_responses': slug('event_slug optional: a distribution with no event'),
   'public.team_profiles': slug(),
   'public.volunteer_event_interest': slug(),
 
@@ -179,6 +181,7 @@ export const TABLE_REGISTRY: Record<string, TableEntry> = {
   'public.credential_events': child('public.credentials', 'credential_id'),
   'public.member_group_members': child('public.member_groups', 'group_id'),
   'public.store_order_items': child('public.store_orders', 'order_id'),
+  'public.registration_addons': child('public.registrations', 'registration_id'),
   'public.store_returns': child('public.store_orders', 'order_id'),
   'public.survey_invitations': child('public.survey_distributions', 'distribution_id'),
   'public.survey_answers': child('public.survey_responses', 'response_id'),
@@ -213,8 +216,6 @@ export const TABLE_REGISTRY: Record<string, TableEntry> = {
   'public.email_suppressions': platform('global suppression list'),
 
   // ── Stellr-only products ─────────────────────────────────────────────────
-  'public.account_credits': stellr('Stellr credit balances; S9 ledger replaces'),
-  'public.credit_redemptions': stellr(),
   'public.chat_channels': stellr('community'),
   'public.chat_messages': stellr('community'),
   'public.coaching_requests': stellr('coaching'),

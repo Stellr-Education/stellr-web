@@ -28,6 +28,9 @@ import { GUARANTEE_DAYS } from '@/lib/guarantee'
 import { themeFromType } from '@/lib/campaigns'
 import { CURRENT_SCHOOL_YEAR, eraForSchoolYear, inSentence, storyYear } from '@/lib/future-history'
 import { EVENT_PD_HOURS } from '@/lib/pd-standards'
+import { AddonCard } from '@stellr/web-ui'
+import { getPublicAddons } from '@/lib/addons/catalog'
+import { addonDateLabel, addonFootnote, addonKindLabel, addonPriceLabel } from '@/lib/addons/display'
 
 export const revalidate = 21600 // 6 hours; see PUBLISHED_CACHE in lib/sanity.ts
 
@@ -315,6 +318,13 @@ export default async function EventDetailPage({ params }: PageProps) {
   const price = await getEventPrice(event.stripePriceId)
   const priceLabel = eventPriceLabel(price)
 
+  // Optional extras (docs/PLAN-event-add-ons-2026-11-17.md): accommodation and
+  // experiences always show once on sale; event merch only while the event's merch
+  // upsell is on. Cached per event, so no query per view.
+  const { addons, settings: addonSettings } = await getPublicAddons(slug)
+  const extras = addons.filter((a) => a.kind !== 'merch')
+  const merch = addonSettings.merchUpsell ? addons.filter((a) => a.kind === 'merch') : []
+
   // JSON-LD for this event (Offline/Online Event + superEvent + offer) plus the
   // FAQ accordion rendered further down the page. The offer carries the same
   // fee and availability shown on the page — schema that contradicts the
@@ -457,7 +467,7 @@ export default async function EventDetailPage({ params }: PageProps) {
               <div>
                 <h2 className="text-2xl font-bold text-brand-blue-dark mb-4">What’s Included</h2>
                 <ul className="space-y-3">
-                  {INCLUDED.map((item) => (
+                  {[...INCLUDED, ...addonSettings.inclusions].map((item) => (
                     <li key={item} className="flex items-start gap-3">
                       <Check size={18} className="text-brand-blue mt-1 shrink-0" />
                       <span className="text-brand-grey-dark">{item}</span>
@@ -465,6 +475,51 @@ export default async function EventDetailPage({ params }: PageProps) {
                   ))}
                 </ul>
               </div>
+
+              {/* Optional extras — accommodation and experiences, bookable with or after a place */}
+              {extras.length > 0 && (
+                <div>
+                  <h2 className="text-2xl font-bold text-ink mb-2">Optional extras</h2>
+                  <p className="mb-4 text-content-body">
+                    Add these when you register, or later from your account, up to each one’s cut-off.
+                  </p>
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    {extras.map((a) => (
+                      <AddonCard
+                        key={a.id}
+                        kindLabel={a.displayGroup ?? addonKindLabel(a)}
+                        title={a.title}
+                        dateLabel={addonDateLabel(a)}
+                        description={a.description || null}
+                        includes={a.includes}
+                        priceLabel={addonPriceLabel(a)}
+                        availability={a.availability}
+                        footnote={addonFootnote(a)}
+                      />
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Event merch — only while the event's merch upsell is on */}
+              {merch.length > 0 && (
+                <div>
+                  <h2 className="text-2xl font-bold text-ink mb-2">Event merch</h2>
+                  <p className="mb-4 text-content-body">Order it with your place and collect it at the event.</p>
+                  <div className="grid gap-4 sm:grid-cols-3">
+                    {merch.map((a) => (
+                      <AddonCard
+                        key={a.id}
+                        kindLabel={addonKindLabel(a)}
+                        title={a.title}
+                        description={a.description || null}
+                        priceLabel={addonPriceLabel(a)}
+                        availability={a.availability}
+                      />
+                    ))}
+                  </div>
+                </div>
+              )}
 
               {/* How the Challenge Works — the event-day arc */}
               <div>

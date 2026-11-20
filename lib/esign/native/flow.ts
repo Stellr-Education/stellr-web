@@ -23,6 +23,7 @@ import { archivePaths, putImmutable, retainUntilOnCompletion, sha256Hex, SIGNED_
 // Stellr's counter-signature where the document has one, renders the executed
 // PDF with its certificate page, stores it, and only then marks it completed.
 
+import { STELLR_TENANT_ID } from '@/lib/tenancy/constants'
 export { DISCLOSURE_VERSION } from '@/lib/esign/disclosure'
 
 /** Wrong year-of-birth answers before a link is locked and has to be re-sent. */
@@ -235,7 +236,7 @@ function documentLabelFor(env: NativeEnvelope): string {
 export async function openLink(
   db: SupabaseClient,
   token: string,
-  opts: { birthYear?: string | null; now?: Date } = {},
+  opts: { birthYear?: string | null; now?: Date; hostTenantId?: string } = {},
 ): Promise<LinkState> {
   const now = opts.now ?? new Date()
   const verified = verifyToken(token, 'sign', now.getTime())
@@ -245,6 +246,10 @@ export async function openLink(
   if (!recipient) return { kind: 'invalid' }
   const envelope = await loadEnvelope(db, recipient.envelope_row)
   if (!envelope) return { kind: 'invalid' }
+  // S5 wave 8, A11: another tenant's link is a dead link on this host, before it says
+  // anything (signed, not yet, or whose year of birth it asks for). The route passes the
+  // host's tenant (requestTenant() is for app/api only); NULL is a Stellr row.
+  if (opts.hostTenantId && (envelope.tenant_id ?? STELLR_TENANT_ID) !== opts.hostTenantId) return { kind: 'invalid' }
 
   // Signing retires the link (its version moves on), but a genuine link that
   // has done its job says so rather than looking broken. It reveals nothing

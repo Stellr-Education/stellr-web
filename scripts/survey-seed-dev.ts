@@ -22,6 +22,7 @@
  * Refuses any project but dev.
  */
 import { existsSync } from 'node:fs'
+import { STELLR_TENANT_ID } from '../lib/tenancy/constants'
 
 if (existsSync('.env.local')) process.loadEnvFile('.env.local')
 
@@ -154,7 +155,8 @@ async function main() {
   }
   const { data: ep } = await db.from('event_participations').select('id').eq('member_id', mentor!.id).eq('event_slug', SLUG).maybeSingle()
   if (!ep) {
-    const { error } = await db.from('event_participations').insert({ member_id: mentor!.id, event_slug: SLUG, event_title: TITLE, event_year: 2026, role: 'volunteer', status: 'approved' })
+    // S5 wave 8: the dev seed's event is Stellr's.
+    const { error } = await db.from('event_participations').insert({ tenant_id: STELLR_TENANT_ID, member_id: mentor!.id, event_slug: SLUG, event_title: TITLE, event_year: 2026, role: 'volunteer', status: 'approved' })
     if (error) throw new Error(`event_participations: ${error.message}`)
   }
 
