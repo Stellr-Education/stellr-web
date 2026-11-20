@@ -15,7 +15,6 @@ SELECT plan(420);
 SELECT set_eq(
   $q$SELECT schemaname || '.' || tablename FROM pg_tables WHERE schemaname IN ('public', 'entitlements')$q$,
   ARRAY[
-    'entitlements.account_credit_ledger',
     'entitlements.bookings',
     'entitlements.coupon_redemptions',
     'entitlements.discounts',
@@ -26,7 +25,6 @@ SELECT set_eq(
     'entitlements.processed_events',
     'entitlements.tier_benefits',
     'entitlements.tiers',
-    'public.account_credits',
     'public.addon_orders',
     'public.admin_duties',
     'public.agreement_email_changes',
@@ -65,7 +63,6 @@ SELECT set_eq(
     'public.crawler_hits',
     'public.credential_events',
     'public.credentials',
-    'public.credit_redemptions',
     'public.cron_runs',
     'public.default_badge_templates',
     'public.default_certificate_templates',

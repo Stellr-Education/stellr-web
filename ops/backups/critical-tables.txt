@@ -41,11 +41,8 @@ public.event_refunds
 public.store_orders
 public.store_order_items
 public.store_returns
-public.account_credits
-public.credit_redemptions
 public.scholarship_applications
 public.stripe_webhook_events
-entitlements.account_credit_ledger
 entitlements.bookings
 entitlements.coupon_redemptions
 entitlements.entitlements
