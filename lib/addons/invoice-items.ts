@@ -94,6 +94,29 @@ export async function linkLinesToInvoice(db: SupabaseClient, lineIds: string[], 
   await db.from('registration_addons').update({ group_invoice_id: groupInvoiceRowId }).in('id', lineIds).eq('status', 'pending_payment')
 }
 
+/** Settle lines as paid (or waived): confirmed, or awaiting the addendum for a minor. Returns how many. */
+export async function settleAddonLines(db: SupabaseClient, lineIds: string[], paidAt: string | null, extra: Record<string, unknown> = {}): Promise<number> {
+  if (lineIds.length === 0) return 0
+  const { data } = await db
+    .from('registration_addons')
+    .select('id, participant_id, addon:event_addons(event_slug, requires_addendum), participant:participants(date_of_birth)')
+    .in('id', lineIds)
+    .eq('status', 'pending_payment')
+  const lines = (data ?? []) as { id: string; participant_id: string; addon: unknown; participant: unknown }[]
+  if (lines.length === 0) return 0
+  const slug = (arr(lines[0].addon) as { event_slug?: string } | undefined)?.event_slug
+  const event = slug ? await getEventBySlug(slug).catch(() => null) : null
+  const eventDate = (event as { date?: string } | null)?.date ?? null
+  const signed = await addendumSignedFor(db, [...new Set(lines.map((l) => l.participant_id))])
+  for (const l of lines) {
+    const addon = arr(l.addon) as { requires_addendum?: boolean } | undefined
+    const dob = (arr(l.participant) as { date_of_birth?: string | null } | undefined)?.date_of_birth ?? null
+    const status = settledStatus(!!addon?.requires_addendum && isRegistrationMinor(dob, eventDate), signed.has(l.participant_id))
+    await db.from('registration_addons').update({ ...extra, status, paid_at: paidAt }).eq('id', l.id).eq('status', 'pending_payment')
+  }
+  return lines.length
+}
+
 /** The invoice carrying these lines was paid: confirm them (or await the addendum, for a minor). */
 export async function settleInvoiceAddonLines(db: SupabaseClient, groupInvoiceRowId: string, paidAt: string): Promise<number> {
   const { data } = await db
