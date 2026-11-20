@@ -90,13 +90,12 @@ export async function executeRefund(
 
   // Idempotency: never refund the same participant twice. limit(1), not
   // maybeSingle(): with two or more rows maybeSingle() errors, returns null,
-  // and the participant read as "not refunded". 'credit' rows are from before
-  // the guarantee, when a cancellation could be refunded as account credit.
+  // and the participant read as "not refunded".
   const { data: prior } = await db
     .from('event_refunds')
     .select('id')
     .eq('participant_id', participantId)
-    .in('refund_type', ['cash', 'credit'])
+    .eq('refund_type', 'cash')
     // A scholarship reimbursement is not a cancellation refund: the student is
     // still registered, and cancelling later still owes the guarantee refund on
     // what remains (Stripe's remaining-refundable cap applies below).
@@ -258,11 +257,9 @@ async function audit(
     refund_type: result.type,
     refund_pct: refundPct ?? null,
     refund_cents: result.refundCents,
-    // Columns from the days-before-the-event schedules; the guarantee uses neither.
-    credit_validity_days: null,
+    // A column from the days-before-the-event schedules; the guarantee does not use it.
     days_out: null,
     stripe_refund_id: result.stripeRefundId ?? null,
-    account_credit_id: null,
     decided_by: actorMemberId,
     source: extra.source ?? 'admin',
     note: extra.note ?? (result.type === 'manual_required' ? result.detail : null),

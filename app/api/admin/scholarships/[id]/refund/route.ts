@@ -19,7 +19,7 @@ const ROUTE = '/api/admin/scholarships/[id]/refund'
 //
 // Stellr's applications only (C20b, lib/scholarship-admin.ts): the refund is on
 // Stellr's Stripe account, so another tenant's is refused before Stripe is called.
-const schema = z.object({ method: z.enum(['cash', 'credit']).default('cash') })
+const schema = z.object({}).passthrough()
 
 type Args = [Request, { params: Promise<{ id: string }> }]
 
@@ -52,17 +52,16 @@ async function refund(req: Request, { params }: { params: Promise<{ id: string }
     tenantId: STELLR_TENANT_ID,
     id,
     eventSlug: app.event_slug ?? undefined,
-    detail: { method: parsed.data.method, registrationId: app.registration_id },
+    detail: { registrationId: app.registration_id },
   })
   const result = await issueScholarshipRefund(db, stripeClient(), {
     applicationId: app.id,
     registrationId: app.registration_id,
     percent: app.percent_off,
-    method: parsed.data.method,
     actorMemberId: reviewer.memberId,
   })
-  noteAuditSubject(req, { detail: { method: parsed.data.method, registrationId: app.registration_id, result: result.type } })
-  return NextResponse.json({ ok: result.type === 'cash' || result.type === 'credit', result })
+  noteAuditSubject(req, { detail: { registrationId: app.registration_id, result: result.type } })
+  return NextResponse.json({ ok: result.type === 'cash', result })
 }
 
 function noReimbursement() {

@@ -126,17 +126,6 @@ export async function GET() {
       return { ...p, pay_kind, is_owner: !!reg && reg.teacher_member_id === member.id }
     })
 
-  // ── Account credits (issued from cancelled registrations) ────────────────────
-  const nowIso = new Date().toISOString()
-  const { data: creditRows } = await db
-    .from('account_credits')
-    .select('id, currency, amount_cents, remaining_cents, status, reason, expires_at, created_at')
-    .eq('member_id', member.id)
-    .in('status', ['available', 'partially_redeemed'])
-    .gt('remaining_cents', 0)
-    .or(`expires_at.is.null,expires_at.gt.${nowIso}`)
-    .order('expires_at', { ascending: true, nullsFirst: false })
-
   // ── Refunds (cancelled places) ───────────────────────────────────────────────
   // The payer sees a refund: the organiser for places on their group's payment,
   // the member for their own registration or a seat they paid themselves.
@@ -167,5 +156,5 @@ export async function GET() {
     }]
   })
 
-  return NextResponse.json({ invoices, participations, credits: creditRows ?? [], refunds })
+  return NextResponse.json({ invoices, participations, refunds })
 }

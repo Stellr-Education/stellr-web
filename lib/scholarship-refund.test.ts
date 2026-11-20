@@ -29,7 +29,6 @@ function seed(reg: Record<string, unknown> = {}, extra: Record<string, Record<st
     }],
     participants: [{ id: 'p1', registration_id: 'reg-1', member_id: 'm1' }],
     event_refunds: [],
-    account_credits: [],
     ...extra,
   })
   return current.db as never
@@ -63,9 +62,8 @@ function makeStripe(feeLineCents: number | null = 16500, opts: { refundFails?: b
 }
 
 const refundRows = () => current.inserts.filter((i) => i.table === 'event_refunds').flatMap((i) => i.rows)
-const creditRows = () => current.inserts.filter((i) => i.table === 'account_credits').flatMap((i) => i.rows)
-const issue = (stripe: never, method: 'cash' | 'credit' = 'cash', percent = 50) =>
-  issueScholarshipRefund(current.db as never, stripe, { applicationId: 'sch-1', registrationId: 'reg-1', percent, method, actorMemberId: 'admin-m' })
+const issue = (stripe: never, percent = 50) =>
+  issueScholarshipRefund(current.db as never, stripe, { applicationId: 'sch-1', registrationId: 'reg-1', percent, actorMemberId: 'admin-m' })
 
 beforeEach(() => {
   vi.clearAllMocks()
@@ -158,18 +156,6 @@ describe('issueScholarshipRefund', () => {
       kind: 'scholarship', refund_type: 'cash', refund_cents: 8250, refund_pct: 50,
       registration_id: 'reg-1', participant_id: 'p1', member_id: 'm1', stripe_refund_id: 're_1', decided_by: 'admin-m',
     })
-  })
-
-  it('credit: adds non-expiring account credit and moves no money', async () => {
-    seed()
-    const { stripe, create } = makeStripe(16500)
-
-    const r = await issue(stripe, 'credit')
-
-    expect(r).toMatchObject({ type: 'credit', refundCents: 8250 })
-    expect(create).not.toHaveBeenCalled()
-    expect(creditRows()[0]).toMatchObject({ member_id: 'm1', amount_cents: 8250, remaining_cents: 8250, source_type: 'scholarship', expires_at: null })
-    expect(refundRows()[0]).toMatchObject({ kind: 'scholarship', refund_type: 'credit' })
   })
 
   it('a failed card refund is audited as manual_required and reported, not thrown', async () => {

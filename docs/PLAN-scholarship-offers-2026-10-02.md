@@ -24,7 +24,7 @@ as hand-written emails quoting a shared, reusable promotion code
 | 6 | Email timing | All three offer emails at once. |
 | 7 | Acknowledgement / decline / expiry | Ack only if HubSpot doesn't already send one — it doesn't (neither applicant contact has ever been sent an email), so the app sends it. No decline email. No expiry. |
 | 8 | Registered **and paid** before applying | Reimburse the difference; apply the scholarship to the existing registration and the member's history (added the same day). |
-| 9 | How to reimburse | Card refund by default; the reviewer can choose account credit instead. |
+| 9 | How to reimburse | Card refund by default; the reviewer can choose account credit instead. (Account credit retired 17 Nov 2026: card refund only, `docs/PLAN-event-add-ons-2026-11-17.md` Phase R.) |
 | 10 | What the % applies to | The event fee only — merch add-ons untouched; any discount code already used is netted off. |
 | 11 | Emails for an already-paid student | Email 1 with the reimbursement line, plus a consent-form reminder only if their DocuSign is unsigned. No payment email. |
 | 12 | Students on a group registration | Still blocked — the school/teacher paid; handle manually. |

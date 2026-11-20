@@ -10,7 +10,6 @@ const h = vi.hoisted(() => ({
   userId: 'u1' as string | null,
   sessionsCreate: vi.fn(async () => ({ url: 'https://checkout.stripe.com/x' })),
   pricesRetrieve: vi.fn(async () => ({ unit_amount: 9900, currency: 'usd' })),
-  buildCreditDiscount: vi.fn(async () => null),
   assertLiveCredentials: vi.fn(),
 }))
 
@@ -32,7 +31,6 @@ vi.mock('@clerk/nextjs/server', () => ({ auth: async () => ({ userId: h.userId }
 vi.mock('@/lib/supabase', () => ({ supabaseServer: () => ({ from }) }))
 vi.mock('@/lib/impersonation', () => ({ assertNotImpersonating: async () => null }))
 vi.mock('@/lib/stripe-customer', () => ({ ensureStripeCustomer: async () => 'cus_1' }))
-vi.mock('@/lib/refunds/redeem', () => ({ buildCreditDiscount: h.buildCreditDiscount }))
 vi.mock('@/lib/env-guards', () => ({ assertLiveCredentials: h.assertLiveCredentials }))
 vi.mock('@/lib/stripe', () => ({
   requireStripe: () => ({
@@ -71,23 +69,15 @@ describe('POST /api/stripe/membership-checkout (PAY-15)', () => {
     expect(h.sessionsCreate).toHaveBeenCalledTimes(1)
   })
 
-  // Nov 2026: the MNCOSE26 booth code. Checkout offers a promotion-code field
-  // unless account credit is applied (Stripe refuses both on one session), and
+  // Nov 2026: the MNCOSE26 booth code. Checkout offers a promotion-code field, and
   // asks for a card only when something is due today.
   type SessionParams = { allow_promotion_codes?: boolean; discounts?: unknown; payment_method_collection?: string }
   const params = () => (h.sessionsCreate.mock.calls[0] as unknown as [SessionParams])[0]
 
-  it('offers a promotion-code field when no credit applies', async () => {
+  it('offers a promotion-code field', async () => {
     await post({ tierName: 'Catalyst', billingInterval: 'annual' })
     expect(params().allow_promotion_codes).toBe(true)
     expect(params().discounts).toBeUndefined()
     expect(params().payment_method_collection).toBe('if_required')
-  })
-
-  it('uses account credit instead of the code field when credit applies', async () => {
-    h.buildCreditDiscount.mockResolvedValueOnce({ couponId: 'co_credit', reservationId: 'r1', allocations: [] } as never)
-    await post({ tierName: 'Catalyst', billingInterval: 'annual' })
-    expect(params().discounts).toEqual([{ coupon: 'co_credit' }])
-    expect(params().allow_promotion_codes).toBeUndefined()
   })
 })

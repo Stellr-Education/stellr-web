@@ -1597,10 +1597,6 @@
       "class": "convert",
       "reason": "auto: touches tenant or event-scoped tables; tables: event_refunds, participants"
     },
-    "lib/refunds/redeem.ts": {
-      "class": "convert",
-      "reason": "auto: reaches tables it does not name (dynamic .from, rpc, or a client passed to a helper); review before converting; tables: account_credits, credit_redemptions"
-    },
     "lib/registration-confirm.ts": {
       "class": "convert",
       "reason": "auto: touches tenant or event-scoped tables; tables: participants, registrations"

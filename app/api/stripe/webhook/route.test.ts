@@ -23,7 +23,6 @@ const h = vi.hoisted(() => ({
   confirmRegistration: vi.fn(async () => {}),
   handleStoreOrderPaid: vi.fn(async () => {}),
   finalizeRegistrationMerch: vi.fn(async () => {}),
-  finalizeRedemption: vi.fn(async () => {}),
   notifyCommunityAdmins: vi.fn(async () => {}),
   recordExternalChargeRefunds: vi.fn(async () => ({ recorded: 0 })),
   logActivity: vi.fn(async () => {}),
@@ -133,7 +132,6 @@ vi.mock('@/lib/app-errors', () => ({ reportError: h.reportError }))
 vi.mock('@/lib/registration-confirm', () => ({ confirmRegistration: h.confirmRegistration }))
 vi.mock('@/lib/store/orders', () => ({ handleStoreOrderPaid: h.handleStoreOrderPaid }))
 vi.mock('@/lib/store/event-merch', () => ({ finalizeRegistrationMerch: h.finalizeRegistrationMerch }))
-vi.mock('@/lib/refunds/redeem', () => ({ finalizeRedemption: h.finalizeRedemption }))
 vi.mock('@/lib/notify', () => ({ notifyCommunityAdmins: h.notifyCommunityAdmins }))
 vi.mock('@/lib/refunds/stripe-webhook', () => ({ recordExternalChargeRefunds: h.recordExternalChargeRefunds }))
 vi.mock('@/lib/activity-log', () => ({ logActivity: h.logActivity }))
@@ -370,7 +368,6 @@ describe('checkout.session.completed payment_status gate (PAY-6)', () => {
     expect(res.status).toBe(200)
     expect(h.confirmRegistration).not.toHaveBeenCalled()
     expect(h.handleStoreOrderPaid).not.toHaveBeenCalled()
-    expect(h.finalizeRedemption).not.toHaveBeenCalled()
   })
 
   it('fulfils a store order once the async payment succeeds', async () => {
@@ -389,7 +386,7 @@ describe('paid mentoring cohort booking: minor-agreement backstop', () => {
     data: { object: {
       id: `cs_${id}`, payment_status: 'paid', payment_intent: `pi_${id}`,
       amount_total: 12000, currency: 'usd', customer: null, customer_details: null,
-      metadata: { type: 'entitlement_booking', memberId: 'm1', offeringId: 'off1', creditAppliedCents: '0' },
+      metadata: { type: 'entitlement_booking', memberId: 'm1', offeringId: 'off1' },
     } },
   } as unknown as Stripe.Event)
 
@@ -637,7 +634,6 @@ describe('shared-cost seat: the share record', () => {
     // The seat is still settled and its intent kept; the rest of the seat ran.
     expect(await readRow('participants', 'pS')).toMatchObject({ individual_payment_status: 'paid', stripe_payment_intent_id: 'pi_evt_share_err', share_paid_cents: null })
     expect(await readRow('registrations', 'rS')).toMatchObject({ status: 'confirmed' })
-    expect(h.finalizeRedemption).toHaveBeenCalledTimes(1)
     // Processed: Stripe does not retry the paid seat.
     expect(current.inserts.find((i) => i.table === 'stripe_webhook_events')).toBeDefined()
     vi.mocked(console.error).mockRestore()
@@ -652,7 +648,7 @@ describe('entitlement_booking auto-refund is idempotent', () => {
     data: { object: {
       id: 'cs_book', payment_status: 'paid', payment_intent: 'pi_book',
       amount_total: 12000, currency: 'usd', customer: null, customer_details: null,
-      metadata: { type: 'entitlement_booking', memberId: 'm1', offeringId: 'off1', creditAppliedCents: '0' },
+      metadata: { type: 'entitlement_booking', memberId: 'm1', offeringId: 'off1' },
     } },
   } as unknown as Stripe.Event)
   const alreadyRefunded = () => Object.assign(new Error('Charge has already been refunded.'), { type: 'StripeInvalidRequestError', code: 'charge_already_refunded' })
@@ -665,8 +661,6 @@ describe('entitlement_booking auto-refund is idempotent', () => {
   afterEach(() => {
     h.confirmPaidBooking.mockReset()
     h.confirmPaidBooking.mockResolvedValue('b1')
-    h.finalizeRedemption.mockReset()
-    h.finalizeRedemption.mockResolvedValue(undefined)
     vi.mocked(console.error).mockRestore()
     vi.mocked(console.warn).mockRestore()
   })
@@ -691,10 +685,10 @@ describe('entitlement_booking auto-refund is idempotent', () => {
     expect(h.refundsCreate).toHaveBeenCalledTimes(1)
   })
 
-  it('a retry after a later step failed reuses the key, and charge_already_refunded counts as done', async () => {
+  it('a retry reuses the key, and charge_already_refunded counts as done', async () => {
     current = makeDb({ stripe_webhook_events: [] })
-    // First delivery: the refund goes through, then a later step fails → 500, not recorded.
-    h.finalizeRedemption.mockRejectedValueOnce(new Error('redemption write failed'))
+    // First delivery: Stripe refuses the refund for now → 500, not recorded.
+    h.refundsCreate.mockRejectedValueOnce(Object.assign(new Error('rate limited'), { code: 'rate_limit' }))
     expect((await post(bookingEvent())).status).toBe(500)
     // Stripe retries (past its 24-hour key window): the charge is already refunded.
     h.refundsCreate.mockRejectedValueOnce(alreadyRefunded())
