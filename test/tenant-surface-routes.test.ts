@@ -46,7 +46,8 @@ const MANIFEST_CLASS_COUNTS: Record<RouteClass, number> = {
   // +3 tenant_crew, -3 stellr_only: admin events/[slug]/{companies,offerings,merch/commit} (C18)
   // +1 tenant_crew: admin events/[slug]/participants/[pid]/guardian-consent/resend (wave 8 CONSENT (c))
   // +2 tenant_crew, +1 participant on 17 Nov 2026: admin registrations/[id]/{receipt,paid-invoice}, members/billing/paid-invoice
-  tenant_crew: 41,
+  // +3 tenant_crew: admin events/[slug]/addons, addons/[id], addons/settings (event add-ons, 17 Nov)
+  tenant_crew: 44,
   participant: 132,
   // +6 on 16 Nov 2026: the Classroom Qualifier hub, its two window pages, the library and the teacher stories list and detail.
   public: 139,
@@ -68,7 +69,8 @@ const MANIFEST_CLASS_COUNTS: Record<RouteClass, number> = {
 // +6 on 16 Nov 2026: classroom-qualifier hub, 2026-27, spring-2027, resources, stories and stories/[slug] (public pages, denied on tenant hosts like the other Stellr marketing pages).
 // +1 on 16 Nov 2026: admin events/[slug]/participants/[pid]/guardian-consent/resend, the staff resend of a guardian's consent form (tenant_crew, denied on tenant hosts like every admin route).
 // +3 on 17 Nov 2026: payment documents, admin registrations/[id]/receipt and paid-invoice (tenant_crew, denied on tenant hosts like every admin route) and members/billing/paid-invoice (participant, pending like the other member routes).
-const MANIFEST_TOTAL = 520
+// +3 on 17 Nov 2026: event add-ons admin routes (tenant_crew, denied on tenant hosts like every admin route).
+const MANIFEST_TOTAL = 523
 
 // The decisions. Moving a route between them is a deliberate diff here.
 const DECISION_COUNTS: Record<TenantSurfaceDecision, number> = {
@@ -78,7 +80,7 @@ const DECISION_COUNTS: Record<TenantSurfaceDecision, number> = {
   // files pinned under 'routes held back' below
   pending: 50,
   bypass: 4,
-  deny: 416,
+  deny: 419,
 }
 
 /** A concrete URL a manifest file serves, with sample values for its params. */
