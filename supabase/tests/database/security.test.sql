@@ -74,7 +74,11 @@ SELECT cmp_ok(
   'the baseline loaded: at least 20 SECURITY DEFINER functions exist'
 );
 
--- Deep review DB-N3 / S0-1: anon may execute NO definer function.
+-- Deep review DB-N3 / S0-1: anon may execute NO definer function, with ONE named
+-- exception: public.tenant_host_map(), which the owner accepted on 20 Nov 2026
+-- (decision WD-1, 20261120185125_tenant_host_map_public). It returns host, tenant id
+-- and slug for active tenants only, so the proxy can read its host map with the
+-- publishable key; email_outbox_tenant_host_map.test.sql pins its shape and grants.
 SELECT is_empty($q$
   SELECT n.nspname || '.' || p.proname || '(' || pg_get_function_identity_arguments(p.oid) || ')'
   FROM pg_proc p
@@ -82,7 +86,8 @@ SELECT is_empty($q$
   WHERE p.prosecdef
     AND n.nspname IN ('public', 'entitlements')
     AND has_function_privilege('anon', p.oid, 'EXECUTE')
-$q$, 'anon can execute no SECURITY DEFINER function in public or entitlements');
+    AND p.oid <> 'public.tenant_host_map()'::regprocedure
+$q$, 'anon can execute no SECURITY DEFINER function in public or entitlements but tenant_host_map() (WD-1)');
 
 -- authenticated may execute only the RLS helpers its SELECT policies call.
 SELECT is_empty($q$
