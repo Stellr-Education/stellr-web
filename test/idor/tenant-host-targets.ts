@@ -226,7 +226,7 @@ function signSessionFixture(): CaseFixture {
  * Tenant routing on, as on a real tenant host: requestTenant() then reads the tenant the
  * proxy would have set (the harness sends both headers on Canary's host), instead of
  * answering Stellr whatever the host. Only for the routes whose slice checks the host
- * (A10a's and A10b's); a route still without a check would answer for its own reasons with
+ * (A10a's, A10b's and A11's signing routes); a route still without a check would answer for its own reasons with
  * it on, which is that route's slice to settle, not this table's.
  */
 const ROUTING_ON = { TENANT_ROUTING_ENABLED: 'true' }
@@ -247,8 +247,8 @@ const FIXTURES: Record<string, () => CaseFixture> = {
   'app/api/credentials/[number]/pdf/route.ts': () => hostChecked(),
   'app/api/register/pay/route.ts': () => payFixture,
   'app/api/register/pay-seat/route.ts': () => payFixture,
-  'app/api/sign/session/route.ts': signLinkFixture,
-  'app/api/sign/copy/route.ts': downloadLinkFixture,
+  'app/api/sign/session/route.ts': () => hostChecked(signLinkFixture()),
+  'app/api/sign/copy/route.ts': () => hostChecked(downloadLinkFixture()),
   'app/api/credentials/[number]/visibility/route.ts': () => hostChecked({ reason: 'the consent check past the owner check reads a grade as text', honey: { grade: '10' } }),
   'app/api/register/individual/route.ts': () => individualFixture,
   'app/api/register/group/route.ts': () => groupFixture,
@@ -275,7 +275,7 @@ function withBase(file: string, own: CaseFixture | undefined): CaseFixture {
  * a tenant.
  */
 export function tenantHostFixture(file: string): CaseFixture {
-  return withBase(file, (SIGNING_SESSION_ROUTES as readonly string[]).includes(file) ? signSessionFixture() : FIXTURES[file]?.())
+  return withBase(file, (SIGNING_SESSION_ROUTES as readonly string[]).includes(file) ? hostChecked(signSessionFixture()) : FIXTURES[file]?.())
 }
 
 /**

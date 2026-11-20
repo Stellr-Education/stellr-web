@@ -16,6 +16,7 @@ import { notifyCommunityAdmins } from './notify'
 import { SandboxCredentialsError } from './env-guards'
 import { AGREEMENT_TITLE, AGREEMENT_VERSION } from './esign/native/plan'
 import { denormalizeGrade } from './member-enums'
+import { STELLR_TENANT_ID } from './tenancy/constants'
 
 // Human-readable label per agreement type, used in emails and the portal UI:
 // the documents' own titles (Participation Agreements V2.3, 2 Oct 2026).
@@ -226,7 +227,11 @@ async function issueOrReuse(
       // Pass the subject (this participant) so a minor's form is only reused for
       // the SAME child, not a sibling sharing the family email (C-5 / DS-1).
       // The DOB (DSES-N3) disambiguates two same-name children on one email.
-      const onFile = await findValidAgreement(db, coverageMemberId, type, `${ctx.firstName} ${ctx.lastName}`, ctx.dateOfBirth)
+      // The new event's owner (A11): a failed read reuses nothing, so a fresh envelope goes out.
+      const eventTenantId = await agreementEventTenant(db, ctx.eventSlug)
+      const onFile = eventTenantId
+        ? await findValidAgreement(db, coverageMemberId, type, eventTenantId, `${ctx.firstName} ${ctx.lastName}`, ctx.dateOfBirth)
+        : null
       if (onFile) {
         await recordCoverage(db, { ...ctx, memberId: coverageMemberId }, type, onFile)
         await safeEmail(ctx.email, docusignOnFileEmail({
@@ -612,6 +617,20 @@ interface SignedRow {
   reused_from: string | null
   minor_name: string | null
   participant_id: string | null
+  /** S5: whose paperwork this is. NULL is Stellr's. */
+  tenant_id: string | null
+}
+
+/**
+ * The tenant that owns the event a new agreement is for (S5 wave 8, A11), from the events
+ * mirror, as agreements' derivation trigger reads it. An event the mirror does not hold
+ * (a program-level agreement) counts as Stellr's, as the trigger does. A failed read
+ * answers null, and the caller then reuses nothing.
+ */
+async function agreementEventTenant(db: SupabaseClient, slug: string): Promise<string | null> {
+  const { data, error } = await db.from('events').select('tenant_id').eq('slug', slug).maybeSingle()
+  if (error) return null
+  return (data as { tenant_id?: string | null } | null)?.tenant_id ?? STELLR_TENANT_ID
 }
 
 /** A DOB as a bare calendar date, for comparing the same source field across rows. */
@@ -625,10 +644,16 @@ function normaliseDob(dob: string | null | undefined): string | null {
 // event (agreementCovers), resolved to the root signed envelope (a coverage
 // row's reused_from always points at the originally signed row, so one hop
 // suffices).
+//
+// S5 wave 8, A11 (decision WD-7, default): paperwork signed for one tenant never covers
+// another tenant's event. eventTenantId is the new event's owner; the newest row and its
+// root must both be that tenant's, or nothing is reused and a fresh envelope goes out (the
+// safe direction: ask again). For Stellr every row is Stellr's, so the answer is unchanged.
 async function findValidAgreement(
   db: SupabaseClient,
   memberId: string,
   type: AgreementType,
+  eventTenantId: string,
   subjectName?: string,
   subjectDob?: string | null,
 ): Promise<ValidAgreement | null> {
@@ -645,7 +670,7 @@ async function findValidAgreement(
   // envelope, which is the safe direction (ask the guardian again).
   let query = db
     .from('agreements')
-    .select('id, completed_at, signer_name, signer_email, envelope_type, agreement_version, reused_from, minor_name, participant_id')
+    .select('id, completed_at, signer_name, signer_email, envelope_type, agreement_version, reused_from, minor_name, participant_id, tenant_id')
     .eq('member_id', memberId)
     .in('envelope_type', coveringTypes(type))
     .eq('status', 'completed')
@@ -659,15 +684,17 @@ async function findValidAgreement(
   if (error || !data) return null
 
   let row = data as SignedRow
+  if ((row.tenant_id ?? STELLR_TENANT_ID) !== eventTenantId) return null
   if (row.reused_from) {
     const { data: root } = await db
       .from('agreements')
-      .select('id, completed_at, signer_name, signer_email, envelope_type, agreement_version, reused_from, minor_name, participant_id')
+      .select('id, completed_at, signer_name, signer_email, envelope_type, agreement_version, reused_from, minor_name, participant_id, tenant_id')
       .eq('id', row.reused_from)
       .eq('status', 'completed')
       .maybeSingle()
     if (!root) return null
     row = root as SignedRow
+    if ((row.tenant_id ?? STELLR_TENANT_ID) !== eventTenantId) return null
   }
   if (!agreementCovers(row)) return null
 

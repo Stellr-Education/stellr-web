@@ -47,6 +47,8 @@ interface Fixture {
   insertError?: string
   /** The signed form's subject participant, for the minor-reuse DOB check (DSES-N3). */
   subjectParticipant?: { id: string; date_of_birth: string | null } | null
+  /** The events mirror row for the new event (A11); absent is an event the mirror lacks (Stellr's). */
+  event?: { tenant_id: string | null } | null
 }
 
 interface Filters { eq: Record<string, unknown>; ins: Record<string, unknown[]> }
@@ -92,6 +94,7 @@ function makeDb(fixture: Fixture) {
 
 function resolve(table: string, filters: Filters, fixture: Fixture): unknown {
   if (table === 'members') return fixture.memberByEmail ?? null
+  if (table === 'events') return fixture.event ?? null
   // deep review DSES-N3: the minor-reuse DOB check reads the signed form's
   // subject participant by id. Only answer for the matching participant id.
   if (table === 'participants') {
@@ -236,6 +239,37 @@ describe('dispatchAgreement — never issues paperwork already in the system', (
     expect(inserts[0].payload.reused_from).toBe('env-signed')
     expect(inserts[0].payload.status).toBe('completed')
     expect((sendEmail.mock.calls[0][0] as { subject: string }).subject).toBe('on-file')
+  })
+
+  // S5 wave 8, A11 (WD-7 default): one tenant's paperwork never covers another tenant's event.
+  it('does NOT reuse paperwork signed for another tenant, and issues a fresh envelope', async () => {
+    const { db, inserts } = makeDb({
+      event: { tenant_id: '00000000-0000-4000-8000-0000000ca4a2' },
+      completedEnvelope: {
+        id: 'env-signed', completed_at: '2026-01-15T00:00:00Z', tenant_id: null,
+        signer_name: 'Ada Lovelace', signer_email: 'ada@example.com', reused_from: null,
+      },
+    })
+    await dispatchAgreement(db, ADULT)
+
+    expect(createAdult).toHaveBeenCalledTimes(1)
+    const agreementInsert = inserts.find((i) => i.table === 'agreements')!
+    expect(agreementInsert.payload.reused_from ?? null).toBeNull()
+  })
+
+  it('reuses a tenant\'s own paperwork for that tenant\'s event', async () => {
+    const canary = '00000000-0000-4000-8000-0000000ca4a2'
+    const { db, inserts } = makeDb({
+      event: { tenant_id: canary },
+      completedEnvelope: {
+        id: 'env-signed', completed_at: '2026-01-15T00:00:00Z', tenant_id: canary,
+        signer_name: 'Ada Lovelace', signer_email: 'ada@example.com', reused_from: null,
+      },
+    })
+    await dispatchAgreement(db, ADULT)
+
+    expect(createAdult).not.toHaveBeenCalled()
+    expect(inserts[0].payload.reused_from).toBe('env-signed')
   })
 
   it('does NOT reuse a sibling\'s minor consent form (same shared-email member)', async () => {
