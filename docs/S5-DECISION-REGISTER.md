@@ -145,6 +145,21 @@ Raised by the reviews of batch 3's S5 PRs, none merged on 15 Nov 2026 (`docs/han
 | PR738-2 | **#738, event merch at registration:** a failed `events` read now fails loudly (the follow-up to `PR725-1`). On the individual path it is thrown after the registration is saved and its hooks have run, before checkout: the registrant sees a generic error and has a pending registration with no pay link, and a retry counts against the hourly limit. The old code dropped the chosen add-ons silently | Accept: a visible failure staff can see in `app_errors` beats charging without the add-ons. Revisit if the read fails in practice | Open | open |
 | B3-AUDIT-1 | **The admin-only audit slice (`backlog-batch3.1`), the access routes keyed by slug:** the audit row's chain is picked from the raw URL slug. `resolveTenant` checks it against the events mirror (the platform chain, `tenant_unresolved`, on a miss) and the slug is never stored, so the result matches a verified slug, but the spec said never to use the raw URL param | Accept, as built; the alternative is to resolve the slug through `getMirroredEvent` in the route and pass the tenant id | Open | open |
 
+## Wave 8 (answered 20 Nov 2026)
+
+Asked in chat on 20 Nov 2026 with a recommendation each (`docs/PLAN-S5-wave8-DRAFT.md`, "Decisions"). The owner answered "Decisions: proceed with all recommendations", read here as approval of each recommended default below. A hosted or production step still gets its own yes when it is taken.
+
+| Id | Question | Recommended default | Answer | Answered |
+|---|---|---|---|---|
+| WD-1 | May `tenant_host_map()` be callable with the publishable key, so anyone can list the active tenant hosts in the zone? | Yes. It returns host and tenant id for active hosts only, nothing else; the hosts are public DNS anyway, and B25 then drops the secret key from the proxy | Approved as recommended | 20 Nov 2026 |
+| WD-7 | May a guardian's signature collected for one tenant ever cover another tenant's event? | Never; each tenant's paperwork stands alone (decisions 3 and 15). Built in #804 | Approved as recommended | 20 Nov 2026 |
+| WD-C19-DESK | The admin check-in desk (`events/[slug]/check-in`, C19's last part) on another tenant's event | Refused for now, Stellr-only like awards (`stellrOnlyEvent`); a tenant's own desk follows in S8 with tenant event operations | Approved as recommended | 20 Nov 2026 |
+| WD-ENF | ENF-dev: derivation `enforce` on the `dev` database | Yes, once #810 is merged and the derivation logs show 7 clean days; `dev` only, rollback one UPDATE | Approved as recommended | 20 Nov 2026 |
+| WD-PROMOTE | A promotion of `dev` to production carrying wave 8, M7's two migrations first through the Production migration Action | Yes, after the wave 8 reviews land; each migration run and the promotion merge still get the owner's yes when taken | Approved as recommended | 20 Nov 2026 |
+| WD-K9 | K9: the tenancy switches on `stellr-web-dev` only (P1 to P12) and the canary flow | Yes, after ENF-dev; each flip in the flip log; findings filed by `WD-10`'s default | Approved as recommended | 20 Nov 2026 |
+| BF-66 | Group check-in with one consent-pending minor | Keep refusing the whole group, as built | Approved as recommended | 20 Nov 2026 |
+| WD-10, WD-11 | Which K9 findings go into wave 8; slugs globally unique in release 1 | Isolation leaks and consent bypasses go into wave 8, the rest wait with a reason; slugs stay globally unique, the facade still takes an explicit tenant | Approved as recommended | 20 Nov 2026 |
+
 ## Settled elsewhere
 
 Linked, not copied. The wording that counts is at the link.
