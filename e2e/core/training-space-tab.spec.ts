@@ -4,6 +4,7 @@ import { supabaseFetch, supabaseSecretKey } from '../../lib/supabase-keys'
 import { assertE2eSupabase } from '../../lib/testing/e2e-supabase-target'
 import { expect, test } from '../fixtures/test'
 import { storageStatePath } from '../fixtures/users'
+import { STELLR_TENANT_ID } from '../../lib/tenancy/constants'
 
 /**
  * A course assigned to an event shows on that event's Space, for the people it
@@ -72,7 +73,7 @@ test.describe('training on an event Space', () => {
 
     const { data: mod, error: modError } = await db
       .from('training_modules')
-      .insert({ title: courseTitle, is_published: true })
+      .insert({ tenant_id: STELLR_TENANT_ID, title: courseTitle, is_published: true })
       .select('id')
       .single()
     expect(modError, modError?.message).toBeNull()
@@ -94,7 +95,7 @@ test.describe('training on an event Space', () => {
 
     const { data: space, error: spaceError } = await db
       .from('community_spaces')
-      .insert({ slug: spaceSlug, name: `E2E ${suffix}`, access_type: 'private' })
+      .insert({ tenant_id: STELLR_TENANT_ID, slug: spaceSlug, name: `E2E ${suffix}`, access_type: 'private' })
       .select('id')
       .single()
     expect(spaceError, spaceError?.message).toBeNull()

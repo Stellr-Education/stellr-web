@@ -85,6 +85,7 @@ export default async function globalSetup() {
   const db = e2eDatabase()
   if (db) {
     await removeStaleSurveyEvents(db)
+    await removeStaleMirrorRows(db)
     await ensureEventManagerFixture(db)
   }
 }
@@ -139,6 +140,15 @@ async function removeStaleSurveyEvents(db: SupabaseClient) {
   console.log(`global-setup: removed ${stale.length} leftover e2e-survey event${stale.length === 1 ? '' : 's'} older than an hour.`)
 }
 
+// S5 wave 8 (ENF prep): an e2e event's events-mirror row (e2e/fixtures/mirror-event.ts) left by
+// a cancelled run, an hour old or more. Only rows that helper wrote (sanity_id e2e-mirror.*).
+async function removeStaleMirrorRows(db: SupabaseClient) {
+  const cutoff = new Date(Date.now() - STALE_AFTER_MS).toISOString()
+  const { data, error } = await db.from('events').delete().like('sanity_id', 'e2e-mirror.%').lt('created_at', cutoff).select('slug')
+  if (error) throw new Error(`global-setup: removing leftover e2e mirror rows: ${error.message}`)
+  console.log(`global-setup: removed ${data?.length ?? 0} leftover e2e events-mirror row${data?.length === 1 ? '' : 's'}.`)
+}
+
 // ── Event-manager fixture (event-manager-e2e.4) ──────────────────────────────
 //
 // access-control.spec.ts proves an event manager reaches its one event and is
@@ -152,6 +162,14 @@ async function removeStaleSurveyEvents(db: SupabaseClient) {
 const EVENT_MANAGER_EVENT = 'seed-regional-challenge'
 
 async function ensureEventManagerFixture(db: SupabaseClient) {
+  // S5 wave 8 (ENF prep): the fixture event is seed data (supabase/seed.sql), not a Sanity
+  // document, so mirror it as Stellr's; its assignment then derives its tenant.
+  const { error: mirrorError } = await db.from('events').insert({
+    tenant_id: '00000000-0000-4000-8000-000000000001', slug: EVENT_MANAGER_EVENT, sanity_id: `seed.${EVENT_MANAGER_EVENT}`,
+    title: 'Seed Regional Challenge (fixture)', starts_at: '2040-06-01T00:00:00Z', time_zone: 'UTC',
+    country: 'US', currency: 'usd', grade_system: 'us_grades',
+  })
+  if (mirrorError && mirrorError.code !== '23505') throw new Error(`global-setup: mirroring ${EVENT_MANAGER_EVENT}: ${mirrorError.message}`)
   const fixture = FIXTURES.event_manager
   const required = Boolean(process.env[fixture.passwordVar])
   const clerkKey = process.env.CLERK_SECRET_KEY

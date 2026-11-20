@@ -2,6 +2,8 @@ import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import { randomBytes } from 'node:crypto'
 import { supabaseFetch, supabaseSecretKey } from '../../lib/supabase-keys'
 import { assertE2eSupabase } from '../../lib/testing/e2e-supabase-target'
+import { mirrorE2eEvent, unmirrorE2eEvent } from './mirror-event'
+import { STELLR_TENANT_ID } from '../../lib/tenancy/constants'
 
 /**
  * Check-in desk test events, made fresh for each spec and removed after.
@@ -37,6 +39,8 @@ export async function createCheckInEvent(opts: { withMentor?: boolean } = {}): P
   const slug = `e2e-checkin-${randomBytes(4).toString('hex')}`
   const title = `E2E Check-in ${slug.slice(-8)}`
   try {
+    // S5 wave 8 (ENF prep): the event is in the mirror, so its rows derive Stellr's tenant.
+    await mirrorE2eEvent(client, slug, title)
     const { data: regs, error } = await client
       .from('registrations')
       .insert([
@@ -60,7 +64,7 @@ export async function createCheckInEvent(opts: { withMentor?: boolean } = {}): P
       // The event's volunteer container, as admin Volunteers assignment makes it.
       const { data: cohort, error: cErr } = await client
         .from('mentoring_cohorts')
-        .insert({ name: title, container_type: 'event_participation', campaign_ref: slug, parent_container_id: null })
+        .insert({ tenant_id: STELLR_TENANT_ID, name: title, container_type: 'event_participation', campaign_ref: slug, parent_container_id: null })
         .select('id')
         .single()
       if (cErr) throw new Error(cErr.message)
@@ -87,4 +91,5 @@ export async function removeCheckInEvent(slug: string): Promise<void> {
   await client.from('event_crew_check_ins').delete().eq('event_slug', slug)
   // Deleting the container removes its cohort_members rows (ON DELETE CASCADE).
   await client.from('mentoring_cohorts').delete().eq('container_type', 'event_participation').eq('campaign_ref', slug)
+  await unmirrorE2eEvent(client, slug)
 }
