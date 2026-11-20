@@ -901,7 +901,7 @@ Batch 4 in S5, in order (`s5-programme.53`): A13a, then A8b; C20b, C19a and C8-P
 
 ## Wave 8 status
 
-Wave 8 follows `docs/PLAN-S5-wave8-DRAFT.md`. Every open WD and BF decision there has a safe default, and slices build to it. **Merged** means squashed into `dev`. **Nothing in wave 8 is on production** yet: the last promotion that carried S5 work is #747 (16 Nov 2026). M7's two migrations are on the **dev database only** and must reach production through the Action before B24's code does. Checked against `dev` at `fed58c96` on 19 Nov 2026.
+Wave 8 follows `docs/PLAN-S5-wave8-DRAFT.md`. Every open WD and BF decision there has a safe default, and slices build to it. **Merged** means squashed into `dev`. **Nothing in wave 8 is on production** yet: the last promotion that carried S5 work is #747 (16 Nov 2026). M7's two migrations are on the **dev database only** and must reach production through the Action before B24's code does. Checked against `dev` at `fed58c96` on 19 Nov 2026; the table rechecked on 20 Nov 2026.
 
 | Slice | PR | State, and what it does |
 |---|---|---|
@@ -916,9 +916,15 @@ Wave 8 follows `docs/PLAN-S5-wave8-DRAFT.md`. Every open WD and BF decision ther
 | P4 owner check | #766 | Open, owner review. Stellr's `/register/[slug]` no longer serves another tenant's event (K11 probe P4) |
 | C19a | #767 | Open, owner review. Events credentials, badge and certificate templates, badges and certificates onto `lib/authz`, Stellr-only for other tenants (`W7-9` holds). Merged with `dev` on 19 Nov 2026 after teacher badges (#796) |
 | A11, A12 door | #804 | Open, owner review (`lib/esign/native/flow.ts`, `test/idor/**`). Signing sessions, links and download links refuse another tenant's envelope; agreement reuse and the media lists stay inside one tenant (`WD-7` default: never across tenants); `/api/check-in` answers another tenant's event as an expired code. Tenant-host failing cases fall from 48 to 12 |
-| deepmerge ignore | #803 | Open. Drops the withdrawn GHSA-gcqx-w48m-w2h4 ignore. The rest of #760 (closed) shipped as #762 |
+| deepmerge ignore | #803 (`1c575261`) | Merged. Drops the withdrawn GHSA-gcqx-w48m-w2h4 ignore. The rest of #760 (closed) shipped as #762 |
+| C19b | #808 | Open, owner review, **stacked on #767**. Awards and awards/issue onto `lib/authz`, Stellr-only for other tenants (`W7-9`): awards become Stellr-issued credentials. The admin check-in desk, C19's last part, is a tenant feature and needs a design call |
+| Lane C writers | #810 | Open, owner review (`scripts/s5-inventory.mjs`, its test). Optional-event tables 7 to 15 (each checked nullable on the dev schema); every writer to them sets `tenant_id`, none missing. Needed before ENF-dev |
+| C8-PG callers and cron loops | #812 | Open, owner review (`ci.yml`, `lib/tenancy/**`). `lib/events/tenant-facade.ts`, the facade with an explicit tenant, behind the new `events-read` area (Sanity unless `TENANT_DB_AREAS` turns it on); event emails, team profiles, the admin digest, training reminders, compliance notices and the two per-tenant crons read through it. Two-tenant integration test in the tenant-db job |
 
-**Still to build in wave 8:** Lane C's optional-event writers (7 to 15 tables, after #767); REQ-EVT's last step, once C19a lands (the batch 3 guard, #738, lists the 10 routes as pending C19a); C19's remainder (awards, awards/issue, admin check-in); C8-PG's callers and the cron tenant loops; BOUNCE.
+**Still to build in wave 8:**
+- REQ-EVT's last step, once C19a lands. The batch 3 guard (#738) lists the 10 routes as pending C19a.
+- The admin check-in desk (C19's last part), which needs a design call.
+- BOUNCE, which needs tenant-host links (B25).
 
 **Waiting on the owner:**
 - B25: `WD-1`, plus the missing slug.
