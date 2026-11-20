@@ -10,6 +10,7 @@ import { BillingHistory } from '@/components/member/BillingHistory'
 import { DocusignsSection } from '@/components/member/DocusignsSection'
 import { ComplianceSection } from '@/components/member/ComplianceSection'
 import { MyRegistrations } from '@/components/member/MyRegistrations'
+import { getSlugsWithAddonsOnSale } from '@/lib/addons/catalog'
 import { TeamProfileHistory } from '@/components/member/TeamProfileHistory'
 import { memberHistory, type HistoryEntry } from '@/lib/team-profile/store'
 import { ScholarshipHistory } from '@/components/member/ScholarshipHistory'
@@ -165,6 +166,8 @@ export default async function AccountPage({
   const scholarships = toHistoryItems(scholarshipRows)
   const [volunteerInterests, volunteerStatuses, volunteerTraining] = volunteerDetails
 
+  // Events with add-ons on sale get an "Add extras" link (lib/addons).
+  const slugsWithExtras = await getSlugsWithAddonsOnSale()
   const myRegistrations = (myParticipantRows ?? [])
     .map((p) => {
       const reg = p.registrations as unknown as {
@@ -184,6 +187,7 @@ export default async function AccountPage({
             type: reg.type,
             checkedInAt: p.checked_in_at as string | null,
             company,
+            hasExtras: slugsWithExtras.includes(reg.event_slug),
           }
         : null
     })

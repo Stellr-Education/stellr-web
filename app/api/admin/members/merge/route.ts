@@ -44,7 +44,6 @@ const LINKS: { table: string; column: string; label: string }[] = [
   { table: 'credentials', column: 'member_id', label: 'Credentials' },
   { table: 'member_memberships', column: 'member_id', label: 'Memberships' },
   { table: 'member_schools', column: 'member_id', label: 'Schools' },
-  { table: 'account_credits', column: 'member_id', label: 'Account credits' },
   { table: 'event_refunds', column: 'member_id', label: 'Cancellations and refunds' },
   { table: 'member_activity_log', column: 'member_id', label: 'History entries' },
 ]

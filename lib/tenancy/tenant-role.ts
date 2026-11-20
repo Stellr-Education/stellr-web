@@ -92,6 +92,8 @@ export interface TenantParentRef {
 
 /** Every single-column foreign key from an own/derived/inherited tenant table to a tenant table (tenant_id itself excluded). */
 export const TENANT_PARENT_REFS: readonly TenantParentRef[] = [
+  { table: 'public.addon_orders', column: 'payer_participant_id', parent: 'public.participants' },
+  { table: 'public.addon_orders', column: 'registration_id', parent: 'public.registrations' },
   { table: 'public.agreement_email_changes', column: 'agreement_id', parent: 'public.agreements' },
   { table: 'public.agreement_recipients', column: 'envelope_row', parent: 'public.agreements' },
   { table: 'public.agreements', column: 'participant_id', parent: 'public.participants' },
@@ -104,6 +106,7 @@ export const TENANT_PARENT_REFS: readonly TenantParentRef[] = [
   { table: 'public.event_award_assignments', column: 'participant_id', parent: 'public.participants' },
   { table: 'public.event_badge_templates', column: 'company_id', parent: 'public.event_companies' },
   { table: 'public.event_email_sends', column: 'event_email_id', parent: 'public.event_emails' },
+  { table: 'public.event_refunds', column: 'addon_line_id', parent: 'public.registration_addons' },
   { table: 'public.event_refunds', column: 'registration_id', parent: 'public.registrations' },
   { table: 'public.group_invoices', column: 'registration_id', parent: 'public.registrations' },
   { table: 'public.group_join_tokens', column: 'registration_id', parent: 'public.registrations' },
@@ -112,6 +115,12 @@ export const TENANT_PARENT_REFS: readonly TenantParentRef[] = [
   { table: 'public.mentoring_cohorts', column: 'registration_id', parent: 'public.registrations' },
   { table: 'public.participants', column: 'company_id', parent: 'public.event_companies' },
   { table: 'public.participants', column: 'registration_id', parent: 'public.registrations' },
+  { table: 'public.registration_addons', column: 'addon_id', parent: 'public.event_addons' },
+  { table: 'public.registration_addons', column: 'group_invoice_id', parent: 'public.group_invoices' },
+  { table: 'public.registration_addons', column: 'order_id', parent: 'public.addon_orders' },
+  { table: 'public.registration_addons', column: 'participant_id', parent: 'public.participants' },
+  { table: 'public.registration_addons', column: 'registration_id', parent: 'public.registrations' },
+  { table: 'public.registration_addons', column: 'store_order_item_id', parent: 'public.store_order_items' },
   { table: 'public.scholarship_applications', column: 'registration_id', parent: 'public.registrations' },
   { table: 'public.store_order_items', column: 'batch_id', parent: 'public.merch_batches' },
   { table: 'public.store_order_items', column: 'order_id', parent: 'public.store_orders' },

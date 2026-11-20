@@ -1,21 +1,22 @@
 // Event-merchandise allocation for the web store (PRD §12, Phase 3 + 3b).
 //
 // One event-merch order per registration (channel='event_registration') holds
-// both the free "included" shirt (one per participant, sized from their t-shirt
-// size) and any paid add-ons bought during registration. Everything is batch-mode
-// (fulfillment_status flows pending → awaiting_batch → ordered) and is rolled into
-// the Event Manager's single bulk Printful order in Phase 4.
+// the free "included" shirt (one per participant, sized from their t-shirt size)
+// and paid event merch. Everything is batch-mode (fulfillment_status flows
+// pending → awaiting_batch → ordered) and is rolled into the Event Manager's
+// single bulk Printful order in Phase 4.
 //
-// Lifecycle:
-//   • at registration: add-ons inserted as 'pending' (payment not yet cleared)
-//   • on confirmation: included shirts allocated + add-ons flipped to
-//     'awaiting_batch' + the order marked 'paid' (finalizeRegistrationMerch)
+// Paid event merch is an event add-on now (lib/addons, docs/PLAN-event-add-ons-2026-11-17.md):
+// it is booked and paid like any add-on and joins this order once paid
+// (lib/addons/fulfil.ts). The old path that put merch into the registration's own
+// Checkout is retired; what remains of it reads only items written before then:
+//   • on confirmation: included shirts allocated, any such earlier 'pending' items
+//     flipped to 'awaiting_batch', and the order marked 'paid' (finalizeRegistrationMerch)
 
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { STELLR_TENANT_ID } from '@/lib/tenancy/constants'
 import { loadEventTenantId } from '@/lib/authz/principal'
 import { reportError } from '@/lib/app-errors'
-import { computeUnitPrice } from './pricing'
 
 const arr = <T>(x: T | T[] | null | undefined): T | undefined =>
   Array.isArray(x) ? x[0] : (x ?? undefined)
@@ -91,7 +92,7 @@ export class EventMerchOwnerReadError extends Error {
 }
 
 // Get (or create) the single event-merch order for a registration.
-async function ensureEventMerchOrder(db: SupabaseClient, registrationId: string): Promise<string | null> {
+export async function ensureEventMerchOrder(db: SupabaseClient, registrationId: string): Promise<string | null> {
   const { data: existing } = await db
     .from('store_orders')
     .select('id')
@@ -155,116 +156,6 @@ async function ensureEventMerchOrder(db: SupabaseClient, registrationId: string)
     .select('id')
     .single()
   return (order as { id?: string } | null)?.id ?? null
-}
-
-export interface AddonLine {
-  variantId: string
-  sku: string
-  name: string
-  qty: number
-  unitCents: number
-}
-
-// Validate + price a registrant's add-on selections against the event's 'addon'
-// offerings (event-discount applied). Ignores anything not actually offered.
-export async function prepareRegistrationAddons(
-  db: SupabaseClient,
-  eventSlug: string,
-  selections: { variantId: string; qty: number }[],
-): Promise<AddonLine[]> {
-  if (!selections || selections.length === 0) return []
-  const { data: offs } = await db
-    .from('event_store_offerings')
-    .select('variant:store_variants(id, sku, label, market_price_cents, active, product:store_products(id, name, product_type, status))')
-    .eq('event_slug', eventSlug)
-    .eq('treatment', 'addon')
-
-  const allowed = new Map<string, { sku: string; name: string; productId: string; productType: string; priceCents: number }>()
-  for (const o of offs ?? []) {
-    const v = arr((o as { variant?: unknown }).variant) as
-      | { id: string; sku: string; label: string | null; market_price_cents: number; active: boolean; product?: unknown }
-      | undefined
-    const prod = arr(v?.product) as { id: string; name: string; product_type: string; status: string } | undefined
-    if (!v?.active || !prod || prod.status !== 'active') continue
-    allowed.set(v.id, {
-      sku: v.sku,
-      name: `${prod.name}${v.label ? ` — ${v.label}` : ''}`,
-      productId: prod.id,
-      productType: prod.product_type,
-      priceCents: v.market_price_cents,
-    })
-  }
-
-  const lines: AddonLine[] = []
-  for (const sel of selections) {
-    const a = allowed.get(sel.variantId)
-    const qty = Math.max(1, Math.floor(Number(sel.qty) || 1))
-    if (!a) continue
-    const price = await computeUnitPrice(
-      { market_price_cents: a.priceCents, product_id: a.productId },
-      { product_type: a.productType },
-      { kind: 'event', eventSlug },
-    )
-    lines.push({ variantId: sel.variantId, sku: a.sku, name: a.name, qty, unitCents: price.unit_cents })
-  }
-  return lines
-}
-
-// Public list of an event's paid add-ons (event-discounted price), for the
-// registration form's merch picker.
-export async function listEventAddons(
-  db: SupabaseClient,
-  eventSlug: string,
-): Promise<{ variantId: string; name: string; unitCents: number }[]> {
-  const { data: offs } = await db
-    .from('event_store_offerings')
-    .select('variant:store_variants(id, label, market_price_cents, active, product:store_products(id, name, product_type, status))')
-    .eq('event_slug', eventSlug)
-    .eq('treatment', 'addon')
-
-  const out: { variantId: string; name: string; unitCents: number }[] = []
-  for (const o of offs ?? []) {
-    const v = arr((o as { variant?: unknown }).variant) as
-      | { id: string; label: string | null; market_price_cents: number; active: boolean; product?: unknown }
-      | undefined
-    const prod = arr(v?.product) as { id: string; name: string; product_type: string; status: string } | undefined
-    if (!v?.active || !prod || prod.status !== 'active') continue
-    const price = await computeUnitPrice(
-      { market_price_cents: v.market_price_cents, product_id: prod.id },
-      { product_type: prod.product_type },
-      { kind: 'event', eventSlug },
-    )
-    out.push({ variantId: v.id, name: `${prod.name}${v.label ? ` — ${v.label}` : ''}`, unitCents: price.unit_cents })
-  }
-  return out
-}
-
-// Persist add-on lines as 'pending' items on the registration's event-merch order
-// (called at registration time, before payment). Throws EventMerchOwnerReadError when the
-// event's owner cannot be read, rather than drop the add-ons the registrant chose.
-export async function addRegistrationAddons(
-  db: SupabaseClient,
-  registrationId: string,
-  lines: AddonLine[],
-  participantMemberId: string | null,
-): Promise<void> {
-  if (lines.length === 0) return
-  const orderId = await ensureEventMerchOrder(db, registrationId)
-  if (!orderId) return
-  await db.from('store_order_items').insert(
-    lines.map((l) => ({
-      order_id: orderId,
-      variant_id: l.variantId,
-      sku: l.sku,
-      name: l.name,
-      qty: l.qty,
-      unit_amount_cents: l.unitCents,
-      line_source: 'event_addon',
-      fulfillment_mode: 'batch',
-      fulfillment_status: 'pending',
-      participant_member_id: participantMemberId,
-    })),
-  )
 }
 
 // Allocate the included shirt(s) to every participant — idempotent at the item

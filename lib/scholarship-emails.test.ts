@@ -66,9 +66,9 @@ describe('already registered and paid (retrospective)', () => {
     expect(text).not.toMatch(/Pay \$/)
   })
 
-  it('email 1 states account credit, and points to the consent form when unsigned', () => {
-    const { text } = scholarshipOfferEmail({ ...paid, refund: { method: 'credit', cents: 8250 }, consentOutstanding: true })
-    expect(text).toContain('$82.50 credit to your Stellr account')
+  it('email 1 states the card refund, and points to the consent form when unsigned', () => {
+    const { text } = scholarshipOfferEmail({ ...paid, refund: { method: 'cash', cents: 8250 }, consentOutstanding: true })
+    expect(text).toContain('refunded $82.50 to the card you paid with')
     expect(text).toContain('consent form')
   })
 

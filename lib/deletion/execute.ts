@@ -1,3 +1,5 @@
+import { cancelParticipantAddons } from '@/lib/addons/cancel'
+import { resyncAddonInvoice } from '@/lib/addons/invoice'
 import { supabaseServer } from '@/lib/supabase'
 import { getEntityDef } from './registry'
 import { deletionPreflight } from './preflight'
@@ -133,6 +135,22 @@ export async function executeDeletion(
         refunds.push(await executeRefund((part as { id: string }).id, opts.refundChoice, opts.deletedBy ?? null, opts.refundNote, { actorType: opts.actorType }))
       }
     }
+  }
+
+  // Extras (lib/addons) are cancelled before the rows go (a delete takes the lines with
+  // it), each refunded to whoever paid for it by its rule when a cash refund was chosen.
+  if (def.type === 'participant' || def.type === 'registration') {
+    await cancelParticipantAddons(
+      db,
+      stripeClient(),
+      def.type === 'participant' ? { participantIds: [id] } : { registrationId: id },
+      {
+        reason: def.type === 'registration' ? 'withdrawn' : 'deleted',
+        actorMemberId: opts.deletedBy ?? null,
+        refund: opts.refundChoice === 'cash',
+        onInvoiceChanged: (regId) => resyncAddonInvoice(db, regId),
+      },
+    ).catch((err) => console.error('[deletion] add-on cancel failed:', err))
   }
 
   // A group's places and invoices follow its roster (lib/group-billing.ts).

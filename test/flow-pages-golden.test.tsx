@@ -62,10 +62,10 @@ vi.mock('@/lib/event-pricing', () => ({
   },
 }))
 vi.mock('@/lib/supabase', () => ({ supabaseServer: () => 'db' }))
-vi.mock('@/lib/store/event-merch', () => ({
-  listEventAddons: async (db: string, slug: string) => {
-    log('listEventAddons', db, slug)
-    return [{ id: 'addon-1' }]
+vi.mock('@/lib/addons/catalog', () => ({
+  getPublicAddons: async (slug: string) => {
+    log('getPublicAddons', slug)
+    return { addons: [{ id: 'addon-1' }], settings: { merchUpsell: true, inclusions: [] } }
   },
 }))
 vi.mock('@/lib/stripe', () => ({

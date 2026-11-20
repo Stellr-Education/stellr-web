@@ -95,7 +95,7 @@ async function previewFor(db: Db, participantId: string, p: PreviewParticipant):
     .from('event_refunds')
     .select('id')
     .eq('participant_id', participantId)
-    .in('refund_type', ['cash', 'credit'])
+    .eq('refund_type', 'cash')
     // A scholarship reimbursement is not a cancellation refund: the student is
     // still registered, and cancelling later still owes the guarantee refund on
     // what remains (Stripe's remaining-refundable cap applies below).
