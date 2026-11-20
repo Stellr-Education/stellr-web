@@ -69,10 +69,6 @@ vi.mock('@/lib/space-inheritance', () => ({
   syncObjectSpaceRoster: async () => h.hook('syncObjectSpaceRoster'),
   reconcileEventSpaceRoster: async () => h.hook('reconcileEventSpaceRoster'),
 }))
-vi.mock('@/lib/store/event-merch', () => ({
-  prepareRegistrationAddons: async () => { h.hook('prepareRegistrationAddons'); return [] },
-  addRegistrationAddons: async () => h.hook('addRegistrationAddons'),
-}))
 vi.mock('@/lib/registration-confirm', () => ({ confirmRegistration: async () => h.hook('confirmRegistration') }))
 vi.mock('@/lib/registration-pay-link', () => ({ sendPayLinkEmail: async () => { h.hook('sendPayLinkEmail'); return { sent: false } } }))
 vi.mock('@/lib/event-emails/tenant-mail', () => ({ sendTenantConfirmation: h.tenantConfirmation }))

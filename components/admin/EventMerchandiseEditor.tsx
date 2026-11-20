@@ -26,7 +26,7 @@ export function EventMerchandiseEditor({ eventSlug }: { eventSlug: string }) {
   const [loading, setLoading] = useState(true)
   const [productId, setProductId] = useState('')
   const [variantId, setVariantId] = useState('')
-  const [treatment, setTreatment] = useState<'included' | 'addon'>('included')
+  const [treatment, setTreatment] = useState<'included'>('included')
   const [busy, setBusy] = useState(false)
 
   const load = async () => {
@@ -130,7 +130,7 @@ export function EventMerchandiseEditor({ eventSlug }: { eventSlug: string }) {
         </select>
         <select
           value={treatment}
-          onChange={(e) => setTreatment(e.target.value as 'included' | 'addon')}
+          onChange={(e) => setTreatment(e.target.value as 'included')}
           className="rounded-md border border-line-strong px-2 py-1 text-input mouse:text-sm"
         >
           <option value="included">Included (free)</option>
