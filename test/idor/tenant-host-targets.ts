@@ -226,7 +226,7 @@ function signSessionFixture(): CaseFixture {
  * Tenant routing on, as on a real tenant host: requestTenant() then reads the tenant the
  * proxy would have set (the harness sends both headers on Canary's host), instead of
  * answering Stellr whatever the host. Only for the routes whose slice checks the host
- * (A10a's, A10b's and A11's signing routes); a route still without a check would answer for its own reasons with
+ * (A10a's, A10b's, A11's signing routes and A12's check-in); a route still without a check would answer for its own reasons with
  * it on, which is that route's slice to settle, not this table's.
  */
 const ROUTING_ON = { TENANT_ROUTING_ENABLED: 'true' }
@@ -255,6 +255,7 @@ const FIXTURES: Record<string, () => CaseFixture> = {
   'app/api/volunteer/interest/route.ts': () => hostChecked(volunteerFixture),
   'app/api/survey/event/[slug]/link/route.ts': () => hostChecked(surveyLinkFixture),
   'app/api/email/unsubscribe/route.ts': () => hostChecked(),
+  'app/api/check-in/route.ts': () => hostChecked(),
 }
 
 /** Routes that take a second kind of record: each runs as a case of its own. */

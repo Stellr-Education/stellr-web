@@ -4,6 +4,7 @@ import { getEventBySlug } from '@/lib/events/repo'
 import { HOUR_MS } from '@/lib/rate-limit'
 import { limit, rateLimit } from '@/lib/rate-limit-async'
 import { requestTenant } from '@/lib/tenancy/request-tenant'
+import { STELLR_TENANT_ID } from '@/lib/tenancy/constants'
 import {
   CHECK_IN_COOKIE,
   CHECK_IN_COOKIE_MAX_AGE,
@@ -110,6 +111,18 @@ async function selfCheckIn(req: Request) {
     .eq('event_slug', slug)
     .maybeSingle()
   if (!settings?.check_in_token || settings.check_in_token !== token) {
+    return NextResponse.json({ error: 'This check-in code has expired. Please scan the QR code again.' }, { status: 403 })
+  }
+  // S5 wave 8, A12: another tenant's event is checked in only on that tenant's host. On
+  // any other host its code answers as an expired one, before anything about the event
+  // or its roster is said. The owner comes from the events mirror; an event the mirror
+  // lacks is Stellr's, as the derivation trigger reads it, so Stellr's door is unchanged.
+  const { data: owner, error: ownerError } = await db.from('events').select('tenant_id').eq('slug', slug).maybeSingle()
+  if (ownerError) {
+    await reportError(ownerError, { route: ERROR_ROUTE, db })
+    return NextResponse.json({ error: 'Check-in is busy. Please try again in a moment.' }, { status: 503 })
+  }
+  if (((owner as { tenant_id?: string | null } | null)?.tenant_id ?? STELLR_TENANT_ID) !== tenantId) {
     return NextResponse.json({ error: 'This check-in code has expired. Please scan the QR code again.' }, { status: 403 })
   }
   if (!settings.check_in_open) {
