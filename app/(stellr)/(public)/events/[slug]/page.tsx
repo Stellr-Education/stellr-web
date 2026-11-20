@@ -3,6 +3,7 @@ import Link from '@/components/ui/SiteLink'
 import { notFound } from 'next/navigation'
 import { MapPin, Calendar, Users, Ticket, Check } from 'lucide-react'
 import { getEventBySlug } from '@/lib/events/repo'
+import { isStellrEvent, requireStellrEvent } from '@/lib/events/stellr-owner'
 import { urlFor, type StellarEvent } from '@/lib/sanity'
 import { sanityImage } from '@/lib/sanity-image'
 import { CoverImage } from '@/components/ui/CoverImage'
@@ -81,7 +82,9 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   // to null. Only a genuine miss (null) is "Event Not Found"; an outage must not
   // masquerade as one (the page body throws to the error boundary too, below).
   const event: EventData | null = await getEventBySlug(slug)
-  if (!event) return { title: 'Event Not Found' }
+  // Another tenant's event is one Stellr's site does not have (S5 K11 probe P4). A failed
+  // owner read throws, as a failed Sanity read does above.
+  if (!event || !(await isStellrEvent(slug))) return { title: 'Event Not Found' }
   return {
     title: `${event.title} — ${eventKind(event)}`,
     description: event.tagline ?? eventSummary(event),
@@ -259,6 +262,9 @@ export default async function EventDetailPage({ params }: PageProps) {
     throw err
   }
   if (!event) notFound()
+  // Another tenant's event answers as one nobody has (S5 K11 probe P4). A failed owner
+  // read throws to the error boundary, a retryable 500, never a 404 (PUB-9 above).
+  await requireStellrEvent(slug)
 
   // The sibling events of this competition theme, so the `superEvent` series
   // node carries real dates, venues and a fee range (lib/schema-series.ts).

@@ -12,7 +12,7 @@ import { eventRouteFor, eventRouteRefused } from '@/test/fixtures/event-route'
 // owner (from the events mirror), with enums, ids and counts as metadata: never a
 // student's name, a credential's wording, a check-in code or a link.
 //
-// S5 wave 8, C19a: the artwork and credentials routes check through lib/authz
+// S5 wave 8, C19a and C19b: the judging, artwork and credentials routes check through lib/authz
 // requireEventRoute and are Stellr-only for other tenants (decision W7-9), so on a tenant's
 // event they refuse and record nothing. Their events below are on a Stellr event (h.owner),
 // on Stellr's chain, the tenant requireEventRoute placed the event in.
@@ -113,7 +113,7 @@ const flush = async () => {
 }
 const recorded = () => h.audits.map((a) => ({ action: a.action, tenantId: a.tenantId, actor: a.actor, target: a.target, metadata: a.metadata }))
 const common = { tenantId: OWNER, actor: CALLER }
-/** The C19a routes' events: a Stellr event, on Stellr's chain. */
+/** The C19a and C19b routes' events: a Stellr event, on Stellr's chain. */
 const stellr = { tenantId: STELLR_TENANT_ID, actor: CALLER }
 const stellrEvent = () => {
   h.owner = STELLR_TENANT_ID
@@ -147,12 +147,13 @@ beforeEach(() => {
 
 describe('judging', () => {
   it('a change records which one, the award and the student id, never a name', async () => {
+    stellrEvent()
     const res = await awards.PUT(send('PUT', 'awards', { action: 'remove', awardType: 'norm_chaffee', participantId: STUDENT }), ctx)
     expect(res.status).toBe(200)
     await flush()
     expect(recorded()).toEqual([
       {
-        ...common,
+        ...stellr,
         action: 'event.awards.assign',
         target: { table: 'event_award_assignments', id: null },
         metadata: { event_slug: SLUG, award_action: 'remove', award_type: 'norm_chaffee', participant_id: STUDENT, status: 200 },
@@ -164,6 +165,13 @@ describe('judging', () => {
   it('a caller requireEventAccess refuses records nothing', async () => {
     h.access = { ok: false, status: 403 }
     expect((await awards.PUT(send('PUT', 'awards', { action: 'remove', awardType: 'norm_chaffee', participantId: STUDENT }), ctx)).status).toBe(403)
+    await flush()
+    expect(h.audits).toEqual([])
+  })
+
+  it('on a tenant’s event a change and an issue run are refused and record nothing (C19b)', async () => {
+    expect((await awards.PUT(send('PUT', 'awards', { action: 'remove', awardType: 'norm_chaffee', participantId: STUDENT }), ctx)).status).toBe(404)
+    expect((await issue.POST(send('POST', 'awards/issue'), ctx)).status).toBe(404)
     await flush()
     expect(h.audits).toEqual([])
   })
@@ -272,12 +280,14 @@ describe('every event route’s metadata survives the real sanitiser', () => {
   })
 
   it('judging: a change', async () => {
+    stellrEvent()
     expect((await awards.PUT(send('PUT', 'awards', { action: 'remove', awardType: 'norm_chaffee', participantId: STUDENT }), ctx)).status).toBe(200)
     await flush()
     survives()
   })
 
   it('judging: issuing the awards records the emailed count as notified', async () => {
+    stellrEvent()
     expect((await issue.POST(send('POST', 'awards/issue'), ctx)).status).toBe(200)
     await flush()
     survives()
@@ -322,7 +332,7 @@ describe('the chain follows the slug requireEventAccess verified, not the URL', 
     new Request(`https://app.test/api/admin/events/${urlSlug}/${path}`, { method, ...(body === undefined ? {} : { body: JSON.stringify(body) }) })
   const chains = () => h.audits.map((a) => ({ action: a.action, tenantId: a.tenantId, event_slug: (a.metadata as Record<string, unknown>).event_slug }))
   const verified = (action: string) => ({ action, tenantId: OWNER, event_slug: SLUG })
-  // C19a's routes, on a Stellr event: the tenant requireEventRoute placed it in.
+  // C19a's and C19b's routes, on a Stellr event: the tenant requireEventRoute placed it in.
   const placed = (action: string) => ({ action, tenantId: STELLR_TENANT_ID, event_slug: SLUG })
 
   for (const [label, urlSlug] of [
@@ -333,15 +343,17 @@ describe('the chain follows the slug requireEventAccess verified, not the URL', 
       const req = at(urlSlug)
 
       it('judging: a change', async () => {
+        stellrEvent()
         expect((await awards.PUT(req('PUT', 'awards', { action: 'remove', awardType: 'norm_chaffee', participantId: STUDENT }), ctx)).status).toBe(200)
         await flush()
-        expect(chains()).toEqual([verified('event.awards.assign')])
+        expect(chains()).toEqual([placed('event.awards.assign')])
       })
 
       it('judging: issuing the awards', async () => {
+        stellrEvent()
         expect((await issue.POST(req('POST', 'awards/issue'), ctx)).status).toBe(200)
         await flush()
-        expect(chains()).toEqual([verified('event.awards.issue')])
+        expect(chains()).toEqual([placed('event.awards.issue')])
       })
 
       it('badge artwork: save and delete', async () => {

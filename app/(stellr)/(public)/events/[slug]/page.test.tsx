@@ -6,7 +6,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 // URL. The fix distinguishes "no such event" (null → notFound) from "fetch
 // failed" (throw → the error boundary / a retryable 500).
 
-const { getEventBySlug } = vi.hoisted(() => ({ getEventBySlug: vi.fn() }))
+const { getEventBySlug, owner } = vi.hoisted(() => ({
+  getEventBySlug: vi.fn(),
+  owner: { row: null as { tenant_id: string } | null, error: null as { message: string } | null },
+}))
 const notFound = vi.fn(() => {
   throw new Error('NEXT_NOT_FOUND')
 })
@@ -15,6 +18,14 @@ vi.mock('next/navigation', () => ({ notFound }))
 vi.mock('@/lib/sanity', () => ({
   getEventBySlug,
   urlFor: () => ({ width: () => ({ height: () => ({ url: () => '' }) }) }),
+}))
+// The events mirror, for the owner read (S5 K11 probe P4).
+vi.mock('@/lib/supabase', () => ({
+  supabaseServer: () => ({
+    from: () => ({
+      select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: owner.row, error: owner.error }) }) }),
+    }),
+  }),
 }))
 vi.mock('@/lib/schema-series', () => ({ getSeriesMembers: async () => [] }))
 vi.mock('@/lib/campaign-registrations', () => ({
@@ -34,11 +45,15 @@ vi.mock('@/components/ui/CardPills', () => ({ CardPills: () => null }))
 vi.mock('@/components/analytics/TrackEvent', () => ({ TrackEvent: () => null }))
 vi.mock('@/components/ui/MissionFundingNote', () => ({ MissionFundingNote: () => null }))
 
-const Page = (await import('./page')).default
+const { default: Page, generateMetadata } = await import('./page')
 
 const render = () => Page({ params: Promise.resolve({ slug: 'nevada-2027' }) })
 
-beforeEach(() => vi.clearAllMocks())
+beforeEach(() => {
+  vi.clearAllMocks()
+  owner.row = null
+  owner.error = null
+})
 
 describe('event detail page — Sanity error vs not-found (PUB-9)', () => {
   it('re-throws a Sanity fetch error instead of 404ing', async () => {
@@ -51,5 +66,46 @@ describe('event detail page — Sanity error vs not-found (PUB-9)', () => {
     getEventBySlug.mockResolvedValueOnce(null)
     await expect(render()).rejects.toThrow('NEXT_NOT_FOUND')
     expect(notFound).toHaveBeenCalledOnce()
+  })
+})
+
+// S5 wave 8, K11 canary probe P4: the CMS holds every tenant's event documents, so the
+// page asks the events mirror whose event it is before showing it (lib/events/stellr-owner).
+describe("event detail page — another tenant's event (P4)", () => {
+  const OTHER_TENANT = '00000000-0000-4000-8000-0000000000aa'
+  const TENANT_EVENT = { title: 'Canary Challenge', activityType: 'competition' }
+  const metadata = () => generateMetadata({ params: Promise.resolve({ slug: 'dev-canary-event' }) })
+
+  it("404s another tenant's event, the same as a missing one", async () => {
+    getEventBySlug.mockResolvedValueOnce(TENANT_EVENT)
+    owner.row = { tenant_id: OTHER_TENANT }
+    await expect(render()).rejects.toThrow('NEXT_NOT_FOUND')
+    expect(notFound).toHaveBeenCalledOnce()
+  })
+
+  it("gives another tenant's event the missing event's metadata, with nothing of its title", async () => {
+    getEventBySlug.mockResolvedValueOnce(TENANT_EVENT)
+    owner.row = { tenant_id: OTHER_TENANT }
+    expect(await metadata()).toEqual({ title: 'Event Not Found' })
+  })
+
+  it("keeps Stellr's own event's metadata, mirrored or not", async () => {
+    getEventBySlug.mockResolvedValue({ title: 'Nevada Design Challenge', activityType: 'competition', tagline: 'Build it.' })
+    owner.row = null
+    const unmirrored = await metadata()
+    owner.row = { tenant_id: '00000000-0000-4000-8000-000000000001' }
+    expect(await metadata()).toEqual(unmirrored)
+    expect(unmirrored.title).toBe('Nevada Design Challenge — In-Person STEM Competition')
+    getEventBySlug.mockReset()
+  })
+
+  it('re-throws a failed owner read instead of 404ing or showing the event', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    getEventBySlug.mockResolvedValue(TENANT_EVENT)
+    owner.error = { message: 'connection reset' }
+    await expect(render()).rejects.toThrow('The event owner could not be read')
+    await expect(metadata()).rejects.toThrow('The event owner could not be read')
+    expect(notFound).not.toHaveBeenCalled()
+    getEventBySlug.mockReset()
   })
 })
