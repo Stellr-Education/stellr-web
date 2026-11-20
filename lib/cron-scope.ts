@@ -74,7 +74,7 @@ export const CRON_SCOPES: Readonly<Record<string, CronScopeEntry>> = {
   'hubspot-lifecycle': { scope: 'stellr_only', why: "Stellr's HubSpot" },
   'email-outbox': {
     scope: 'platform',
-    why: 'resends mail Resend refused for its quota or an outage; every message was already addressed by the sender that queued it',
+    why: 'resends mail Resend refused for its quota or an outage; every message was already addressed by the sender that queued it, and each tenant drains on its own runPerTenant turn by email_outbox.tenant_id (B24)',
   },
   'lead-capture-failures': { scope: 'stellr_only', why: "Stellr's lead capture" },
   'membership-expiry': {

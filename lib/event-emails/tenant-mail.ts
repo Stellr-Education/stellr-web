@@ -213,6 +213,7 @@ export async function sendTenantConfirmation(
       html: input.html,
       text: input.text,
       kind: 'transactional',
+      tenantId: input.tenantId,
     })
     return sent.suppressed ? { ok: true, id: null, suppressed: true } : { ok: true, id: sent.id }
   } catch (err) {
