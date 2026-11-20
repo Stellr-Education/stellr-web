@@ -17,20 +17,22 @@ BEGIN
   IF EXISTS (SELECT 1 FROM entitlements.account_credit_ledger GROUP BY member_id HAVING sum(amount_cents) <> 0) THEN
     RAISE EXCEPTION 'retire_account_credits_contract: an entitlements credit balance exists; settle it first';
   END IF;
-  IF EXISTS (SELECT 1 FROM public.event_refunds WHERE refund_type = 'credit') THEN
-    RAISE EXCEPTION 'retire_account_credits_contract: a refund was issued as credit; decide how to keep that history first';
-  END IF;
   IF EXISTS (SELECT 1 FROM entitlements.bookings WHERE coalesce(credit_applied_cents, 0) <> 0) THEN
     RAISE EXCEPTION 'retire_account_credits_contract: a booking was part-paid in credit; decide how to keep that history first';
   END IF;
 END $$;
 
--- public: refunds are cash (or manual, or none) only.
+-- public: new refunds are cash (or manual, or none) only. Refunds already issued as
+-- credit stay as history (owner, 20 Nov 2026: production holds one, its credit fully
+-- used); 'credit' is valid only on a row created before credits were retired.
 ALTER TABLE public.event_refunds DROP COLUMN IF EXISTS account_credit_id;
 ALTER TABLE public.event_refunds DROP COLUMN IF EXISTS credit_validity_days;
 ALTER TABLE public.event_refunds DROP CONSTRAINT IF EXISTS event_refunds_refund_type_check;
 ALTER TABLE public.event_refunds
-  ADD CONSTRAINT event_refunds_refund_type_check CHECK (refund_type IN ('cash', 'manual_required', 'none'));
+  ADD CONSTRAINT event_refunds_refund_type_check CHECK (
+    refund_type IN ('cash', 'manual_required', 'none')
+    OR (refund_type = 'credit' AND created_at < timestamptz '2026-11-20 00:00:00+00')
+  );
 
 -- The one-refund-per-thing indexes counted cash or credit; now cash alone.
 DROP INDEX IF EXISTS public.event_refunds_one_cancellation_per_participant;
