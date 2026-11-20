@@ -1525,6 +1525,10 @@
       "class": "convert",
       "reason": "auto: touches tenant or event-scoped tables; tables: cohort_members, community_resources, community_space_sources, community_spaces"
     },
+    "lib/events/stellr-owner.ts": {
+      "class": "convert",
+      "reason": "Stellr's side of the tenant tree's requireTenantEvent (S5 wave 8, K11 canary probe P4). Reads one event's tenant_id from the events mirror by slug for a signed-out visitor on Stellr's public and registration pages, through loadEventTenantId (lib/authz/principal.ts, C20c's read), so another tenant's event answers as not found. It reads the owner to decide whose record it is, so a tenantDb client can't be used yet; reads only, no write."
+    },
     "lib/field-crypto-shadow.ts": {
       "class": "convert",
       "reason": "auto: reaches tables it does not name (dynamic .from, rpc, or a client passed to a helper); review before converting"

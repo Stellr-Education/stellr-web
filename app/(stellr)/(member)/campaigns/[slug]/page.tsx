@@ -4,6 +4,7 @@ import { Document } from '@stellr/icons'
 import { Button } from '@stellr/web-ui'
 import { getCurrentMember } from '@/lib/community'
 import { getEventBySlug } from '@/lib/events/repo'
+import { requireStellrEvent } from '@/lib/events/stellr-owner'
 import { getMemberCampaignRegistration } from '@/lib/campaign-registrations'
 import { themeFromType, THEME_META, deadlineInfo, deadlinePhrase, shortUsDate } from '@/lib/campaigns'
 import { cqUpgradeStage } from '@/lib/cq-upgrade-prompt'
@@ -25,6 +26,8 @@ export default async function RegisteredCampaignPage({ params }: PageProps) {
     getMemberCampaignRegistration(member.id, slug),
   ])
   if (!campaign || campaign.activityType !== 'campaign') notFound()
+  // Another tenant's campaign answers as one nobody has (S5 K11 probe P4).
+  await requireStellrEvent(slug)
   // Not registered → send them to the public detail page to register first.
   if (!reg) redirect(`/events/${slug}`)
 
