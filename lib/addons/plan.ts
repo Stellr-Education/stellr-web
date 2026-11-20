@@ -6,6 +6,7 @@
 import { isAdultRole } from '@/lib/group-payer'
 import { isRegistrationMinor } from '@/lib/registration-eligibility'
 import { onSale } from './rules'
+import { minorIndividualMessage } from './labels'
 import type { AddonRow, AddonVariant, GroupMethod, LinePayer, LineStatus } from './types'
 
 export type BookingActor =
@@ -76,14 +77,7 @@ export interface LiveLine {
 
 export const MINOR_INDIVIDUAL_ACCOMMODATION = 'addon_minor_individual_accommodation'
 
-/** The full FR-5a message: what, why, and what to do. */
-export function minorIndividualMessage(addonTitle: string): string {
-  return (
-    `${addonTitle} is only available to students under 18 who are travelling with a school or group. ` +
-    'An overnight stay needs a responsible adult from the student’s own group. ' +
-    'To book it, join or register with a school or group for this event, or contact Stellr and we’ll help arrange it.'
-  )
-}
+export { minorIndividualMessage } from './labels'
 
 export interface PlanInput {
   actor: BookingActor

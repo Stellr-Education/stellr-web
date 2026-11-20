@@ -295,6 +295,37 @@ describe('applyRosterChange — removing a participant from an invoiced group', 
     })
   })
 
+  it('carries the group’s invoiced add-ons on the revision, with the code on the places only (US-20, Q6)', async () => {
+    const line = (id: string, participant: string) => ({
+      id, registration_id: 'reg-1', participant_id: participant, payer: 'group', group_method: 'invoice', status: 'pending_payment',
+      quantity: 1, unit_price_cents: 2500, currency: 'usd', variant_id: null, group_invoice_id: null,
+    })
+    const f = fakeDb({
+      registrations: [{ ...REG, invoice_coupon_id: 'coupon_15', invoice_promotion_code: 'STEMCAREERS' }],
+      participants: roster(18),
+      group_invoices: [],
+      registration_addons: [line('ra-1', 'p-1'), line('ra-2', 'p-2')],
+    })
+
+    await applyRosterChange(f.db, stripe as never, {
+      registrationId: 'reg-1', change: { kind: 'removed' }, eventRole: 'participant', actor: { memberId: 'm-teacher', label: 'organiser' },
+    })
+    await expect(settle(f, stripe)).resolves.toBe('revised')
+
+    const items = (stripe.invoiceItems.create as unknown as { mock: { calls: [Record<string, unknown>][] } }).mock.calls.map((c) => c[0])
+    // The places, discounted on their own line; the add-ons, counted, undiscounted.
+    expect(items[0]).toMatchObject({ invoice: 'in_rev', quantity: 18, discounts: [{ coupon: 'coupon_15' }] })
+    expect(items[1]).toMatchObject({ invoice: 'in_rev', quantity: 2, unit_amount_decimal: expect.anything() })
+    expect(items[1]).not.toHaveProperty('discounts')
+    expect(String(items[1].description)).not.toMatch(/p-1|p-2/)
+    // No invoice-level discount, which would also take 15% off the add-ons.
+    expect(stripe.invoices.update).toHaveBeenCalledWith('in_rev', expect.objectContaining({ discounts: '' }))
+    // The ledger keeps the add-on part apart, and the lines point at the new invoice.
+    const rev = f.tables.group_invoices.find((r) => r.stripe_invoice_id === 'in_rev')
+    expect(rev).toMatchObject({ addons_cents: 5000 })
+    expect(f.tables.registration_addons.every((l) => l.group_invoice_id === rev?.id)).toBe(true)
+  })
+
   it('reuses a draft revision someone started in the Dashboard (Stripe allows only one)', async () => {
     const f = fakeDb({ registrations: [{ ...REG }], participants: roster(18), group_invoices: [] })
     stripe.invoices.create.mockRejectedValueOnce(new Error('This invoice already has a draft revision'))

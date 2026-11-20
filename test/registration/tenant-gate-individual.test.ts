@@ -202,7 +202,7 @@ describe('S5 A7: register/individual on a tenant event', () => {
 
   it.each([
     ['a price on the event', { stripePriceId: 'price_1' }, {}],
-    ['an add-on', {}, { merch_addons: [{ id: 'addon-1', quantity: 1 }] }],
+    ['an add-on', {}, { extras: { items: [{ addonId: '00000000-0000-4000-8000-0000000000aa', people: ['self'] }] } }],
   ])('%s is refused, with nothing written and Stripe untouched', async (_l, event, extra) => {
     h.getEventBySlug.mockResolvedValue({ ...EVENT, ...event })
     expect(await settle(await post(extra))).toMatchObject({ status: 503, body: { code: 'tenant_payments_unavailable' } })

@@ -31,20 +31,20 @@ export function addonPayLinkEmail({
 }) {
   const total = formatAddonPrice(totalCents, currency)
   const deadline = closesAt ? new Date(closesAt).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }) : null
-  const subject = `Extras booked for you: ${eventTitle}`
+  const subject = `Pay for your extras: ${eventTitle}`
   const html = emailLayout({
     heading: 'Extras Booked for You',
     preheader: `${total} to pay for your extras at ${eventTitle}.`,
     bodyHtml: `
         <p>Hi ${esc(firstName)},</p>
-        <p>${esc(bookedBy)} booked these extras for you at <strong>${esc(eventTitle)}</strong>:</p>
+        <p>${bookedBy === 'You' ? 'You added these extras' : `${esc(bookedBy)} booked these extras for you`} at <strong>${esc(eventTitle)}</strong>:</p>
         ${linesHtml(lines)}
         <p><strong>Total: ${esc(total)}</strong></p>
         <p><a href="${esc(payUrl)}">Pay for your extras</a>. Anyone can pay from this link, so you can forward it to a parent or guardian.</p>
         ${deadline ? `<p>Your place is held until ${esc(deadline)}. If it isn’t paid by then, it’s released for someone else.</p>` : ''}
         <p style="color:#6b7280;font-size:14px">Questions? Ask your group’s organizer or reply to this email.</p>`,
   })
-  const text = `Hi ${firstName},\n\n${bookedBy} booked these extras for you at ${eventTitle}:\n${lines.map((l) => `- ${lineText(l)}`).join('\n')}\n\nTotal: ${total}\n\nPay here (anyone can pay from this link): ${payUrl}\n${deadline ? `\nYour place is held until ${deadline}. If it isn't paid by then, it's released for someone else.\n` : ''}\n— Stellr Education`
+  const text = `Hi ${firstName},\n\n${bookedBy === 'You' ? 'You added these extras' : `${bookedBy} booked these extras for you`} at ${eventTitle}:\n${lines.map((l) => `- ${lineText(l)}`).join('\n')}\n\nTotal: ${total}\n\nPay here (anyone can pay from this link): ${payUrl}\n${deadline ? `\nYour place is held until ${deadline}. If it isn't paid by then, it's released for someone else.\n` : ''}\n— Stellr Education`
   return { subject, html, text }
 }
 
