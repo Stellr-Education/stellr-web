@@ -6,6 +6,8 @@
  *   npx tsx scripts/esign-restore-drill.ts            # 10 random records
  *   npx tsx scripts/esign-restore-drill.ts --sample 25
  *   npx tsx scripts/esign-restore-drill.ts --restore <agreement id> --out ./restored
+ *   npx tsx scripts/esign-restore-drill.ts --export latest --out ./restored
+ *   npx tsx scripts/esign-restore-drill.ts --export export-2026-11-20.json.enc --out ./restored
  *
  * For each sampled agreement it downloads the encrypted copy, decrypts it with
  * ESIGN_BACKUP_KEY and checks it against the SHA-256 recorded when the record
@@ -14,6 +16,12 @@
  *
  * --restore writes one agreement's decrypted files to --out, for when the
  * stored copy has been lost or damaged.
+ *
+ * --export writes one nightly table export, decrypted, to --out (JSON: every
+ * agreement-table row plus the audit-chain heads). It needs only the backup key
+ * and the Drive folder, not the database.
+ *
+ * Access steps for people: docs/RUNBOOK-backups.md §8.
  */
 
 import * as dotenv from 'dotenv'
@@ -33,8 +41,22 @@ async function main() {
   const { createClient } = await import('@supabase/supabase-js')
   const { decryptBackup } = await import('../lib/esign/backup-crypto')
   const { driveBackupStore } = await import('../lib/esign/backup-store')
-  const { backupName } = await import('../lib/esign/replicate')
+  const { backupName, findSignedCopy } = await import('../lib/esign/replicate')
   const { SECRET_KEY_VARS, supabaseFetch, supabaseSecretKey } = await import('../lib/supabase-keys')
+
+  const exportArg = arg('--export')
+  if (exportArg) {
+    const exportStore = driveBackupStore()
+    const name = exportArg === 'latest' ? (await exportStore.list('export-'))[0] : exportArg
+    const sealed = name ? await exportStore.get(name) : null
+    if (!name || !sealed) throw new Error(`No table export ${exportArg === 'latest' ? 'found' : name}`)
+    const out = path.resolve(arg('--out') ?? 'restored')
+    fs.mkdirSync(out, { recursive: true })
+    const file = path.join(out, name.replace(/\.enc$/, ''))
+    fs.writeFileSync(file, decryptBackup(sealed))
+    console.log(`✓ wrote ${file}`)
+    return
+  }
 
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL
   const key = supabaseSecretKey()
@@ -48,14 +70,29 @@ async function main() {
   if (restoreId) {
     const out = path.resolve(arg('--out') ?? 'restored')
     fs.mkdirSync(out, { recursive: true })
-    for (const kind of ['signed', 'certificate', 'audit'] as const) {
+    // The signed copy is named by its content hash (deep review ES-5), so read
+    // the recorded hash first. The row may be gone (that is often why we are
+    // restoring); then the newest copy under the record's id is used.
+    const { data: row } = await db.from('agreements').select('signed_pdf_sha256').eq('id', restoreId).maybeSingle()
+    const recorded = (row as { signed_pdf_sha256: string | null } | null)?.signed_pdf_sha256 ?? null
+    const signed = await findSignedCopy(store, restoreId, recorded)
+    if (signed) {
+      const plain = decryptBackup(signed.bytes)
+      const file = path.join(out, signed.name.replace(/\.enc$/, ''))
+      fs.writeFileSync(file, plain)
+      const check = recorded ? (sha(plain) === recorded ? ' (matches the recorded hash)' : ' (DOES NOT match the recorded hash)') : ''
+      console.log(`✓ wrote ${file}${check}`)
+    } else {
+      console.error(`✗ no signed copy for ${restoreId}`)
+    }
+    for (const kind of ['certificate', 'audit'] as const) {
       const sealed = await store.get(backupName(restoreId, kind))
       if (!sealed) continue
       const file = path.join(out, backupName(restoreId, kind).replace(/\.enc$/, ''))
       fs.writeFileSync(file, decryptBackup(sealed))
       console.log(`✓ wrote ${file}`)
     }
-    return
+    process.exit(signed ? 0 : 1)
   }
 
   const sample = Number(arg('--sample') ?? 10)
@@ -70,10 +107,9 @@ async function main() {
 
   let failures = 0
   for (const row of rows) {
-    // deep review ES-5: the signed copy is named by its content hash, so look it
-    // up by the row's recorded sha256 (falls back to the legacy un-suffixed name
-    // when a row predates that hash).
-    const sealed = await store.get(backupName(row.id, 'signed', row.signed_pdf_sha256))
+    // deep review ES-5: the signed copy is named by its content hash; copies
+    // made before that fix keep the legacy un-suffixed name.
+    const sealed = (await findSignedCopy(store, row.id, row.signed_pdf_sha256))?.bytes
     if (!sealed) { console.error(`✗ ${row.id}: no backup copy`); failures++; continue }
     let plain: Buffer
     try { plain = decryptBackup(sealed) } catch (e) { console.error(`✗ ${row.id}: ${(e as Error).message}`); failures++; continue }
