@@ -75,6 +75,11 @@ beforeEach(() => {
   vi.spyOn(console, 'error').mockImplementation(() => {})
 })
 
+const withCode = { searchParams: Promise.resolve({ c: 'p.placeholder.sig' }) }
+const checkInPage = async () =>
+  (await import('@/app/(stellr)/(flow)/check-in/[slug]/page')).default({ ...params, searchParams: Promise.resolve({}) }) as Promise<{ props: Record<string, unknown> }>
+const checkInCodePage = async () =>
+  (await import('@/app/(stellr)/(flow)/check-in/[slug]/code/page')).default({ ...params, ...withCode }) as Promise<{ props: { searchParams: Promise<{ c?: string }> } }>
 const registerTypePage = async () => (await import('@/app/(stellr)/(flow)/register/[slug]/page')).default(params)
 const individualLayout = async () =>
   (await import('@/app/(stellr)/(flow)/register/[slug]/individual/layout')).default({ children: 'form', ...params })
@@ -107,6 +112,30 @@ describe('/register/[slug]', () => {
     state.event = null
     await outcome(registerTypePage)
     expect(state.ownerReads).toBe(0)
+  })
+})
+
+describe('/check-in/[slug] and its code page (A12, canary probe P6)', () => {
+  it("the check-in page: another tenant's event is not found; Stellr's, or an unmirrored slug, renders its body", async () => {
+    state.owner = { tenant_id: OTHER_TENANT }
+    expect(await outcome(checkInPage)).toBe('NEXT_NOT_FOUND')
+    state.owner = { tenant_id: STELLR }
+    expect(await outcome(checkInPage)).toBe('rendered')
+    state.owner = null
+    expect(await outcome(checkInPage)).toBe('rendered')
+  })
+
+  it("the code page: another tenant's event gets the body with no code, as a slug nobody has; Stellr's gets its code", async () => {
+    state.owner = { tenant_id: OTHER_TENANT }
+    expect(await (await checkInCodePage()).props.searchParams).toEqual({})
+    state.owner = { tenant_id: STELLR }
+    expect(await (await checkInCodePage()).props.searchParams).toEqual({ c: 'p.placeholder.sig' })
+  })
+
+  it('a failed owner read throws, never a 404', async () => {
+    state.ownerError = { message: 'connection reset' }
+    expect(await outcome(checkInPage)).toBe('The event owner could not be read')
+    expect(await outcome(checkInCodePage)).toBe('The event owner could not be read')
   })
 })
 
@@ -148,9 +177,6 @@ describe('/campaigns/[slug] and its submit page', () => {
 // Every Stellr page that reads one event by slug either checks the owner itself, or sits
 // under a layout that does, or is listed here with the slice that owns it.
 const OWNED_ELSEWHERE: Record<string, string> = {
-  // A12 (canary probe P6, a known gap): the participant check-in pages on Stellr's host.
-  'app/(stellr)/(flow)/check-in/[slug]/page.tsx': 'A12',
-  'app/(stellr)/(flow)/check-in/[slug]/code/page.tsx': 'A12',
   // Answered by their token's row (A7, e2e/tenancy/host-cases.ts: sameAsUnknown). The
   // event read feeds the analytics title or the grade band, not the page's record.
   'app/(stellr)/(flow)/register/[slug]/confirmation/page.tsx': 'A7',

@@ -128,6 +128,10 @@ function rowsFor(o: RecordOwner): Record<string, Row[]> {
         participant_id: null,
       },
     ],
+    // A tenant's primary host, for the links its pages build (lib/tenancy/event-origin.ts:
+    // the check-in code page's QR). Stellr's links take SITE_URL and read no row.
+    tenant_domains:
+      o.tenantId === STELLR_TENANT_ID ? [] : [{ tenant_id: o.tenantId, host: o.host, is_primary: true, tenants: { status: 'active' } }],
   }
 }
 
@@ -157,6 +161,7 @@ const KEY_COLUMNS: Record<string, readonly string[]> = {
   registrations: ['id', 'pay_token'],
   participants: ['id', 'pay_token'],
   credentials: ['number'],
+  tenant_domains: ['tenant_id'],
 }
 
 const ALL_ROWS: Record<string, Row[]> = { survey_definitions: [DEFINITION_ROW] }

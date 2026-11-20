@@ -18,8 +18,9 @@ export function hashToken(token: string): string {
   return createHash('sha256').update(token, 'utf8').digest('hex')
 }
 
-export function changeLinkUrl(token: string): string {
-  return `${SITE_URL}/sign/email#${token}`
+/** The bounce notice's one-time link on `origin`: the agreement tenant's site (S5 wave 8, BOUNCE), SITE_URL for Stellr. */
+export function changeLinkUrl(token: string, origin: string = SITE_URL): string {
+  return `${origin}/sign/email#${token}`
 }
 
 /** A token as it appears in a link: 43 base64url characters. Anything else is refused unread. */

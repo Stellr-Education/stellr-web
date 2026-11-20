@@ -31,11 +31,12 @@ const flowPages = () => treeFiles().filter((f) => f.startsWith(`${FLOW_TREE}/`) 
 const RECORDLESS: Record<string, string> = {
   [`${FLOW_TREE}/sign/page.tsx`]: 'reads nothing on the server: the key is in the URL fragment, so the check is in the signing APIs',
   [`${FLOW_TREE}/sign/copy/page.tsx`]: 'reads nothing on the server: the key is in the URL fragment, so the check is in the signing APIs',
+  [`${FLOW_TREE}/sign/email/page.tsx`]: 'reads nothing on the server: the key is in the URL fragment, so the check is in /api/sign/email (BOUNCE)',
 }
 
 /** Every headers() or cookies() call a tenant page can reach, and why it isn't deciding the tenant. */
 const REQUEST_READS: Record<string, string> = {
-  'app/(stellr)/(flow)/check-in/[slug]/page.tsx#CheckInPage:cookies': "the phone's signed check-in cookie for this event slug: who is checking in, not which tenant",
+  'app/(stellr)/(flow)/check-in/[slug]/check-in-body.tsx#CheckInBody:cookies': "the phone's signed check-in cookie for this event slug: who is checking in, not which tenant",
   'lib/impersonation.ts#viewAsState:cookies': 'the admin view-as cookie, read inside the identity helpers: who the person is, on any host',
   'lib/request-nonce.ts#requestNonce:headers': "this response's CSP nonce, for ClerkProvider's script tag",
   'lib/tenancy/request-tenant.ts#requestTenant:headers': 'for app/api only: it sits beside tenantFromParams, and the banned list below fails any call to it in the closure',
@@ -57,7 +58,8 @@ function measure(entries: string[], read = readRepoFile) {
 describe('the tenant page tree', () => {
   it('has one page for each flow page allowed on a tenant host, and no others', () => {
     const allowed = allowedTenantFiles().filter((f) => f.startsWith('app/(stellr)/(flow)/') && f.endsWith('/page.tsx'))
-    expect(allowed).toHaveLength(16)
+    // +1: /sign/email (S5 wave 8, BOUNCE)
+    expect(allowed).toHaveLength(17)
     expect(flowPages().sort()).toEqual(allowed.map((f) => f.replace('app/(stellr)/(flow)/', `${FLOW_TREE}/`)).sort())
   })
 

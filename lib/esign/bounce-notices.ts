@@ -7,6 +7,7 @@ import { AUTH_APP_URL } from '@/lib/env'
 import { STELLR_TENANT_ID } from '@/lib/tenancy/constants'
 import { eventManagerAudienceClerkIds, dutyAudienceMemberIds } from '@/lib/authz/audiences'
 import { changeLinkUrl, createChangeLink } from '@/lib/esign/email-change-tokens'
+import { tenantSiteOrigin } from '@/lib/tenancy/event-origin'
 import { isTenantRow, loadTenantSender } from '@/lib/event-emails/tenant-mail'
 
 // Who is told when a signing email bounces, and what each of them sees. The one
@@ -421,6 +422,10 @@ async function deliverBounceNotices(
   const organiserEmails = new Set(organisers.map((o) => o.email).filter(Boolean))
   // No sender for this tenant: no change link is minted, since nobody is sent it.
   if (!mail) return
+  // S5 wave 8, BOUNCE: the link opens on the agreement's tenant's own host. No host for it:
+  // no link is minted either, rather than one on Stellr's host, which refuses it.
+  const origin = await tenantSiteOrigin(a.tenant_id ?? STELLR_TENANT_ID, { db })
+  if (!origin) return
   for (const b of bounced) {
     const other = others.get(b.recipient_id)
     if (!other?.email) continue
@@ -437,7 +442,7 @@ async function deliverBounceNotices(
       requestedByEmail: other.email,
       now,
     })
-    const link = changeLinkUrl(token)
+    const link = changeLinkUrl(token, origin)
     const masked = maskEmail(b.email as string)
     const first = (other.name ?? '').trim().split(/\s+/)[0] || 'there'
     const until = formatDate(expiresAt)

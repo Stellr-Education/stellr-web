@@ -35,8 +35,6 @@
     "app/(stellr)/(admin)/admin/surveys/page.tsx",
     "app/(stellr)/(admin)/admin/surveys/questions/page.tsx",
     "app/(stellr)/(admin)/admin/surveys/questions/preview/page.tsx",
-    "app/(stellr)/(flow)/check-in/[slug]/code/page.tsx",
-    "app/(stellr)/(flow)/check-in/[slug]/page.tsx",
     "app/(stellr)/(flow)/check-in/page.tsx",
     "app/(stellr)/(flow)/team-profile/[token]/page.tsx",
     "app/(stellr)/(member)/account/onboarding/page.tsx",

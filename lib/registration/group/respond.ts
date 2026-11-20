@@ -13,6 +13,7 @@ import type { GatedGroup } from './gate'
 import { sendTenantRegistrationConfirmation } from '../tenant-confirmation'
 import { SITE_URL, invoiceSeatsFor, type GroupBody, type ParticipantPayload } from './parse'
 import type { SavedMembers, SavedParticipants, SavedRegistration } from './persist'
+import { eventSiteOrigin } from '@/lib/tenancy/event-origin'
 
 type EventGetter = (slug: string) => Promise<{ stripePriceId?: string } | null>
 /** Passed to the email as sent ('none' on a free event). */
@@ -358,6 +359,8 @@ export async function respondToGroupRegistration(
 
   // ── Confirmation email (includes both spreadsheet + join link when available) ─
   try {
+    // S5 wave 8, A12: the group's check-in link opens on the event's own host.
+    const origin = await eventSiteOrigin(event_slug)
     const emailContent = groupConfirmationEmail({
       teacherFirstName: teacher.first_name,
       teacherLastName: teacher.last_name,
@@ -375,7 +378,7 @@ export async function respondToGroupRegistration(
       remainingCount,
       // The way back if the card redirect is never completed.
       payUrl: payment_method === 'card' && checkoutUrl && payToken ? payPageUrl(event_slug, payToken) : undefined,
-      checkInCodeUrl: checkInCodeLink(event_slug, 'g', regId) ?? undefined,
+      checkInCodeUrl: checkInCodeLink(event_slug, 'g', regId, origin) ?? undefined,
     })
     await sendEmail({ to: teacher.email, cc: ccEmails, ...emailContent })
     // The confirmation email now carries the pay link, so the separate

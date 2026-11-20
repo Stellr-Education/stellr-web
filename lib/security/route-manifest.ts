@@ -458,6 +458,7 @@ export const ROUTE_MANIFEST: Record<string, RouteClass> = {
   'app/%5Ft/[tenant]/(flow)/register/[slug]/join/[token]/page.tsx': 'public',
   'app/%5Ft/[tenant]/(flow)/register/[slug]/pay/[token]/page.tsx': 'public',
   'app/%5Ft/[tenant]/(flow)/register/[slug]/pay-seat/[token]/page.tsx': 'public',
+  'app/%5Ft/[tenant]/(flow)/sign/email/page.tsx': 'public',
   'app/%5Ft/[tenant]/(flow)/sign/page.tsx': 'public',
   'app/%5Ft/[tenant]/(flow)/sign/copy/page.tsx': 'public',
   'app/%5Ft/[tenant]/(flow)/survey/[token]/page.tsx': 'public',

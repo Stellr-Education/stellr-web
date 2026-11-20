@@ -32,4 +32,8 @@ export const TENANT_HOST_UNPROVEN: Record<string, string> = {
   'app/api/credentials/[number]/pdf/route.ts GET anonymous': 'Refused at sign-in, before the number is used.',
   'app/api/credentials/[number]/visibility/route.ts POST anonymous': 'Refused at sign-in, before the number is used.',
   'app/api/volunteer/interest/route.ts POST anonymous': 'Refused at sign-in, before the slug is used.',
+  // BOUNCE (S5 wave 8): a live change link needs three rows in three states at once (the change
+  // link_sent, its agreement live, the bounced signer autoresponded), which the one honey row
+  // cannot hold. lib/esign/email-changes.test.ts ('answers a link only on its agreement tenant’s host') proves the host check directly.
+  'app/api/sign/email/route.ts POST': 'A live link needs three rows in three states the one honey row cannot hold; lib/esign/email-changes.test.ts proves the host check.',
 }
