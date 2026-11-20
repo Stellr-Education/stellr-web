@@ -183,11 +183,11 @@ Mode is `AUTHZ_SOURCE` / `LOADSCOPED_MODE`. "Any" means the answer is the same i
 | P12 | `stellr-probe-admin` on `dev-canary`'s event's email tab | `stellr-probe-admin` | Stellr | `clerk` or `shadow` with `off`: 200; with `shadow`: 200 + LOADSCOPED row; with `enforce`: 404. `postgres`, any: 404 |
 | P13 | `stellr-probe-admin` loads `dev-canary`'s pending consent agreement by id | `stellr-probe-admin` | Stellr | `off`: 400 (found, unsigned); `shadow`: 400 + LOADSCOPED row; `enforce`: 404 |
 | P14 | Stellr's agreements list holds `dev-canary`'s consent agreement | `stellr-probe-admin` | Stellr | Any: 200 and it is listed, **known gap `.29`** |
-| P15 | `dev-canary`'s signing link on Stellr's host | anonymous | Stellr | Not run, **known gap A11**: opening a link records a view on the guardian's envelope |
+| P15 | `dev-canary`'s signing link on Stellr's host | anonymous | Stellr | Not run: opening a link records a view on the guardian's envelope. Closed by A11 (#804): the signing APIs refuse another tenant's envelope, proved in the tenant-host IDOR suite |
 | P16 | A Stellr event's register page on the canary host | anonymous | `canary.<zone>` | Any: 404 |
 | P17 | Registering for a Stellr event through the canary host; nothing written | anonymous | `canary.<zone>` | Any: 404 |
 
-**Known gaps and who closes them:** A11 (slice A11: the e-sign participant side has no tenant check on Stellr's host), `.23` (tracker `s5-programme.23`: no "waiting for guardian consent" marker on the desk), `.24` (`.24`: a group check-in with one pending minor refuses the whole group), `.29` (`.29`: a Stellr-only admin list includes another tenant's rows). A probe that answers the closed state instead is reported as differing, and the table changes in the same PR that closes the gap.
+**Known gaps and who closes them** (A11 closed by #804 and A12 by its own PR, S5 wave 8): `.23` (tracker `s5-programme.23`: no "waiting for guardian consent" marker on the desk), `.24` (`.24`: a group check-in with one pending minor refuses the whole group), `.29` (`.29`: a Stellr-only admin list includes another tenant's rows). A probe that answers the closed state instead is reported as differing, and the table changes in the same PR that closes the gap.
 
 ### Pass, and the run record
 

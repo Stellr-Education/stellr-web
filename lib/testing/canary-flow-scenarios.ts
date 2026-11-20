@@ -725,11 +725,10 @@ export function judgeStellrUnchanged(input: {
  * known gap, not a failure. One that answers as the closed state says is reported
  * as differing, so the table is updated in the same change that closes the gap.
  */
-export type KnownGapId = 'A11' | 'A12' | '.23' | '.24'
+// A11 closed in #804 and A12 in its own PR (S5 wave 8): their probes now expect the closed state.
+export type KnownGapId = '.23' | '.24'
 
 export const KNOWN_GAPS: Record<KnownGapId, { owner: string; what: string }> = {
-  A11: { owner: 'slice A11', what: "e-sign participant side: dev-canary's signing link and envelope have no tenant check on Stellr's host" },
-  A12: { owner: 'slice A12', what: "check-in participant side: /check-in/<slug> answers for dev-canary's event on Stellr's host" },
   '.23': { owner: 'tracker s5-programme.23', what: 'the desk shows no "waiting for guardian consent" marker' },
   '.24': { owner: 'tracker s5-programme.24', what: 'a group check-in with one pending minor refuses the whole group' },
 }
@@ -764,7 +763,7 @@ export type Expectation =
       /** app_errors route labels a shadow mode is expected to write for this probe. */
       appErrorRoutes?: string[]
     }
-  | { notRun: true; gap: KnownGapId; reason: string }
+  | { notRun: true; gap?: KnownGapId; reason: string }
 
 export interface IsolationProbe {
   id: string
@@ -878,7 +877,8 @@ export const ISOLATION_PROBES: readonly IsolationProbe[] = [
     persona: 'anonymous',
     host: 'stellr',
     request: (c) => ({ method: 'GET', path: `/check-in/${c.canarySlug}` }),
-    expect: () => ({ status: 200, gap: 'A12' }),
+    // Closed by A12 (S5 wave 8): Stellr's check-in page is not found for another tenant's event.
+    expect: () => ({ status: 404 }),
   },
   {
     id: 'P7',
@@ -970,8 +970,7 @@ export const ISOLATION_PROBES: readonly IsolationProbe[] = [
     request: () => null,
     expect: () => ({
       notRun: true,
-      gap: 'A11',
-      reason: "not probed: opening a signing link records a view on the guardian's envelope, and the runner never reads a signing token",
+      reason: "not probed: opening a signing link records a view on the guardian's envelope, and the runner never reads a signing token. Closed by A11 (#804): the signing APIs refuse another tenant's envelope on Stellr's host (test/idor/tenant-host-routes.test.ts)",
     }),
   },
   // The other direction of P4 and P5: a Stellr event through dev-canary's host. P17 is
@@ -1028,7 +1027,7 @@ export function describeExpectation(e: Expectation): string {
 export function judgeProbe(probe: IsolationProbe, m: RunMode, observed: ProbeObservation | null, skipReason?: string): ProbeOutcome {
   const e = probe.expect(m)
   const expected = describeExpectation(e)
-  if ('notRun' in e) return { id: probe.id, verdict: 'not-run', expected, observed: '-', gap: e.gap, note: e.reason }
+  if ('notRun' in e) return { id: probe.id, verdict: 'not-run', expected, observed: '-', gap: e.gap ?? null, note: e.reason }
   if (!observed) return { id: probe.id, verdict: 'skipped', expected, observed: '-', gap: e.gap ?? null, note: skipReason ?? 'not sent' }
   const seen = `${observed.status}${e.marker !== undefined ? `, marker ${observed.marker === null ? 'unreadable' : observed.marker ? 'yes' : 'no'}` : ''}`
   const matches = observed.status === e.status && (e.marker === undefined || observed.marker === e.marker)
