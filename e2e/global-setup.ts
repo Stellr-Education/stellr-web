@@ -85,6 +85,7 @@ export default async function globalSetup() {
   const db = e2eDatabase()
   if (db) {
     await removeStaleSurveyEvents(db)
+    await removeStaleMirrorRows(db)
     await ensureEventManagerFixture(db)
   }
 }
@@ -137,6 +138,15 @@ async function removeStaleSurveyEvents(db: SupabaseClient) {
   const stale = staleSurveySlugs(rows, Date.now() - STALE_AFTER_MS)
   for (const slug of stale) removeSurveyEvent(slug)
   console.log(`global-setup: removed ${stale.length} leftover e2e-survey event${stale.length === 1 ? '' : 's'} older than an hour.`)
+}
+
+// S5 wave 8 (ENF prep): an e2e event's events-mirror row (e2e/fixtures/mirror-event.ts) left by
+// a cancelled run, an hour old or more. Only rows that helper wrote (sanity_id e2e-mirror.*).
+async function removeStaleMirrorRows(db: SupabaseClient) {
+  const cutoff = new Date(Date.now() - STALE_AFTER_MS).toISOString()
+  const { data, error } = await db.from('events').delete().like('sanity_id', 'e2e-mirror.%').lt('created_at', cutoff).select('slug')
+  if (error) throw new Error(`global-setup: removing leftover e2e mirror rows: ${error.message}`)
+  console.log(`global-setup: removed ${data?.length ?? 0} leftover e2e events-mirror row${data?.length === 1 ? '' : 's'}.`)
 }
 
 // ── Event-manager fixture (event-manager-e2e.4) ──────────────────────────────

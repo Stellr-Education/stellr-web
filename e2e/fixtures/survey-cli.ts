@@ -18,6 +18,7 @@ import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import { supabaseFetch, supabaseSecretKey } from '../../lib/supabase-keys'
 import { assertE2eSupabase } from '../../lib/testing/e2e-supabase-target'
 import { randomBytes } from 'node:crypto'
+import { mirrorE2eEvent, unmirrorE2eEvent } from './mirror-event'
 
 const ADA = '00000000-0000-4000-a000-000000000001'
 
@@ -48,6 +49,7 @@ async function removeEvent(db: SupabaseClient, slug: string) {
     await db.from('participants').delete().in('id', pids)
   }
   if (regIds.length) await db.from('registrations').delete().in('id', regIds)
+  await unmirrorE2eEvent(db, slug)
 }
 
 async function main() {
@@ -60,6 +62,8 @@ async function main() {
     const slug = `e2e-survey-${randomBytes(4).toString('hex')}`
     try {
       const title = `E2E Survey ${slug.slice(-8)}`
+      // S5 wave 8 (ENF prep): the event is in the mirror, so its rows derive Stellr's tenant.
+      await mirrorE2eEvent(db, slug, title)
       // The current minors template (optional link; the survey reads agreement_version).
       const { data: tpl } = await db.from('esign_templates').select('id').eq('key', 'minor').eq('active', true).maybeSingle()
       const { data: reg, error: regErr } = await db

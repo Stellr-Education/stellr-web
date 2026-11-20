@@ -7,6 +7,8 @@ import { assertE2eSupabase } from '../../lib/testing/e2e-supabase-target'
 import { freshClerkSession } from '../fixtures/fresh-session'
 import { expect, test } from '../fixtures/test'
 import { storageStatePath } from '../fixtures/users'
+import { mirrorE2eEvent, unmirrorE2eEvent } from '../fixtures/mirror-event'
+import { STELLR_TENANT_ID } from '../../lib/tenancy/constants'
 
 /**
  * Mentor credentials (8 Oct 2026): every volunteer mentor assigned to an event
@@ -213,6 +215,7 @@ test.describe('mentor certificate on the event artwork', () => {
       db.from('mentoring_cohorts').delete().eq('container_type', 'event_participation').eq('campaign_ref', printSlug),
     ])
     for (const { error } of steps) expect(error, error?.message).toBeNull()
+    await unmirrorE2eEvent(db, printSlug)
     const { error } = await db.storage.from('community-resources').remove([artworkPath])
     expect(error, error?.message).toBeNull()
   }
@@ -220,9 +223,11 @@ test.describe('mentor certificate on the event artwork', () => {
   test.beforeEach(async () => {
     await removePrintEvent()
     const db = devDb()
+    // S5 wave 8 (ENF prep): the event is in the mirror, and the cohort carries its tenant.
+    await mirrorE2eEvent(db, printSlug, `E2E Mentor Certificate ${printSlug.slice(-8)}`)
     const { data: cohort, error: cohortError } = await db
       .from('mentoring_cohorts')
-      .insert({ name: `E2E Mentor Certificate ${printSlug.slice(-8)}`, container_type: 'event_participation', campaign_ref: printSlug, parent_container_id: null })
+      .insert({ tenant_id: STELLR_TENANT_ID, name: `E2E Mentor Certificate ${printSlug.slice(-8)}`, container_type: 'event_participation', campaign_ref: printSlug, parent_container_id: null })
       .select('id')
       .single()
     expect(cohortError, cohortError?.message).toBeNull()
