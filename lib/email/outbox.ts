@@ -10,6 +10,10 @@ import {
   type OutgoingEmail,
 } from '@/lib/email/transport'
 import { maskEmail } from '@/lib/utils'
+import type { CronRun } from '@/lib/cron-runs'
+import { runPerTenant } from '@/lib/cron-tenants'
+import { STELLR_TENANT_ID } from '@/lib/tenancy/constants'
+import { STELLR_OR_NULL } from '@/lib/tenancy/stellr-scope'
 
 // The email outbox (table email_outbox, migration 20261109224229).
 //
@@ -39,6 +43,24 @@ import { maskEmail } from '@/lib/utils'
 // id as Resend's Idempotency-Key, so two drains cannot both send it and a drain
 // killed between Resend's answer and the row update does not send it twice when
 // the stale claim is retaken.
+//
+// Per tenant (S5 B24). A row carries the tenant whose sender queued it
+// (email_outbox.tenant_id, migration 20261116190925). Stellr's own mail leaves
+// it NULL, and NULL counts as Stellr's (decision WD-2), so Stellr's rows are
+// written exactly as before. The drain runs each tenant with mail waiting
+// through runPerTenant (lib/cron-tenants.ts): Stellr first, on its own read, so
+// another tenant's backlog can never fill Stellr's batch; then each other
+// tenant on its own read and time slice, so one tenant's failure is recorded
+// against it and the next still runs. A run with only Stellr's mail is the
+// runner's plain call: the same reads, sends, order and result as before.
+//
+// One Resend account and one verified domain carry every tenant's mail, so a
+// refusal that holds for the account (a quota, the rate limit, an outage, a key
+// or domain problem) stops the whole run: later tenants are not tried and wait
+// for the next one. The marketing budget stops only that tenant's bulk mail.
+// Another tenant's rows go out only while TENANT_EVENT_MAIL_ENABLED is on, as
+// every other tenant mail path does (lib/event-emails/tenant-mail.ts), and only
+// while the tenant is active; otherwise they are held and counted.
 
 export type OutboxReason = 'daily_quota' | 'monthly_quota' | 'rate_limit' | 'budget' | 'provider_error'
 
@@ -66,6 +88,8 @@ export interface OutboxRow {
   next_attempt_at: string
   claimed_at: string | null
   created_at: string
+  /** S5 B24: the tenant whose sender queued it. NULL is Stellr's (WD-2). */
+  tenant_id?: string | null
 }
 
 /** Why Resend's refusal (or a failed request) means "wait", or null when it means "this message is bad". */
@@ -96,6 +120,11 @@ export async function enqueueEmail(
     intendedCc: string[]
     reason: OutboxReason
     error?: string
+    /**
+     * S5 B24: the tenant whose sender queued this message. Stellr's id, null or
+     * absent all store NULL (WD-2), so Stellr's rows are written as before.
+     */
+    tenantId?: string | null
   },
 ): Promise<string | null> {
   const queuedAt = new Date().toISOString()
@@ -135,6 +164,7 @@ export async function enqueueEmail(
         attempts: 0,
         next_attempt_at: queuedAt,
         created_at: queuedAt,
+        ...(entry.tenantId && entry.tenantId !== STELLR_TENANT_ID ? { tenant_id: entry.tenantId } : {}),
       })
       .select('id')
       .single()
@@ -165,28 +195,107 @@ export interface DrainResult {
   oldestWaitingHours: number | null
   /** Why the run stopped before the outbox was empty. */
   stoppedFor: OutboxReason | 'deadline' | null
+  /**
+   * S5 B24: other tenants' rows held because tenant mail is off. Present only
+   * when non-zero, so a Stellr-only run's result keeps its keys.
+   */
+  tenantHeld?: number
 }
+
+/** The runner's ledger (tenants, skipped, notReached, cursor). Empty for a Stellr-only run. */
+export type DrainOutcome = DrainResult & { ledger: Record<string, unknown> }
+
+type TenantDrain = Pick<DrainResult, 'sent' | 'failed' | 'suppressed' | 'stoppedFor'>
+
+/** Refusals that hold for the whole Resend account, so no later tenant is tried this run. */
+const ACCOUNT_STOPS: ReadonlySet<string> = new Set<OutboxReason>(['daily_quota', 'monthly_quota', 'rate_limit', 'provider_error'])
+
+/** Most other tenants one run looks for. The rest are found on a later run. */
+export const MAX_OUTBOX_TENANTS = 50
+
+/** The run's budget when the caller gives no deadline. */
+const DEFAULT_BUDGET_MS = 45_000
 
 function backoffMs(attempts: number): number {
   return Math.min(30 * 60_000 * 2 ** Math.max(0, attempts - 1), 12 * 3_600_000)
 }
 
+/** A run that records nowhere, for a caller with no cron_runs row. Failures are still logged. */
+const unrecordedRun: CronRun = {
+  id: null,
+  fail: (where, err) => console.error(`[email-outbox] ${where}:`, err instanceof Error ? err.message : err),
+  finish: async () => {},
+}
+
+/**
+ * Other tenants with mail due now, in id order. One small read per tenant (the
+ * next id after the last), so a large backlog of one tenant, held or not, can
+ * never hide another. Throws when the outbox cannot be read.
+ */
+async function tenantsWithWork(db: SupabaseClient, nowIso: string): Promise<string[]> {
+  const ids: string[] = []
+  let after: string | null = null
+  for (let i = 0; i < MAX_OUTBOX_TENANTS; i++) {
+    let query = db
+      .from('email_outbox')
+      .select('tenant_id')
+      .eq('status', 'pending')
+      .lte('next_attempt_at', nowIso)
+      .not('tenant_id', 'is', null)
+      .neq('tenant_id', STELLR_TENANT_ID)
+    if (after) query = query.gt('tenant_id', after)
+    const { data, error } = await query.order('tenant_id', { ascending: true }).limit(1).maybeSingle()
+    if (error) throw new Error(`email outbox tenant read failed: ${error.message}`)
+    const id = (data as { tenant_id?: string | null } | null)?.tenant_id
+    if (!id) break
+    ids.push(id)
+    after = id
+  }
+  return ids
+}
+
+/** Other tenants' rows still waiting, while tenant mail is off. A count only. Throws on a failed read. */
+async function heldTenantRows(db: SupabaseClient): Promise<number> {
+  const { count, error } = await db
+    .from('email_outbox')
+    .select('id', { count: 'exact', head: true })
+    .in('status', ['pending', 'sending'])
+    .not('tenant_id', 'is', null)
+    .neq('tenant_id', STELLR_TENANT_ID)
+  if (error) throw new Error(error.message)
+  return count ?? 0
+}
+
 /**
  * Send what is waiting, transactional first and oldest first, until the
  * outbox is empty, Resend refuses again, or `deadline` (epoch ms) passes.
- * Never throws for a single message; throws only when the outbox cannot be read.
+ * Each tenant with mail waiting is drained on its own (see the header).
+ * Never throws for a single message; throws only when Stellr's mail cannot be
+ * read on a Stellr-only run, as before. Another tenant's failure is recorded on
+ * `run` against that tenant, and the rest still run.
  */
 export async function drainEmailOutbox(
   db: SupabaseClient,
-  opts: { apiKey?: string; transport?: EmailTransport; deadline?: number; limit?: number; now?: () => Date } = {},
-): Promise<DrainResult> {
+  opts: {
+    apiKey?: string
+    transport?: EmailTransport
+    deadline?: number
+    limit?: number
+    now?: () => Date
+    /** The cron's ledger row; per-tenant failures and child rows go on it. */
+    run?: CronRun
+    /** S5 B24: TENANT_EVENT_MAIL_ENABLED, read by the caller. Off holds every other tenant's rows. */
+    tenantMail?: boolean
+  } = {},
+): Promise<DrainOutcome> {
   const now = opts.now ?? (() => new Date())
+  const run = opts.run ?? unrecordedRun
   const result: DrainResult = { sent: 0, failed: 0, suppressed: 0, waiting: 0, oldestWaitingHours: null, stoppedFor: null }
   const apiKey = opts.apiKey ?? process.env.RESEND_API_KEY
   const transport = opts.transport ?? (apiKey ? resendTransport(apiKey) : null)
   if (!transport) {
     console.warn('[email-outbox] No RESEND_API_KEY — not draining')
-    return finish(db, result, now)
+    return { ...(await finish(db, result, now)), ledger: {} }
   }
 
   // Take back claims a killed run left behind.
@@ -196,22 +305,83 @@ export async function drainEmailOutbox(
     .eq('status', 'sending')
     .lt('claimed_at', new Date(now().getTime() - STALE_CLAIM_MS).toISOString())
 
-  const { data, error } = await db
+  // Stellr always has a turn, so a quiet run reads its mail as it always has.
+  let others: string[] = []
+  try {
+    if (opts.tenantMail) others = await tenantsWithWork(db, now().toISOString())
+    else {
+      const held = await heldTenantRows(db)
+      if (held) result.tenantHeld = held
+    }
+  } catch (err) {
+    run.fail('tenants', err)
+  }
+  const tenantIds = [STELLR_TENANT_ID, ...others]
+  const alone = tenantIds.length === 1
+
+  let accountStop: OutboxReason | null = null
+  const stellrFailure: unknown[] = []
+  const outcome = await runPerTenant<TenantDrain>(db, run, {
+    job: 'email-outbox',
+    deadline: opts.deadline ?? Date.now() + DEFAULT_BUDGET_MS,
+    tenantIds,
+    fn: async (job) => {
+      if (accountStop) return { sent: 0, failed: 0, suppressed: 0, stoppedFor: accountStop }
+      try {
+        const drained = await drainTenant(db, transport, job.tenant.id, {
+          limit: opts.limit ?? 200,
+          now,
+          stop: () => job.signal.aborted || Date.now() > job.deadline,
+        })
+        if (drained.stoppedFor && ACCOUNT_STOPS.has(drained.stoppedFor)) accountStop = drained.stoppedFor as OutboxReason
+        return drained
+      } catch (err) {
+        // Stellr alone: an unreadable outbox ends the run as it always has (the
+        // cron's 500), rather than becoming a recorded tenant failure.
+        if (!alone) throw err
+        stellrFailure.push(err)
+        return { sent: 0, failed: 0, suppressed: 0, stoppedFor: null }
+      }
+    },
+  })
+  if (stellrFailure.length) throw stellrFailure[0]
+
+  for (const drained of outcome.results.values()) {
+    result.sent += drained.sent
+    result.failed += drained.failed
+    result.suppressed += drained.suppressed
+    result.stoppedFor ??= drained.stoppedFor
+  }
+  if (!result.stoppedFor && outcome.notReached.length) result.stoppedFor = 'deadline'
+  return { ...(await finish(db, result, now)), ledger: outcome.ledger }
+}
+
+/** One tenant's waiting mail (Stellr's: NULL or Stellr's id), in priority and age order. */
+async function drainTenant(
+  db: SupabaseClient,
+  transport: EmailTransport,
+  tenantId: string,
+  opts: { limit: number; now: () => Date; stop: () => boolean },
+): Promise<TenantDrain> {
+  const { now } = opts
+  const out: TenantDrain = { sent: 0, failed: 0, suppressed: 0, stoppedFor: null }
+  const due = db
     .from('email_outbox')
     .select('*')
     .eq('status', 'pending')
     .lte('next_attempt_at', now().toISOString())
+  const { data, error } = await (tenantId === STELLR_TENANT_ID ? due.or(STELLR_OR_NULL) : due.eq('tenant_id', tenantId))
     .order('priority', { ascending: true })
     .order('created_at', { ascending: true })
-    .limit(opts.limit ?? 200)
+    .limit(opts.limit)
   if (error) throw new Error(`email outbox read failed: ${error.message}`)
 
   for (const row of (data ?? []) as OutboxRow[]) {
-    if (opts.deadline && Date.now() > opts.deadline) { result.stoppedFor = 'deadline'; break }
+    if (opts.stop()) { out.stoppedFor = 'deadline'; break }
 
     // Marketing waits behind the transactional reserve, exactly as it does live.
     // Rows are in priority order, so once marketing is refused only marketing is left.
-    if (row.kind === 'marketing' && !(await canSend('marketing', db, now()))) { result.stoppedFor = 'budget'; break }
+    if (row.kind === 'marketing' && !(await canSend('marketing', db, now()))) { out.stoppedFor = 'budget'; break }
 
     const { data: claimed } = await db
       .from('email_outbox')
@@ -222,12 +392,12 @@ export async function drainEmailOutbox(
     if (!claimed?.length) continue // another run has it
 
     const outcome = await sendRow(db, transport, row, now)
-    if (outcome === 'sent') result.sent++
-    else if (outcome === 'failed') result.failed++
-    else if (outcome === 'suppressed') result.suppressed++
-    else { result.stoppedFor = outcome; break }
+    if (outcome === 'sent') out.sent++
+    else if (outcome === 'failed') out.failed++
+    else if (outcome === 'suppressed') out.suppressed++
+    else { out.stoppedFor = outcome; break }
   }
-  return finish(db, result, now)
+  return out
 }
 
 async function sendRow(

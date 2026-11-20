@@ -110,6 +110,13 @@ where not exists (select 1 from public.allergy_options a where a.name = t.v);
 -- fixture does not quietly age into `adult` and start failing tier gates a year
 -- from now.
 
+-- S5 wave 8 (ENF prep): the fixture event's events-mirror row, as Stellr's, so the rows
+-- below derive their tenant and derivation enforce does not refuse them.
+insert into public.events (tenant_id, slug, sanity_id, title, starts_at, time_zone, country, currency, grade_system)
+values ('00000000-0000-4000-8000-000000000001', 'seed-regional-challenge', 'seed.seed-regional-challenge',
+        'Seed Regional Challenge (fixture)', '2040-06-01T00:00:00Z', 'UTC', 'US', 'usd', 'us_grades')
+on conflict do nothing;
+
 insert into public.members (
   id, first_name, last_name, date_of_birth, gender, email,
   age_bracket, event_role, grade, tshirt_size, is_active, marketing_consent

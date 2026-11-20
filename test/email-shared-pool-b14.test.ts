@@ -98,4 +98,14 @@ describe('one shared pool for Stellr and tenants', () => {
     expect(fetchMock).not.toHaveBeenCalled()
     expect(fake.tables.email_send_quota).toEqual([{ day: DAY, sent: 8 }])
   })
+
+  it("queues a tenant's held mail as that tenant's, and Stellr's with no tenant (B24, NULL is Stellr's)", async () => {
+    const fake = setup(8)
+    const { email, tenantMail } = await load()
+    const sender = tenantMail.tenantEventSender({ display_name: 'Rocket Club', branding: { reply_to: 'events@rocket.example.org' } })!
+    await email.sendEmail({ to: 'a@example.org', ...msg, kind: 'marketing' })
+    await email.sendEmail({ to: 'b@example.org', ...msg, kind: 'marketing', from: sender.from, replyTo: sender.replyTo, tenantId: TENANT })
+    expect(fake.tables.email_outbox.map((r) => r.tenant_id ?? null)).toEqual([null, TENANT])
+    expect('tenant_id' in fake.tables.email_outbox[0]).toBe(false)
+  })
 })

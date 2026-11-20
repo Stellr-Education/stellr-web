@@ -27,7 +27,10 @@ import { STELLR_TENANT_ID } from './constants'
 const CANARY = 'c0ffee00-0000-4000-8000-0000000000b2'
 const SUSPENDED = 'c0ffee00-0000-4000-8000-0000000000b3'
 const SUPABASE_URL = 'https://example-project.supabase.co'
-// A placeholder in the new secret-key format; not a real key.
+// A placeholder in the publishable-key format; not a real key. Since B25 the host map
+// is read with the publishable key (decision WD-1).
+const PUBLISHABLE_PLACEHOLDER = 'sb_publishable_placeholder_for_tests'
+// A secret key is still set, to prove the loader does not use it.
 const SECRET_PLACEHOLDER = 'sb_secret_placeholder_for_tests'
 
 const PROD_ZONE = { TENANT_ROUTING_ENABLED: 'true', TENANT_HOST_SUFFIX: '.events.stellreducation.org' }
@@ -43,10 +46,10 @@ function onProduction() {
   vi.stubEnv('NEXT_PUBLIC_APP_ENV', 'prod')
 }
 
-/** The rows PostgREST returns for HOST_MAP_QUERY against the two-tenant seed. */
+/** The rows tenant_host_map() returns (HOST_MAP_QUERY) against the two-tenant seed. */
 const SEED_ROWS = [
-  { host: 'canary-academy.localhost', tenant_id: CANARY, tenants: { slug: 'canary-academy', status: 'active' } },
-  { host: 'stellr.localhost', tenant_id: STELLR_TENANT_ID, tenants: { slug: 'stellr', status: 'active' } },
+  { host: 'canary-academy.localhost', tenant_id: CANARY, tenant_slug: 'canary-academy' },
+  { host: 'stellr.localhost', tenant_id: STELLR_TENANT_ID, tenant_slug: 'stellr' },
 ]
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -70,6 +73,7 @@ function hangingFetch() {
 beforeEach(() => {
   vi.stubEnv('NEXT_PUBLIC_SUPABASE_URL', SUPABASE_URL)
   vi.stubEnv('SUPABASE_SECRET_KEY', SECRET_PLACEHOLDER)
+  vi.stubEnv('NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY', PUBLISHABLE_PLACEHOLDER)
 })
 
 afterEach(() => {
@@ -431,16 +435,17 @@ describe('isStellrTrackingHost', () => {
 })
 
 describe('loadTenantHostMap', () => {
-  it('reads the active map with one raw PostgREST GET, key on apikey only, never cached', async () => {
+  it('reads the active map with one GET of tenant_host_map(), the publishable key on apikey only, never cached', async () => {
     const f = fetchSpy()
     const map = await loadTenantHostMap({ fetch: f })
     expect(f).toHaveBeenCalledTimes(1)
     const [url, init] = f.mock.calls[0]
     expect(url).toBe(`${SUPABASE_URL}${HOST_MAP_QUERY}`)
-    expect(url).toContain('tenants!inner(')
-    expect(url).toContain('tenants.status=eq.active')
+    expect(url).toBe(`${SUPABASE_URL}/rest/v1/rpc/tenant_host_map`)
     const headers = init?.headers as Record<string, string>
-    expect(headers.apikey).toBe(SECRET_PLACEHOLDER)
+    // B25 (WD-1): the publishable key, never the secret one.
+    expect(headers.apikey).toBe(PUBLISHABLE_PLACEHOLDER)
+    expect(JSON.stringify(init)).not.toContain(SECRET_PLACEHOLDER)
     expect(headers.Authorization).toBeUndefined()
     expect(init?.cache).toBe('no-store')
     expect(init?.method).toBe('GET')
@@ -448,13 +453,13 @@ describe('loadTenantHostMap', () => {
     expect(map.get('stellr.localhost')).toEqual({ tenantId: STELLR_TENANT_ID, tenantSlug: 'stellr' })
   })
 
-  it('skips a suspended tenant and malformed rows even if the filter let them through', async () => {
+  it('skips malformed rows (the function filters to active tenants itself)', async () => {
     const f = fetchSpy([
       ...SEED_ROWS,
-      { host: 'paused.localhost', tenant_id: SUSPENDED, tenants: { slug: 'paused', status: 'suspended' } },
-      { host: 'UPPER.localhost', tenant_id: CANARY, tenants: { slug: 'canary-academy', status: 'active' } },
-      { host: 'noslug.localhost', tenant_id: CANARY, tenants: { status: 'active' } },
-      { host: 'noid.localhost', tenants: { slug: 'x', status: 'active' } },
+      { host: 'UPPER.localhost', tenant_id: CANARY, tenant_slug: 'canary-academy' },
+      { host: 'noslug.localhost', tenant_id: CANARY },
+      { host: 'emptyslug.localhost', tenant_id: CANARY, tenant_slug: '' },
+      { host: 'noid.localhost', tenant_slug: 'x' },
       null,
       'nonsense',
     ])
@@ -462,9 +467,9 @@ describe('loadTenantHostMap', () => {
     expect([...map.keys()].sort()).toEqual(['canary-academy.localhost', 'stellr.localhost'])
   })
 
-  it('accepts an embedded tenant returned as a one-element array', async () => {
-    const f = fetchSpy([{ host: 'canary-academy.localhost', tenant_id: CANARY, tenants: [{ slug: 'canary-academy', status: 'active' }] }])
-    expect((await loadTenantHostMap({ fetch: f })).size).toBe(1)
+  it('fails closed without a publishable key, even with the secret key set', async () => {
+    vi.stubEnv('NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY', '')
+    await expect(loadTenantHostMap({ fetch: fetchSpy() })).rejects.toThrow(/publishable key/)
   })
 
   it.each([
@@ -492,17 +497,17 @@ describe('loadTenantHostMap', () => {
 
   it('throws without fetching when the URL or key is missing', async () => {
     const f = fetchSpy()
-    vi.stubEnv('SUPABASE_SECRET_KEY', '')
+    vi.stubEnv('NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY', '')
     await expect(loadTenantHostMap({ fetch: f })).rejects.toBeInstanceOf(TenantHostMapError)
-    vi.stubEnv('SUPABASE_SECRET_KEY', SECRET_PLACEHOLDER)
+    vi.stubEnv('NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY', PUBLISHABLE_PLACEHOLDER)
     vi.stubEnv('NEXT_PUBLIC_SUPABASE_URL', '')
     await expect(loadTenantHostMap({ fetch: f })).rejects.toBeInstanceOf(TenantHostMapError)
     expect(f).not.toHaveBeenCalled()
   })
 
-  it('throws without fetching when the secret slot holds a publishable key', async () => {
+  it('throws without fetching when the publishable slot holds a secret key', async () => {
     const f = fetchSpy()
-    vi.stubEnv('SUPABASE_SECRET_KEY', 'sb_publishable_placeholder_for_tests')
+    vi.stubEnv('NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY', SECRET_PLACEHOLDER)
     await expect(loadTenantHostMap({ fetch: f })).rejects.toBeInstanceOf(TenantHostMapError)
     expect(f).not.toHaveBeenCalled()
   })
@@ -584,7 +589,7 @@ describe('resolver: outside the zone', () => {
   })
 
   it('a mapped host outside the zone is not consulted: custom domains are unsupported', async () => {
-    const rows = [...SEED_ROWS, { host: 'events.school.example', tenant_id: CANARY, tenants: { slug: 'canary-academy', status: 'active' } }]
+    const rows = [...SEED_ROWS, { host: 'events.school.example', tenant_id: CANARY, tenant_slug: 'canary-academy' }]
     onProduction()
     const f = fetchSpy(rows)
     const r = createTenantHostResolver({ fetch: f, env: PROD_ZONE })
@@ -635,8 +640,10 @@ describe('resolver: inside the zone', () => {
   })
 
   it('a suspended tenant is excluded: not-found', async () => {
-    const rows = [...SEED_ROWS, { host: 'paused.localhost', tenant_id: SUSPENDED, tenants: { slug: 'paused', status: 'suspended' } }]
-    const r = createTenantHostResolver({ fetch: fetchSpy(rows), env: TEST_ZONE })
+    // tenant_host_map() returns active tenants only (its pgTAP test holds that), so a
+    // suspended tenant's host is simply absent from the map.
+    void SUSPENDED
+    const r = createTenantHostResolver({ fetch: fetchSpy(SEED_ROWS), env: TEST_ZONE })
     expect(await r.resolve('paused.localhost')).toEqual({ kind: 'not-found', host: 'paused.localhost' })
   })
 
@@ -659,7 +666,7 @@ describe('resolver: inside the zone', () => {
   })
 
   it('missing Supabase config fails closed for zone hosts and leaves Stellr hosts alone', async () => {
-    vi.stubEnv('SUPABASE_SECRET_KEY', '')
+    vi.stubEnv('NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY', '')
     const f = fetchSpy()
     const r = createTenantHostResolver({ fetch: f, env: TEST_ZONE })
     expect((await r.resolve('canary-academy.localhost')).kind).toBe('unavailable')
@@ -708,7 +715,7 @@ describe('resolver: cache', () => {
     expect((await r.resolve('new-tenant.localhost')).kind).toBe('not-found')
     expect(f).toHaveBeenCalledTimes(1)
 
-    rows = [...SEED_ROWS, { host: 'new-tenant.localhost', tenant_id: SUSPENDED, tenants: { slug: 'new-tenant', status: 'active' } }]
+    rows = [...SEED_ROWS, { host: 'new-tenant.localhost', tenant_id: SUSPENDED, tenant_slug: 'new-tenant' }]
     c.advance(HOST_MAP_TTL_MS - 1)
     expect((await r.resolve('new-tenant.localhost')).kind).toBe('not-found')
     expect(f).toHaveBeenCalledTimes(1)

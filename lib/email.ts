@@ -145,6 +145,12 @@ interface SendEmailOptions {
    * send it records (the e-sign outbox matches bounces by that id).
    */
   deferOnFailure?: boolean
+  /**
+   * S5 B24: the tenant whose sender this is, for another tenant's mail. Written
+   * on the email outbox row if the send is queued, so the outbox drains it with
+   * that tenant's mail. Leave out for Stellr's own mail, which stays NULL (WD-2).
+   */
+  tenantId?: string | null
 }
 
 /**
@@ -157,7 +163,7 @@ export interface SentEmail { id: string | null; suppressed?: true; queued?: true
 
 export { EmailSendError }
 
-export async function sendEmail({ to, from, cc, replyTo, subject, html, text, attachments, headers, kind = 'transactional', critical = false, deferOnFailure = true }: SendEmailOptions): Promise<SentEmail> {
+export async function sendEmail({ to, from, cc, replyTo, subject, html, text, attachments, headers, kind = 'transactional', critical = false, deferOnFailure = true, tenantId }: SendEmailOptions): Promise<SentEmail> {
   if (!RESEND_API_KEY) {
     console.log('[email] No RESEND_API_KEY — would have sent to:', to?.replace(/^.*@/, '…@'), subject)
     return { id: null }
@@ -237,7 +243,7 @@ export async function sendEmail({ to, from, cc, replyTo, subject, html, text, at
   // original error, exactly as before the outbox existed.
   const queue = async (reason: OutboxReason, error?: string): Promise<SentEmail | null> => {
     if (!deferOnFailure || !quotaDb) return null
-    const id = await enqueueEmail(quotaDb, { message, kind, critical, intendedTo: to, intendedCc: cc ?? [], reason, error })
+    const id = await enqueueEmail(quotaDb, { message, kind, critical, intendedTo: to, intendedCc: cc ?? [], reason, error, tenantId })
     if (!id) return null
     console.warn(`[email] Queued for later (${reason}) — ${maskEmail(normaliseEmail(to))}:`, subject)
     return { id: null, queued: true }

@@ -238,25 +238,33 @@ describe('participation credentials', () => {
 
 describe('the check-in desk', () => {
   it('a manual check-in names the participant and the tap', async () => {
+    stellrEvent()
     expect((await desk.POST(send('POST', 'check-in', { action: 'manual', participantId: STUDENT }), ctx)).status).toBe(200)
     await flush()
     expect(recorded()).toEqual([
-      { ...common, action: 'event.check_in.desk_action', target: { table: 'participants', id: STUDENT }, metadata: { event_slug: SLUG, desk_action: 'manual', status: 200 } },
+      { ...stellr, action: 'event.check_in.desk_action', target: { table: 'participants', id: STUDENT }, metadata: { event_slug: SLUG, desk_action: 'manual', status: 200 } },
     ])
   })
 
   it('regenerating the code records the tap and never the new token', async () => {
+    stellrEvent()
     expect((await desk.POST(send('POST', 'check-in', { action: 'regenerate' }), ctx)).status).toBe(200)
     await flush()
     expect(recorded()).toEqual([
-      { ...common, action: 'event.check_in.desk_action', target: { table: 'participants', id: null }, metadata: { event_slug: SLUG, desk_action: 'regenerate', status: 200 } },
+      { ...stellr, action: 'event.check_in.desk_action', target: { table: 'participants', id: null }, metadata: { event_slug: SLUG, desk_action: 'regenerate', status: 200 } },
     ])
     const token = h.db.table('event_settings')[0].check_in_token as string
     expect(JSON.stringify(h.audits)).not.toContain(token)
   })
 
   it('an unknown tap is refused and records nothing', async () => {
+    stellrEvent()
     expect((await desk.POST(send('POST', 'check-in', { action: 'teleport' }), ctx)).status).toBe(400)
+    await flush()
+    expect(h.audits).toEqual([])
+  })
+  it('on a tenant’s event a desk tap is refused and records nothing (C19c)', async () => {
+    expect((await desk.POST(send('POST', 'check-in', { action: 'manual', participantId: STUDENT }), ctx)).status).toBe(404)
     await flush()
     expect(h.audits).toEqual([])
   })
@@ -316,6 +324,7 @@ describe('every event route’s metadata survives the real sanitiser', () => {
   })
 
   it('the check-in desk: a manual check-in and a regenerated code', async () => {
+    stellrEvent()
     expect((await desk.POST(send('POST', 'check-in', { action: 'manual', participantId: STUDENT }), ctx)).status).toBe(200)
     expect((await desk.POST(send('POST', 'check-in', { action: 'regenerate' }), ctx)).status).toBe(200)
     await flush()

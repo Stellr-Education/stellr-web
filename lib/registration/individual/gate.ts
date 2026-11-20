@@ -27,7 +27,7 @@ import {
 } from '../event-context'
 import { eligibilityRefused, refuse, temporarilyUnavailable, type Refusable } from '../refusal'
 import { answerDuplicate } from './duplicates'
-import { hasSchool, registrantEmails, type IndividualBody } from './parse'
+import { hasParticipantDetails, hasSchool, registrantEmails, type IndividualBody } from './parse'
 
 // POST /api/register/individual, everything that decides whether this registration
 // may be written. Nothing here writes, except a duplicate's own answer (attaching
@@ -234,6 +234,15 @@ export async function gateIndividualRegistration(body: IndividualBody, deps: Gat
   // Refused before the duplicate check, which can open a Checkout.
   if (!context.isPlatformOwner && (event.stripePriceId || body.scholarship_token || hasExtras(body.extras))) {
     return refuse(tenantPaymentsUnavailable())
+  }
+
+  // The details the participants row cannot be written without. Asked here, after
+  // every answer about the event and its owner (so a probe for another tenant's
+  // event still gets the unknown event's 404), and before anything is read about
+  // this person or written. The form always sends them; a scripted body without
+  // them used to fail at the insert with a 500.
+  if (!hasParticipantDetails(body)) {
+    return refuse(NextResponse.json({ error: 'Missing required fields' }, { status: 400 }))
   }
 
   // S5 wave 6: a minor admitted pending a guardian's consent. Only if the flow can

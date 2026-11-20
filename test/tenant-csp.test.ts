@@ -40,8 +40,8 @@ import nextConfig, { stellrHostsPattern } from '../next.config.mjs'
 const CANARY = '11111111-1111-4111-8111-111111111111'
 const TENANT = 'canary-academy.localhost'
 const HOST_ROWS = [
-  { host: TENANT, tenant_id: CANARY, tenants: { slug: 'canary-academy', status: 'active' } },
-  { host: 'stellr.localhost', tenant_id: STELLR_TENANT_ID, tenants: { slug: 'stellr', status: 'active' } },
+  { host: TENANT, tenant_id: CANARY, tenant_slug: 'canary-academy' },
+  { host: 'stellr.localhost', tenant_id: STELLR_TENANT_ID, tenant_slug: 'stellr' },
 ]
 
 const event = { waitUntil: (p: Promise<unknown>) => void p } as unknown as NextFetchEvent
@@ -73,6 +73,8 @@ beforeEach(() => {
   vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify(HOST_ROWS), { status: 200 })))
   vi.stubEnv('NEXT_PUBLIC_SUPABASE_URL', 'https://db.test')
   vi.stubEnv('SUPABASE_SECRET_KEY', 'sb_secret_TESTONLY')
+  // B25: the host map is read with the publishable key (tenant_host_map()).
+  vi.stubEnv('NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY', 'sb_publishable_TESTONLY')
 })
 afterEach(() => {
   vi.unstubAllEnvs()

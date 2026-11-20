@@ -123,6 +123,8 @@ describe('sendTenantConfirmation (A7)', () => {
       html: '<p>Hi</p>',
       text: 'Hi',
       kind: 'transactional',
+      // B24: queued mail waits in the outbox as this tenant's.
+      tenantId: TENANT,
     })
   })
 

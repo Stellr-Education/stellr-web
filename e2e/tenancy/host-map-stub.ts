@@ -24,15 +24,12 @@ export type StubStats = {
 
 function hostMapRows() {
   const plan = planTwoTenantSeed()
-  const seeded = plan.tenant_domains.map((domain) => {
+  // What tenant_host_map() returns (S5 B25): host, tenant id and slug, active tenants only.
+  const seeded = plan.tenant_domains.flatMap((domain) => {
     const tenant = plan.tenants.find((t) => t.id === domain.tenant_id)
-    return {
-      host: domain.host,
-      tenant_id: domain.tenant_id,
-      tenants: { slug: tenant?.slug, status: tenant?.status },
-    }
+    return tenant?.status === 'active' ? [{ host: domain.host, tenant_id: domain.tenant_id, tenant_slug: tenant.slug }] : []
   })
-  return [...seeded, { host: SECOND_TENANT.host, tenant_id: SECOND_TENANT.id, tenants: { slug: SECOND_TENANT.slug, status: 'active' } }]
+  return [...seeded, { host: SECOND_TENANT.host, tenant_id: SECOND_TENANT.id, tenant_slug: SECOND_TENANT.slug }]
 }
 
 export function createHostMapStub(): http.Server {
@@ -49,7 +46,7 @@ export function createHostMapStub(): http.Server {
 
     if (path === STATS_PATH) return send(200, stats)
 
-    if (req.method === 'GET' && path === '/rest/v1/tenant_domains') {
+    if (req.method === 'GET' && path === '/rest/v1/rpc/tenant_host_map') {
       stats.hostMapLoads++
       return send(200, hostMapRows())
     }

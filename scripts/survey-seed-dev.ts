@@ -43,6 +43,18 @@ async function main() {
 
   if (args.includes('--reset')) return reset(db)
 
+  // S5 wave 8 (ENF prep): the demo event is dev seed data, not a Sanity document, so the
+  // events mirror never gets it from the backfill. Mirror it as Stellr's, so its rows derive
+  // their tenant (and derivation enforce on dev does not refuse them).
+  {
+    const { error } = await db.from('events').insert({
+      tenant_id: STELLR_TENANT_ID, slug: SLUG, sanity_id: `seed.${SLUG}`, title: TITLE,
+      starts_at: new Date(Date.now() + 7 * 86_400_000).toISOString(), time_zone: 'America/Chicago',
+      country: 'US', currency: 'usd', grade_system: 'us_grades',
+    })
+    if (error && error.code !== '23505') throw new Error(`events mirror: ${error.message}`)
+  }
+
   // The current minors template (optional link; the survey reads agreement_version).
   const { data: tpl } = await db.from('esign_templates').select('id').eq('key', 'minor').eq('active', true).maybeSingle()
 

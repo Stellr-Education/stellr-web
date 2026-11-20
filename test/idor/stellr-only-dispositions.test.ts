@@ -17,7 +17,8 @@ import { DISPOSITION_REGISTER_STATUS, STELLR_ONLY_DISPOSITIONS, dispositionCount
 // C19a (S5 wave 8) moved credentials and the badge and certificate artwork routes, seven in
 // all, to tenant_crew with the Stellr-only option (stellrOnlyEvent).
 // C19b moved awards and awards/issue the same way.
-const MAX_TENANT_DESTINED_STELLR_ONLY = 9
+// C19c moved the admin check-in desk the same way.
+const MAX_TENANT_DESTINED_STELLR_ONLY = 8
 
 // platform_destined routes stay listed: the owner's choice for each is still to come.
 const stellrOnly = idorTargets().filter((t) => t.cls === 'stellr_only' || t.cls === 'platform_destined').map((t) => t.file)

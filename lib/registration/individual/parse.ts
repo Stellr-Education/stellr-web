@@ -54,6 +54,21 @@ export function registrantEmails(
 }
 
 /**
+ * The participant's details the form always sends and `participants` holds NOT NULL
+ * with no default: phone, gender, T-shirt size and age bracket. Without one, the
+ * insert failed with a 500 (and an app_errors row) after the registration row was
+ * written; the gate answers 400 instead. (event_role has a fallback in persist, the
+ * school is `hasSchool`'s, the names and date of birth are checked on their own.)
+ */
+export function hasParticipantDetails(
+  body: Pick<IndividualBody, 'phone' | 'gender' | 't_shirt_size' | 'age_bracket'>,
+): boolean {
+  return [body.phone, body.gender, body.t_shirt_size, body.age_bracket].every(
+    (v) => typeof v === 'string' && v.trim().length > 0,
+  )
+}
+
+/**
  * School is mandatory: either an existing school id or a non-empty new-school
  * name. Checked on the server as well as in the form.
  */

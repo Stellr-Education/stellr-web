@@ -22,8 +22,8 @@ import { STELLR_ONLY_DISPOSITIONS } from '@/lib/security/stellr-only-disposition
 //     and carry the option instead.
 //   - every events/[slug] route still in the Stellr-only register
 //     (lib/security/stellr-only-dispositions.ts). Those not yet on the option are listed in
-//     PENDING_C19A, which only shrinks: C19a converted seven and C19b the two awards routes; the admin check-in
-//     follow in C19's later parts.
+//     PENDING_C19A, which only shrinks: C19a converted seven, C19b the two awards routes and C19c the admin check-in;
+//     it is now empty.
 
 const OPTION = 'stellrOnlyEvent'
 const OPTION_ORIGIN = 'lib/tenancy/load-scoped'
@@ -61,6 +61,8 @@ const STELLR_ACCOUNT_ROUTES = [
   // C19b: awards become Stellr-issued credentials (W7-9).
   `${EVENTS_DIR}/awards/route.ts`,
   `${EVENTS_DIR}/awards/issue/route.ts`,
+  // C19c: the admin check-in desk, Stellr-only until a tenant's own desk in S8 (WD-C19-DESK).
+  `${EVENTS_DIR}/check-in/route.ts`,
 ]
 
 /**
@@ -69,9 +71,8 @@ const STELLR_ACCOUNT_ROUTES = [
  * C19's last part converts the admin check-in.
  * Shrink-only: an entry that gains the option, or leaves the register, fails until removed.
  */
-const PENDING_C19A = new Set([
-  `${EVENTS_DIR}/check-in/route.ts`,
-])
+// Empty since C19c (S5 wave 8). Kept, typed, so a new entry still has to be argued in.
+const PENDING_C19A = new Set<string>([])
 
 /** What is wrong with each handler of a Stellr-only event route; empty when it is guarded. */
 function stellrOnlyViolations(fileName: string, src: string): string[] {
@@ -111,7 +112,10 @@ describe('Stellr-only event routes ask the Stellr-only option before reading a p
   it('walks real routes: each listed file exists and sits under events/[slug]', () => {
     const present = new Set(routesUnder(EVENTS_DIR))
     for (const f of WALKED) expect(present.has(f), f).toBe(true)
-    expect(REGISTER_EVENT_ROUTES.length).toBeGreaterThan(0)
+    // Since C19c (S5 wave 8) no events/[slug] route is left in the Stellr-only register: each one
+    // is tenant_crew with the option (STELLR_ACCOUNT_ROUTES) or tenant-capable. The walk is not empty.
+    expect(REGISTER_EVENT_ROUTES).toEqual([])
+    expect(WALKED.length).toBeGreaterThan(0)
   })
 
   it.each(STELLR_ACCOUNT_ROUTES)('%s is tenant_crew and off the register', (f) => {
