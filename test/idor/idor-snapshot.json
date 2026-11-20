@@ -947,7 +947,7 @@
       }
     },
     "app/api/admin/events/[slug]/check-in/route.ts": {
-      "class": "stellr_only",
+      "class": "tenant_crew",
       "segments": [
         "slug"
       ],

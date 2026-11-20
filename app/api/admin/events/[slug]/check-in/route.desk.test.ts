@@ -23,6 +23,11 @@ const { calls, respond, getEventRoster, access } = vi.hoisted(() => ({
 }))
 
 vi.mock('@/lib/event-access', () => ({ requireEventAccess: async () => access.current }))
+// C19c: the route asks lib/authz requireEventRoute; it answers for the caller access.current describes.
+vi.mock('@/lib/authz', async () => {
+  const { eventRouteFromAccess } = await import('@/test/fixtures/event-route')
+  return { requireEventRoute: async (slug: string) => eventRouteFromAccess(slug, access.current as never) }
+})
 vi.mock('@/lib/sanity', () => ({ getEventBySlug: async () => ({ setting: 'in_person', date: '2026-11-06' }) }))
 vi.mock('@/lib/check-in-banner', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/lib/check-in-banner')>()),

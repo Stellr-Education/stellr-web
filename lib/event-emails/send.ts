@@ -523,6 +523,8 @@ export async function deliver(
         text: content.text,
         attachments: opts.attachments,
         kind,
+        // S5 B24: a tenant's mail, if queued, waits in the outbox as that tenant's.
+        ...(isTenantRow(email.tenant_id) ? { tenantId: email.tenant_id } : {}),
       })
       // sendEmail does not throw for an address on our suppression list or for
       // mail parked in the outbox by the daily budget — record what really

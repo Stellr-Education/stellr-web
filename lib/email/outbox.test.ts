@@ -3,6 +3,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { fakeSupabase, type FakeDb } from '@/test/fake-supabase'
 import { drainEmailOutbox, enqueueEmail, deferReason } from './outbox'
 import { EmailSendError, type EmailTransport, type OutgoingEmail } from './transport'
+import type { CronRun } from '@/lib/cron-runs'
+import { STELLR_TENANT_ID as STELLR } from '@/lib/tenancy/constants'
 
 // The email outbox: mail Resend refused for its quota (or an outage) is sent
 // later, in order, and never twice. The promise this file pins: delayed, never
@@ -11,6 +13,7 @@ import { EmailSendError, type EmailTransport, type OutgoingEmail } from './trans
 const OUTBOX_COLUMNS = [
   'id', 'status', 'kind', 'priority', 'critical', 'intended_to', 'intended_cc', 'message', 'attachment_hashes',
   'reason', 'attempts', 'last_error', 'next_attempt_at', 'claimed_at', 'sent_at', 'finished_at', 'provider_id', 'created_at',
+  'tenant_id',
 ] as const
 
 const T0 = new Date('2026-11-10T00:05:00Z')
@@ -49,6 +52,7 @@ function row(over: Record<string, unknown> = {}): Record<string, unknown> {
     finished_at: null,
     provider_id: null,
     created_at: `2026-11-09T22:${String(seq).padStart(2, '0')}:00Z`,
+    tenant_id: null,
     ...over,
   }
 }
@@ -248,5 +252,173 @@ describe('deferReason', () => {
     expect(deferReason(new TypeError('fetch failed'))).toBe('provider_error')
     expect(deferReason(new EmailSendError('', 400))).toBeNull()
     expect(deferReason(new EmailSendError('', 422))).toBeNull()
+  })
+})
+
+// ── S5 B24: per tenant ────────────────────────────────────────────────────────
+
+const ALPHA = 'aaaaaaaa-0000-4000-8000-0000000000b1'
+const BETA = 'bbbbbbbb-0000-4000-8000-0000000000b2'
+
+function tenantRow(id: string, status = 'active') {
+  return { id, status, time_zone: 'UTC', is_platform_owner: false }
+}
+
+/** A cron run that keeps its failures, as runPerTenant records them. */
+function recordingRun(): CronRun & { failures: string[] } {
+  const failures: string[] = []
+  return { id: null, failures, fail: (where) => { failures.push(where) }, finish: async () => {} }
+}
+
+function tenantSetup(rows: Record<string, unknown>[], tenants = [tenantRow(ALPHA), tenantRow(BETA)]): FakeDb {
+  return setup(rows, { tenants, cron_runs: [] })
+}
+
+const drainAs = (fake: FakeDb, t: EmailTransport, extra: Parameters<typeof drainEmailOutbox>[1] = {}) =>
+  drainEmailOutbox(fake.client, { transport: t, now: () => T0, ...extra })
+
+describe('enqueueEmail: the tenant on the row (B24)', () => {
+  const message: OutgoingEmail = { from: 'x <a@example.test>', to: ['p@example.test'], cc: [], replyTo: 'r@example.test', subject: 's', html: 'h', text: 't' }
+  const entry = { message, kind: 'transactional' as const, critical: false, intendedTo: 'p@example.test', intendedCc: [], reason: 'daily_quota' as const }
+
+  it("writes another tenant's id, and leaves Stellr's rows exactly as before (no tenant_id key, so NULL)", async () => {
+    const fake = setup()
+    const inserts: Record<string, unknown>[] = []
+    const client = fake.client as unknown as { from: (n: string) => { insert: (r: Record<string, unknown>) => unknown } }
+    const realFrom = client.from
+    client.from = (name: string) => {
+      const b = realFrom(name)
+      if (name === 'email_outbox') {
+        const insert = b.insert.bind(b)
+        b.insert = (r: Record<string, unknown>) => { inserts.push(r); return insert(r) }
+      }
+      return b
+    }
+    await enqueueEmail(fake.client, entry)
+    await enqueueEmail(fake.client, { ...entry, tenantId: null })
+    await enqueueEmail(fake.client, { ...entry, tenantId: STELLR })
+    await enqueueEmail(fake.client, { ...entry, tenantId: ALPHA })
+    expect(inserts.map((r) => 'tenant_id' in r)).toEqual([false, false, false, true])
+    expect(inserts[3].tenant_id).toBe(ALPHA)
+    expect(fake.table('email_outbox').map((r) => r.tenant_id ?? null)).toEqual([null, null, null, ALPHA])
+  })
+})
+
+describe('drainEmailOutbox per tenant (B24)', () => {
+  it("a Stellr-only run keeps its result keys and reads no tenants, whether tenant mail is on or off", async () => {
+    for (const tenantMail of [false, true]) {
+      seq = 0
+      const fake = tenantSetup([row(), row({ tenant_id: STELLR })])
+      const reads: string[] = []
+      const client = fake.client as unknown as { from: (n: string) => unknown }
+      const realFrom = client.from
+      client.from = (name: string) => { reads.push(name); return realFrom(name) }
+      const { t, sent } = transport()
+      const out = await drainAs(fake, t, { tenantMail })
+      expect(sent.map((s) => s.message.subject)).toEqual(['Mail 1', 'Mail 2'])
+      expect(Object.keys(out).sort()).toEqual(['failed', 'ledger', 'oldestWaitingHours', 'sent', 'stoppedFor', 'suppressed', 'waiting'])
+      expect(out.ledger).toEqual({})
+      expect(reads).not.toContain('tenants')
+      expect(reads).not.toContain('cron_runs')
+    }
+  })
+
+  it("never lets another tenant's backlog fill Stellr's batch", async () => {
+    const fake = tenantSetup([
+      row({ tenant_id: ALPHA, created_at: '2026-11-09T01:00:00Z' }),
+      row({ tenant_id: ALPHA, created_at: '2026-11-09T02:00:00Z' }),
+      row({ tenant_id: ALPHA, created_at: '2026-11-09T03:00:00Z' }),
+      row({ created_at: '2026-11-09T20:00:00Z' }),
+    ])
+    const { t, sent } = transport(1)
+    const out = await drainAs(fake, t, { limit: 2, tenantMail: true })
+    expect(sent.map((s) => s.message.subject)).toEqual(['Mail 4'])
+    expect(out).toMatchObject({ sent: 1, stoppedFor: 'daily_quota', waiting: 3 })
+  })
+
+  it("holds other tenants' mail while tenant mail is off, and counts it", async () => {
+    const fake = tenantSetup([row({ tenant_id: ALPHA }), row(), row({ tenant_id: BETA })])
+    const { t, sent } = transport()
+    const out = await drainAs(fake, t, { tenantMail: false })
+    expect(sent.map((s) => s.message.subject)).toEqual(['Mail 2'])
+    expect(out).toMatchObject({ sent: 1, tenantHeld: 2, waiting: 2, ledger: {} })
+    expect(fake.table('email_outbox').filter((r) => r.tenant_id).every((r) => r.status === 'pending' && r.attempts === 0)).toBe(true)
+  })
+
+  it('sends each tenant on its own turn, Stellr first, and records the turns', async () => {
+    const fake = tenantSetup([
+      row({ tenant_id: BETA, created_at: '2026-11-09T01:00:00Z' }),
+      row({ tenant_id: ALPHA, created_at: '2026-11-09T02:00:00Z' }),
+      row({ created_at: '2026-11-09T23:00:00Z' }),
+    ])
+    const { t, sent } = transport()
+    const out = await drainAs(fake, t, { tenantMail: true, run: recordingRun() })
+    expect(sent.map((s) => s.message.subject)).toEqual(['Mail 3', 'Mail 2', 'Mail 1'])
+    expect(out).toMatchObject({ sent: 3, waiting: 0, stoppedFor: null })
+    expect(Object.keys(out.ledger.tenants as object).sort()).toEqual([ALPHA, BETA, STELLR].sort())
+  })
+
+  it("isolates one tenant's failure: it is recorded, and the next tenant still sends", async () => {
+    const fake = tenantSetup([row({ tenant_id: ALPHA }), row({ tenant_id: BETA }), row()])
+    const client = fake.client as unknown as { from: (n: string) => { eq: (c: string, v: unknown) => unknown } }
+    const realFrom = client.from
+    client.from = (name: string) => {
+      const b = realFrom(name)
+      if (name === 'email_outbox') {
+        const eq = b.eq.bind(b)
+        b.eq = (c: string, v: unknown) => {
+          if (c === 'tenant_id' && v === ALPHA) throw new Error('read failed for one tenant')
+          return eq(c, v)
+        }
+      }
+      return b
+    }
+    const run = recordingRun()
+    const { t, sent } = transport()
+    const out = await drainAs(fake, t, { tenantMail: true, run })
+    expect(sent.map((s) => s.message.subject)).toEqual(['Mail 3', 'Mail 2'])
+    expect(run.failures).toEqual([`t:${ALPHA}:run`])
+    expect(out).toMatchObject({ sent: 2, waiting: 1 })
+  })
+
+  it('stops every tenant when Resend refuses for the account', async () => {
+    const fake = tenantSetup([row(), row({ tenant_id: ALPHA })])
+    const { t } = transport(0)
+    const out = await drainAs(fake, t, { tenantMail: true, run: recordingRun() })
+    expect(t.send).toHaveBeenCalledTimes(1) // Stellr's refusal; Alpha is not tried
+    expect(out).toMatchObject({ sent: 0, waiting: 2, stoppedFor: 'daily_quota' })
+    expect(fake.table('email_outbox')[1]).toMatchObject({ status: 'pending', attempts: 0 })
+  })
+
+  it("holds a suspended tenant's mail and passes over it", async () => {
+    const fake = tenantSetup([row({ tenant_id: ALPHA }), row({ tenant_id: BETA })], [tenantRow(ALPHA, 'suspended'), tenantRow(BETA)])
+    const { t, sent } = transport()
+    const out = await drainAs(fake, t, { tenantMail: true, run: recordingRun() })
+    expect(sent.map((s) => s.message.subject)).toEqual(['Mail 2'])
+    expect(out.ledger.skipped).toEqual([ALPHA])
+    expect(fake.table('email_outbox')[0]).toMatchObject({ status: 'pending', attempts: 0 })
+  })
+
+  it("still drains Stellr's mail when the tenant read fails, and records it", async () => {
+    const fake = tenantSetup([row(), row({ tenant_id: ALPHA })])
+    const client = fake.client as unknown as { from: (n: string) => { gt: unknown; neq: (c: string, v: unknown) => unknown } }
+    const realFrom = client.from
+    client.from = (name: string) => {
+      const b = realFrom(name)
+      if (name === 'email_outbox') {
+        const neq = b.neq.bind(b)
+        b.neq = (c: string, v: unknown) => {
+          if (c === 'tenant_id') throw new Error('tenant read failed')
+          return neq(c, v)
+        }
+      }
+      return b
+    }
+    const run = recordingRun()
+    const { t, sent } = transport()
+    const out = await drainAs(fake, t, { tenantMail: true, run })
+    expect(sent.map((s) => s.message.subject)).toEqual(['Mail 1'])
+    expect(run.failures).toEqual(['tenants'])
+    expect(out.ledger).toEqual({})
   })
 })

@@ -4,6 +4,7 @@ import { guardCron } from '@/lib/cron'
 import { withCronAudit } from '@/lib/cron-audit'
 import { startCronRun } from '@/lib/cron-runs'
 import { drainEmailOutbox, STALE_WAIT_MS } from '@/lib/email/outbox'
+import { tenantEventMailEnabled } from '@/lib/event-emails/tenant-mail'
 
 // GET /api/cron/email-outbox — sends the mail Resend could not take when it was
 // first sent (the daily or monthly quota, the rate limit, an outage), which
@@ -14,6 +15,12 @@ import { drainEmailOutbox, STALE_WAIT_MS } from '@/lib/email/outbox'
 // Four daily slots (vercel.json): 00:05 UTC, just after the new UTC day starts,
 // then 06:05, 12:05 and 18:05, so mail held back by the daily quota goes out
 // within hours of the quota resetting, whenever in the day that is.
+//
+// Per tenant (S5 B24): each tenant with mail waiting is drained on its own
+// through runPerTenant, Stellr first (lib/email/outbox.ts). A run with only
+// Stellr's mail keeps its reads, sends and result keys; another tenant's rows
+// go only while TENANT_EVENT_MAIL_ENABLED is on and are counted in `tenantHeld`
+// while it is off. The tenant comes from the rows only.
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
@@ -28,7 +35,11 @@ export const GET = withCronAudit('email-outbox', async (req: NextRequest) => {
   const db = supabaseServer()
   const run = await startCronRun(db, 'email-outbox')
   try {
-    const result = await drainEmailOutbox(db, { deadline: Date.now() + SEND_BUDGET_MS })
+    const { ledger, ...result } = await drainEmailOutbox(db, {
+      deadline: Date.now() + SEND_BUDGET_MS,
+      run,
+      tenantMail: tenantEventMailEnabled(),
+    })
     // Mail that has waited two days means Resend has refused it for two days
     // running (the monthly quota, a revoked key, an unverified domain). Mark the
     // run failed so it shows wherever cron_runs failures show.
@@ -36,8 +47,10 @@ export const GET = withCronAudit('email-outbox', async (req: NextRequest) => {
       run.fail('stale', `${result.waiting} email(s) waiting; the oldest for ${result.oldestWaitingHours}h`)
     }
     if (result.failed) run.fail('rejected', `${result.failed} email(s) rejected by Resend as invalid`)
-    await run.finish({ ...result })
-    return NextResponse.json(result)
+    // The ledger is empty for a Stellr-only run, so its result keeps its keys.
+    const all = { ...result, ...ledger }
+    await run.finish(all)
+    return NextResponse.json(all)
   } catch (err) {
     run.fail('drain', err)
     await run.finish({})

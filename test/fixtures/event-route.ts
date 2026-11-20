@@ -26,3 +26,24 @@ export function eventRouteRefused(status: 401 | 403 | 404) {
     response: NextResponse.json({ error: status === 404 ? 'Not found' : 'Forbidden' }, { status }),
   }
 }
+
+/**
+ * What requireEventRoute answers for a caller a route test describes the old
+ * requireEventAccess way ({ ok, isAdmin, assignedSlugs, userId, status }): the same caller let
+ * in or refused, in Stellr's scope, with `covers` reaching every event for an admin and the
+ * assigned ones for an event manager. For route tests written before the route moved.
+ */
+export function eventRouteFromAccess(
+  eventSlug: string,
+  access: { ok: boolean; status?: number; isAdmin?: boolean; assignedSlugs?: string[] | null; userId?: string },
+) {
+  if (!access.ok) return eventRouteRefused((access.status ?? 403) as 401 | 403 | 404)
+  const isAdmin = access.isAdmin === true
+  const assigned = access.assignedSlugs ?? null
+  return {
+    ...eventRouteFor(eventSlug),
+    userId: access.userId ?? 'user_testadmin',
+    isAdmin,
+    covers: (slug: string | null | undefined) => (isAdmin ? true : !!slug && (assigned ?? []).includes(slug)),
+  }
+}
