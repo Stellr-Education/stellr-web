@@ -31,6 +31,7 @@ const flowPages = () => treeFiles().filter((f) => f.startsWith(`${FLOW_TREE}/`) 
 const RECORDLESS: Record<string, string> = {
   [`${FLOW_TREE}/sign/page.tsx`]: 'reads nothing on the server: the key is in the URL fragment, so the check is in the signing APIs',
   [`${FLOW_TREE}/sign/copy/page.tsx`]: 'reads nothing on the server: the key is in the URL fragment, so the check is in the signing APIs',
+  [`${FLOW_TREE}/sign/email/page.tsx`]: 'reads nothing on the server: the key is in the URL fragment, so the check is in /api/sign/email (BOUNCE)',
 }
 
 /** Every headers() or cookies() call a tenant page can reach, and why it isn't deciding the tenant. */
@@ -57,7 +58,8 @@ function measure(entries: string[], read = readRepoFile) {
 describe('the tenant page tree', () => {
   it('has one page for each flow page allowed on a tenant host, and no others', () => {
     const allowed = allowedTenantFiles().filter((f) => f.startsWith('app/(stellr)/(flow)/') && f.endsWith('/page.tsx'))
-    expect(allowed).toHaveLength(16)
+    // +1: /sign/email (S5 wave 8, BOUNCE)
+    expect(allowed).toHaveLength(17)
     expect(flowPages().sort()).toEqual(allowed.map((f) => f.replace('app/(stellr)/(flow)/', `${FLOW_TREE}/`)).sort())
   })
 

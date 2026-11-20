@@ -72,6 +72,7 @@ vi.mock('@/app/(stellr)/(flow)/team-profile/[token]/team-profile-body', () => ({
 // refuses has its own test (team-profile-body.test.ts).
 vi.mock('@/lib/team-profile/store', () => ({ sessionByToken: async () => null }))
 vi.mock('@/components/esign/SigningApp', () => ({ SigningApp: function SigningApp() { return null } }))
+vi.mock('@/components/esign/EmailChangeApp', () => ({ EmailChangeApp: function EmailChangeApp() { return null } }))
 vi.mock('@/components/esign/SignedCopy', () => ({ SignedCopy: function SignedCopy() { return null } }))
 vi.mock('@/lib/sanity', () => ({ getEventsBySlugs: async () => [] }))
 
@@ -141,10 +142,11 @@ const PAGES: Record<string, () => Promise<{ default: unknown }>> = {
   'team-profile/[token]/page.tsx': () => import('@/app/%5Ft/[tenant]/(flow)/team-profile/[token]/page'),
   'sign/page.tsx': () => import('@/app/%5Ft/[tenant]/(flow)/sign/page'),
   'sign/copy/page.tsx': () => import('@/app/%5Ft/[tenant]/(flow)/sign/copy/page'),
+  'sign/email/page.tsx': () => import('@/app/%5Ft/[tenant]/(flow)/sign/email/page'),
 }
 
 /** Pages with their own describe below: the banner address and the two signing pages. */
-const TESTED_BELOW = ['check-in/page.tsx', 'sign/page.tsx', 'sign/copy/page.tsx']
+const TESTED_BELOW = ['check-in/page.tsx', 'sign/page.tsx', 'sign/copy/page.tsx', 'sign/email/page.tsx']
 
 interface Case {
   name: string
@@ -360,6 +362,7 @@ describe('the signing pages, which have no record of their own', () => {
   it.each([
     ['sign', () => import('@/app/%5Ft/[tenant]/(flow)/sign/page'), 'SigningApp'],
     ['signed copy', () => import('@/app/%5Ft/[tenant]/(flow)/sign/copy/page'), 'SignedCopy'],
+    ['bounce notice link', () => import('@/app/%5Ft/[tenant]/(flow)/sign/email/page'), 'EmailChangeApp'],
   ])('%s still answers only for an active tenant', async (_name, loader, component) => {
     const Page = await load(loader as () => Promise<{ default: unknown }>)
     expect(elementName(await call(Page, { tenant: 'alpha' }))).toBe(component)

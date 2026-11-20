@@ -29,16 +29,20 @@ export function originOnHost(host: string, siteUrl: string = SITE_URL): string {
   return u.origin
 }
 
-export async function eventSiteOrigin(
-  slug: string,
+/**
+ * The origin for links of `tenantId`'s records: SITE_URL with routing off (no read) or for
+ * Stellr; the tenant's primary active host otherwise; null when there is none or the read
+ * fails. For a record whose tenant is known (an agreement's tenant_id, say).
+ */
+export async function tenantSiteOrigin(
+  tenantId: string,
   opts: { db?: SupabaseClient; env?: Env; siteUrl?: string } = {},
 ): Promise<string | null> {
   const siteUrl = opts.siteUrl ?? SITE_URL
   if (!tenantRoutingConfig(opts.env ?? process.env).enabled) return siteUrl
+  if (tenantId === STELLR_TENANT_ID) return siteUrl
   const db = opts.db ?? supabaseServer()
   try {
-    const tenantId = await loadEventTenantId(db, slug)
-    if (tenantId === STELLR_TENANT_ID) return siteUrl
     const { data, error } = await db
       .from('tenant_domains')
       .select('host, tenants!inner(status)')
@@ -50,6 +54,21 @@ export async function eventSiteOrigin(
     if (error || !data) return null
     const host = (data as { host?: unknown }).host
     return typeof host === 'string' && host ? originOnHost(host, siteUrl) : null
+  } catch {
+    return null
+  }
+}
+
+/** The origin for an event's participant links: its owner's (tenantSiteOrigin), from the events mirror. */
+export async function eventSiteOrigin(
+  slug: string,
+  opts: { db?: SupabaseClient; env?: Env; siteUrl?: string } = {},
+): Promise<string | null> {
+  const siteUrl = opts.siteUrl ?? SITE_URL
+  if (!tenantRoutingConfig(opts.env ?? process.env).enabled) return siteUrl
+  const db = opts.db ?? supabaseServer()
+  try {
+    return await tenantSiteOrigin(await loadEventTenantId(db, slug), { ...opts, db, siteUrl })
   } catch {
     return null
   }
