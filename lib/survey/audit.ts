@@ -9,6 +9,7 @@
  */
 import { randomUUID } from 'node:crypto'
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { STELLR_TENANT_ID } from '@/lib/tenancy/constants'
 
 export async function writeAudit(
   db: SupabaseClient,
@@ -34,9 +35,16 @@ export async function logSurveyAccess(
     responseId?: string | null
     rowCount?: number | null
     detail?: Record<string, unknown>
+    /** The tenant whose surveys were read, when the caller resolved one (an event route's crew). */
+    tenantId?: string
   },
 ): Promise<void> {
+  // S5 wave 8: explicit where it is known. Without one, an event's row is left to the trigger
+  // (it derives the event's tenant), and a row with no event is Stellr's: the survey admin
+  // pages and the export are Stellr's.
+  const tenantId = entry.tenantId ?? (entry.eventSlug ? null : STELLR_TENANT_ID)
   const { error } = await db.from('survey_access_log').insert({
+    tenant_id: tenantId,
     actor: entry.actor,
     action: entry.action,
     event_slug: entry.eventSlug ?? null,

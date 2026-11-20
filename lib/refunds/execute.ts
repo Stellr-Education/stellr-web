@@ -6,6 +6,7 @@ import { GUARANTEE_DAYS, daysSincePayment, guaranteeRefundOptions } from './poli
 import { assertLiveCredentials } from '@/lib/env-guards'
 import { stripeRefundState, isFullyRefunded, remainingCents } from './stripe-state'
 import { resolveRefundBasis } from './payment-basis'
+import { loadRegistrationTenantId } from '@/lib/tenancy/registration-tenant'
 
 /**
  * 'cash' — the money-back guarantee's full refund, if the payment is within
@@ -248,7 +249,10 @@ async function audit(
   refundPct?: number,
   extra: AuditExtra = {}
 ) {
+  // S5 wave 8: the registration's tenant, explicit beside event_slug (Lane C optional-event writers).
+  const tenantId = await loadRegistrationTenantId(db, p.registration_id)
   const { error } = await db.from('event_refunds').insert({
+    tenant_id: tenantId,
     participant_id: p.id,
     registration_id: p.registration_id,
     member_id: p.member_id,

@@ -380,10 +380,20 @@ export function sanityEventQueryExports(src) {
 export const OPTIONAL_EVENT_TABLES = [
   'community_resources',
   'community_spaces',
+  // S5 wave 8 (A8b finding, checked on the dev schema 20 Nov 2026): these derive from a
+  // nullable event_slug, so a row written without one gets no tenant from the trigger.
+  'credentials',
+  'event_participations',
+  'event_refunds',
+  'group_invoices',
   'member_groups',
   'mentoring_cohorts',
   'refund_policies',
+  'scholarship_applications',
+  'store_event_discounts',
   'store_orders',
+  'survey_access_log',
+  'survey_responses',
   'training_modules',
 ]
 

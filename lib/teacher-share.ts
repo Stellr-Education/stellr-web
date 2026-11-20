@@ -5,6 +5,7 @@ import { isAdultRole, isSharedGroup, payerOf, type PayerGroup } from '@/lib/grou
 import type { CouponTerms } from '@/lib/group-billing'
 import { checkoutInvoiceParams } from '@/lib/payments/checkout-invoice'
 import type { ParticipantRow, RegistrationRow } from '@/lib/database.types'
+import { loadRegistrationTenantId } from '@/lib/tenancy/registration-tenant'
 
 // Students share the teacher's cost (9 Nov 2026). Owner decisions, recorded in
 // docs/PLAN-group-payment-options-2026-11-09.md:
@@ -230,7 +231,9 @@ async function refundShare(
   kind: 'share_true_up' | 'share_unwind',
 ): Promise<ShareRefund> {
   if (cents <= 0) return { participantId: p.id, cents: 0, refundId: null, error: null }
-  const row = { participant_id: p.id, registration_id: reg.id, member_id: p.member_id ?? null, event_slug: reg.event_slug, paid_cents: p.share_paid_cents, kind }
+  // S5 wave 8: the registration's tenant, explicit beside event_slug (Lane C optional-event writers).
+  const tenantId = await loadRegistrationTenantId(db, reg.id)
+  const row = { tenant_id: tenantId, participant_id: p.id, registration_id: reg.id, member_id: p.member_id ?? null, event_slug: reg.event_slug, paid_cents: p.share_paid_cents, kind }
   if (!p.stripe_payment_intent_id) {
     const error = 'no payment recorded to refund against'
     await db.from('event_refunds').insert({ ...row, refund_type: 'manual_required', refund_cents: cents })
