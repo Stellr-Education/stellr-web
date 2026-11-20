@@ -1,5 +1,6 @@
 import type Stripe from 'stripe'
 import type { supabaseServer } from '@/lib/supabase'
+import { loadRegistrationTenantId } from '@/lib/tenancy/registration-tenant'
 
 type Db = ReturnType<typeof supabaseServer>
 
@@ -29,10 +30,13 @@ export async function recordExternalChargeRefunds(
   if (!target) return { recorded: 0, reason: 'not an event registration payment' }
 
   const refunds = await stripe.refunds.list({ charge: charge.id, limit: 100 })
+  // S5 wave 8: the registration's tenant, explicit beside event_slug (Lane C optional-event writers).
+  const tenantId = await loadRegistrationTenantId(db, target.registrationId)
   const rows = refunds.data
     .filter((r) => r.status === 'succeeded' || r.status === 'pending')
     .filter((r) => r.metadata?.source !== 'stellr_app')
     .map((r) => ({
+      tenant_id: tenantId,
       participant_id: target.participantId,
       registration_id: target.registrationId,
       member_id: target.memberId,

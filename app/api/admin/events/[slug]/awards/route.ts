@@ -1,7 +1,9 @@
 import { NextResponse } from 'next/server'
-import type { SupabaseClient } from '@supabase/supabase-js'
 import { supabaseServer } from '@/lib/supabase'
-import { requireEventAccess } from '@/lib/event-access'
+import { requireEventRoute } from '@/lib/authz'
+import { stellrOnlyDb, type StellrOnlyDb } from '@/lib/events/admin-records'
+import { awardAssignments, awardsIssuedAt } from '@/lib/events/admin-awards'
+import { stellrOnlyEvent } from '@/lib/tenancy/load-scoped'
 import {
   assignmentConflict,
   isAssignedAwardType,
@@ -19,19 +21,24 @@ import {
 } from '@/lib/event-certificates'
 import { pendingAwardChanges } from '@/lib/event-award-issue'
 import { bodyIds, withAudit } from '@/lib/audit/route'
-import { noteAuditSubject } from '@/lib/audit/route-subject'
-import { verifiedEventAudit } from '@/lib/audit-route-helpers'
+import { auditSubject, noteAuditSubject } from '@/lib/audit/route-subject'
 
 export const dynamic = 'force-dynamic'
 
-// Platform audit (docs/TENANCY-S5.md, C7). The handler notes who passed requireEventAccess;
-// the event goes on the chain of the owner of the event that check verified (the slug it
-// noted), read from the mirror, never from the raw slug in the URL (lib/audit-route-helpers).
+// S5 wave 8, C19b: tenant_crew, and Stellr-only for other tenants. Issued awards become
+// credentials Stellr Education issues (decision W7-9), so both handlers ask stellrOnlyEvent
+// right after the access check: a tenant's staff get its 503, another tenant's event is a 404
+// for everyone, a Stellr admin included, and a failed read of the event's owner is a
+// retryable 503. Stellr's own events answer as before.
+const ROUTE = '/api/admin/events/[slug]/awards'
+
+// Platform audit (docs/TENANCY-S5.md, C7). The handler notes who passed requireEventRoute and
+// the tenant it resolved; the event goes on that tenant's chain.
 
 // Which change (an enum), the award type and the ids it named are the metadata.
 const assignAudit = ({ args: [req] }: { args: [Request, { params: Promise<{ slug: string }> }] }) => ({
   action: 'event.awards.assign' as const,
-  ...verifiedEventAudit(req, 'event_award_assignments'),
+  ...auditSubject(req, 'event_award_assignments'),
 })
 const AWARD_ACTIONS = ['set_champion', 'add', 'remove', 'set_specialist'] as const
 
@@ -47,31 +54,33 @@ export const PUT = withAudit(assignAudit, changeAssignment)
 
 export async function GET(_req: Request, { params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params
-  const access = await requireEventAccess(slug)
-  if (!access.ok) return NextResponse.json({ error: 'Forbidden' }, { status: access.status })
-  return NextResponse.json(await snapshot(supabaseServer(), slug))
+  const crew = await requireEventRoute(slug, { route: ROUTE })
+  if (!crew.ok) return crew.response
+  const foreign = await stellrOnlyEvent(crew.scope, supabaseServer(), slug, ROUTE)
+  if (foreign) return foreign
+  return NextResponse.json(await snapshot(stellrOnlyDb(crew.scope, supabaseServer()), slug))
 }
 
 // Only students who took part can be judged: a registered no-show (never
 // checked in, usually never placed) would otherwise surface as a "No company"
 // row and be eligible for awards.
-async function eligibleStudents(db: SupabaseClient, slug: string) {
+async function eligibleStudents(db: StellrOnlyDb, slug: string) {
   return attendees(await listEventStudents(db, slug))
 }
 
-async function snapshot(db: SupabaseClient, slug: string) {
-  const [students, companies, assignments, pending, { data: settings }] = await Promise.all([
+async function snapshot(db: StellrOnlyDb, slug: string) {
+  const [students, companies, assignments, pending, issuedAt] = await Promise.all([
     eligibleStudents(db, slug),
     listEventCompanies(db, slug),
     listAssignments(db, slug),
     pendingAwardChanges(db, slug),
-    db.from('event_settings').select('awards_issued_at').eq('event_slug', slug).maybeSingle(),
+    awardsIssuedAt(db, slug),
   ])
   return {
     companies,
     students: students.map((s) => ({ id: s.id, name: fullName(s), companyId: s.company_id })),
     assignments: assignments.map(toAssignment),
-    issuedAt: (settings?.awards_issued_at as string | null) ?? null,
+    issuedAt,
     pending,
   }
 }
@@ -89,30 +98,31 @@ type Body =
 // PUT — one change at a time; returns the new snapshot.
 async function changeAssignment(req: Request, { params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params
-  const access = await requireEventAccess(slug)
-  if (!access.ok) return NextResponse.json({ error: 'Forbidden' }, { status: access.status })
+  const crew = await requireEventRoute(slug, { route: ROUTE })
+  if (!crew.ok) return crew.response
+  noteAuditSubject(req, { userId: crew.userId, tenantId: crew.tenantId, eventSlug: slug })
+  const foreign = await stellrOnlyEvent(crew.scope, supabaseServer(), slug, ROUTE)
+  if (foreign) return foreign
 
   const body = (await req.json().catch(() => ({}))) as Partial<Body> & Record<string, unknown>
   noteAuditSubject(req, {
-    userId: access.userId,
-    eventSlug: slug,
     detail: {
       ...((AWARD_ACTIONS as readonly unknown[]).includes(body.action) ? { award_action: body.action } : {}),
       ...(isAssignedAwardType(body.awardType) ? { award_type: body.awardType } : {}),
       ...bodyIds({ participant_id: body.participantId, company_id: body.companyId }, ['participant_id', 'company_id']),
     },
   })
-  const db = supabaseServer()
+  const db = stellrOnlyDb(crew.scope, supabaseServer())
   const students = await eligibleStudents(db, slug)
   const byId = new Map(students.map((s) => [s.id, s]))
   const assignments = (await listAssignments(db, slug)).map(toAssignment)
-  const table = () => db.from('event_award_assignments')
+  const table = () => awardAssignments(db)
   const row = (awardType: AssignedAwardType, participantId: string) => ({
     event_slug: slug,
     award_type: awardType,
     participant_id: participantId,
     company_id: byId.get(participantId)?.company_id ?? null,
-    assigned_by: access.userId,
+    assigned_by: crew.userId,
   })
   const fail = (error: string, status = 400) => NextResponse.json({ error }, { status })
   const duplicate = (error: { code?: string; message: string }) =>

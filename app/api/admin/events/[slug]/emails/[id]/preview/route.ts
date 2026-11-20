@@ -10,6 +10,7 @@ import { recipientMergeVars, renderEventEmail, unknownTokens } from '@/lib/event
 import { extractTokens } from '@/lib/email-render'
 import { MAX_RECIPIENTS_PER_SEND, type EventEmailRow } from '@/lib/event-emails/types'
 import { loadEventRecord, refuseOutsideStellr } from '@/lib/tenancy/load-scoped'
+import { STELLR_TENANT_ID } from '@/lib/tenancy/constants'
 
 // GET /api/admin/events/[slug]/emails/[id]/preview — who this email would reach
 // right now, and how it reads for one of them (?as=<email> picks which).
@@ -44,7 +45,7 @@ async function previewEmail(req: Request, { params }: Ctx) {
   })
   if (!loaded.ok) return loaded.response
   const email = loaded.row
-  const event = await loadEventForEmail(slug)
+  const event = await loadEventForEmail(slug, email.tenant_id ?? STELLR_TENANT_ID)
   if (!event) return NextResponse.json({ error: 'Event not found' }, { status: 404 })
 
   // S5 wave 6: as the send does (lib/event-emails/send.ts), another tenant's email

@@ -48,9 +48,8 @@ const GROUPS: readonly DispositionGroup[] = [
   {
     disposition: 'tenant_destined',
     convertedBy: 'C19',
-    reason: 'event operations by slug: a tenant runs its own events. C18 moved companies, offerings and merch/commit; C19a credentials and the badge and certificate artwork',
+    reason: 'event operations by slug: a tenant runs its own events. C18 moved companies, offerings and merch/commit; C19a credentials and the badge and certificate artwork; C19b awards and awards/issue; C19c the admin check-in desk (Stellr-only for now, WD-C19-DESK). Empty since C19c',
     routes: [
-      'events/[slug]/awards', 'events/[slug]/awards/issue',
     ],
   },
   {

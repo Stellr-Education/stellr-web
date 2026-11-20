@@ -11,6 +11,8 @@ import { scholarshipReceivedEmail, scholarshipTeamInboxEmail } from '@/lib/schol
 import { auditMutation } from '@/lib/audit/route'
 import { checkSpamSignals } from '@/lib/spam-guard'
 import { scholarshipFields as f } from './schema'
+import { loadEventTenantId } from '@/lib/authz/principal'
+import { STELLR_TENANT_ID } from '@/lib/tenancy/constants'
 
 const CONTACT_EMAIL = process.env.CONTACT_EMAIL ?? 'hello@stellreducation.org'
 const APP_URL = process.env.NEXT_PUBLIC_AUTH_APP_URL ?? 'https://app.stellreducation.org'
@@ -86,9 +88,14 @@ async function fileApplication(input: z.infer<typeof schema>): Promise<{ respons
       resolveEvent(activity),
       getCurrentMember().catch(() => null),
     ])
+    // S5 wave 8: the event's owner, from the events mirror; an application with no event is
+    // Stellr's. A failed read leaves it to the trigger, as before: the application is never
+    // lost for want of this read.
+    const tenantId = event?.slug ? await loadEventTenantId(db, event.slug).catch(() => null) : STELLR_TENANT_ID
     const { data: row, error: insertError } = await db
       .from('scholarship_applications')
       .insert({
+        tenant_id: tenantId,
         first_name: firstName,
         last_name: lastName,
         email,

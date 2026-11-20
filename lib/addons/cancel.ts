@@ -23,6 +23,7 @@ import { reportError } from '@/lib/app-errors'
 import { GUARANTEE_DAYS, daysSincePayment } from '@/lib/refunds/policy'
 import { refundableNow } from './rules'
 import { LIVE_LINE_STATUSES, type AddonRow } from './types'
+import { loadRegistrationTenantId } from '@/lib/tenancy/registration-tenant'
 
 export type CancelReason = 'withdrawn' | 'removed' | 'deleted' | 'staff' | 'member' | 'event_cancelled' | 'released'
 
@@ -226,7 +227,10 @@ async function recordRefund(
   l: LineForCancel,
   r: { type: 'cash' | 'manual_required' | 'none'; cents: number; note?: string; stripeRefundId?: string; actor: string | null },
 ) {
+  // S5 wave 8: the registration's tenant, so the row keeps it if the add-on has no event_slug.
+  const tenantId = await loadRegistrationTenantId(db, l.registration_id)
   const { error } = await db.from('event_refunds').insert({
+    tenant_id: tenantId,
     participant_id: l.participant_id,
     registration_id: l.registration_id,
     event_slug: l.addon?.event_slug ?? null,

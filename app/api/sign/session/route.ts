@@ -1,5 +1,6 @@
 import { supabaseServer } from '@/lib/supabase'
 import { openLink } from '@/lib/esign/native/flow'
+import { requestTenant } from '@/lib/tenancy/request-tenant'
 import { clearSessionCookie, invalidLink, json, readJson, sameOrigin, setSessionCookie, throttle } from '@/lib/esign/native/http'
 
 // POST /api/sign/session — exchange the emailed signing link for a session.
@@ -27,7 +28,7 @@ export async function POST(req: Request) {
   // action in one tab can never land on the other child's form. (Earlier code
   // kept a single cookie and overwrote it; do not restore that.) The
   // clearSessionCookie calls below only wipe the legacy unscoped cookie.
-  const state = await openLink(supabaseServer(), body.token, { birthYear })
+  const state = await openLink(supabaseServer(), body.token, { birthYear, hostTenantId: (await requestTenant()).tenantId })
   switch (state.kind) {
     case 'invalid':
       return clearSessionCookie(invalidLink())
