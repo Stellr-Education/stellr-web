@@ -162,6 +162,14 @@ async function removeStaleMirrorRows(db: SupabaseClient) {
 const EVENT_MANAGER_EVENT = 'seed-regional-challenge'
 
 async function ensureEventManagerFixture(db: SupabaseClient) {
+  // S5 wave 8 (ENF prep): the fixture event is seed data (supabase/seed.sql), not a Sanity
+  // document, so mirror it as Stellr's; its assignment then derives its tenant.
+  const { error: mirrorError } = await db.from('events').insert({
+    tenant_id: '00000000-0000-4000-8000-000000000001', slug: EVENT_MANAGER_EVENT, sanity_id: `seed.${EVENT_MANAGER_EVENT}`,
+    title: 'Seed Regional Challenge (fixture)', starts_at: '2040-06-01T00:00:00Z', time_zone: 'UTC',
+    country: 'US', currency: 'usd', grade_system: 'us_grades',
+  })
+  if (mirrorError && mirrorError.code !== '23505') throw new Error(`global-setup: mirroring ${EVENT_MANAGER_EVENT}: ${mirrorError.message}`)
   const fixture = FIXTURES.event_manager
   const required = Boolean(process.env[fixture.passwordVar])
   const clerkKey = process.env.CLERK_SECRET_KEY
