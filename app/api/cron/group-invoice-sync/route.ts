@@ -7,7 +7,7 @@ import { guardCron } from '@/lib/cron'
 import { withCronAudit } from '@/lib/cron-audit'
 import { startCronRun } from '@/lib/cron-runs'
 import { partitionByTenant, runPerTenant, type TenantJob } from '@/lib/cron-tenants'
-import { getEventBySlug } from '@/lib/events/repo'
+import { getEventBySlugIn } from '@/lib/events/tenant-facade'
 import { syncGroupInvoice } from '@/lib/group-billing'
 import { syncAddonInvoice } from '@/lib/addons/invoice'
 import { sweepUnpaidAddons } from '@/lib/addons/sweep'
@@ -106,7 +106,8 @@ async function settleDue(db: Db, stripe: Stripe, job: TenantJob, stop: () => boo
       continue
     }
     if (!events.has(row.event_slug)) {
-      const event = (await getEventBySlug(row.event_slug).catch(() => null)) as { date?: string; endDate?: string } | null
+      // S5 wave 8, C8-PG: the job's tenant reads its own events (lib/events/tenant-facade.ts).
+      const event = (await getEventBySlugIn(job.tenant.id, row.event_slug).catch(() => null)) as { date?: string; endDate?: string } | null
       events.set(row.event_slug, eventIsOver(event))
     }
     if (!events.get(row.event_slug)) { tally.not_due++; continue }

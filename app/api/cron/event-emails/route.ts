@@ -4,7 +4,7 @@ import { guardCron } from '@/lib/cron'
 import { withCronAudit } from '@/lib/cron-audit'
 import { startCronRun } from '@/lib/cron-runs'
 import { partitionByTenant, runPerTenant, type TenantJob } from '@/lib/cron-tenants'
-import { getEventBySlug } from '@/lib/events/repo'
+import { getEventBySlugIn } from '@/lib/events/tenant-facade'
 import { sendEventEmail, reclaimStuckSending } from '@/lib/event-emails/send'
 import { scheduleDecision } from '@/lib/event-emails/schedule'
 import { todayInMountain, todayInZone } from '@/lib/event-emails/render'
@@ -111,12 +111,15 @@ export const GET = withCronAudit('event-emails', async (req: NextRequest) => {
   }
 
   const eventDates = new Map<string, string | null>()
-  const eventDate = async (slug: string) => {
-    if (!eventDates.has(slug)) {
-      const e = (await getEventBySlug(slug).catch(() => null)) as { date?: string } | null
-      eventDates.set(slug, e?.date ?? null)
+  // S5 wave 8, C8-PG: each tenant's job reads its own events (lib/events/tenant-facade.ts),
+  // cached per tenant and slug. With TENANT_DB_AREAS unset this is today's Sanity read.
+  const eventDate = async (tenantId: string, slug: string) => {
+    const key = `${tenantId}:${slug}`
+    if (!eventDates.has(key)) {
+      const e = (await getEventBySlugIn(tenantId, slug).catch(() => null)) as { date?: string } | null
+      eventDates.set(key, e?.date ?? null)
     }
-    return eventDates.get(slug) ?? null
+    return eventDates.get(key) ?? null
   }
   const result = {
     due: 0, sent: 0, skipped: 0, deferred: 0, resumed: 0, catchUpEmailed: 0, catchUpDeferred: 0,
@@ -148,7 +151,7 @@ export const GET = withCronAudit('event-emails', async (req: NextRequest) => {
 
     for (const row of byTenant.get(tenantId) ?? []) {
       const slug = row.event_slug
-      const decision = scheduleDecision(await eventDate(slug), row.schedule_days_before, day)
+      const decision = scheduleDecision(await eventDate(tenantId, slug), row.schedule_days_before, day)
       if (decision === 'wait') continue
       if (decision === 'skip') {
         await db.from('event_emails').update({ status: 'skipped' }).eq('id', row.id).eq('status', 'scheduled')
@@ -173,7 +176,7 @@ export const GET = withCronAudit('event-emails', async (req: NextRequest) => {
     add('resumed', resumed.reclaimed)
     for (const e of resumed.errors) job.fail(`resume:${e.id}`, e.error)
 
-    const catchUps = await runCatchUps(db, eventDate, budgetLeft, day, { tenantId, ...withSender })
+    const catchUps = await runCatchUps(db, (slug) => eventDate(tenantId, slug), budgetLeft, day, { tenantId, ...withSender })
     add('catchUpEmailed', catchUps.emailed)
     add('catchUpDeferred', catchUps.deferred)
     for (const e of catchUps.errors) job.fail(`catch-up:${e.id}`, e.error)
