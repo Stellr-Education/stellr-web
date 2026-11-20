@@ -9711,6 +9711,7 @@ export type Database = {
         Returns: {
           host: string
           tenant_id: string
+          tenant_slug: string
         }[]
       }
       tenant_self_ref_visible: {

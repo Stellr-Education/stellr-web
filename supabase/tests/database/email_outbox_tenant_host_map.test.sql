@@ -7,9 +7,10 @@
 --     counts as Stellr's, WD-2); a row can carry a tenant; an unknown tenant is
 --     refused;
 --   * tenant_host_map(): SECURITY DEFINER with an empty search_path; returns
---     host and tenant_id only, for active tenants only; only service_role holds
---     EXECUTE (WD-1 not accepted), and anon, authenticated and tenant_app are
---     refused when they call it.
+--     host, tenant_id and tenant_slug only, for active tenants only (B25 added
+--     the slug); anon and service_role hold EXECUTE (WD-1 accepted 20 Nov 2026,
+--     20261120185125_tenant_host_map_public), and authenticated and tenant_app
+--     are refused when they call it.
 -- Everything rolls back.
 BEGIN;
 SET LOCAL search_path = extensions, public;
@@ -72,14 +73,14 @@ SELECT ok(
   'its search_path is empty');
 SELECT is(
   (SELECT pg_catalog.pg_get_function_result('public.tenant_host_map()'::regprocedure)),
-  'TABLE(host text, tenant_id uuid)',
-  'it returns host and tenant_id and nothing else');
+  'TABLE(host text, tenant_id uuid, tenant_slug text)',
+  'it returns host, tenant_id and tenant_slug and nothing else');
 
 -- ── 4. tenant_host_map(): what it returns ───────────────────────────────────
 SELECT results_eq(
-  $q$SELECT host, tenant_id FROM public.tenant_host_map() WHERE host LIKE 'm7-%.pgtap.test' ORDER BY host$q$,
-  $q$VALUES ('m7-active.pgtap.test'::text, 'a7000000-0000-4000-8000-000000000001'::uuid),
-            ('m7-stellr.pgtap.test'::text, '00000000-0000-4000-8000-000000000001'::uuid)$q$,
+  $q$SELECT host, tenant_id, tenant_slug = (SELECT slug FROM public.tenants WHERE id = tenant_id) FROM public.tenant_host_map() WHERE host LIKE 'm7-%.pgtap.test' ORDER BY host$q$,
+  $q$VALUES ('m7-active.pgtap.test'::text, 'a7000000-0000-4000-8000-000000000001'::uuid, true),
+            ('m7-stellr.pgtap.test'::text, '00000000-0000-4000-8000-000000000001'::uuid, true)$q$,
   'only hosts of active tenants are returned, the platform owner included');
 SELECT is(
   (SELECT count(*)::int FROM public.tenant_host_map() WHERE host IN
@@ -95,11 +96,11 @@ SELECT is(
   (SELECT count(*)::int FROM public.tenant_host_map() WHERE host = 'm7-active.pgtap.test'),
   0, 'suspending a tenant removes its host at once');
 
--- ── 5. Privileges (WD-1 not accepted: service_role only) ────────────────────
+-- ── 5. Privileges (WD-1 accepted: anon and service_role) ────────────────────
 SELECT ok(has_function_privilege('service_role', 'public.tenant_host_map()', 'EXECUTE'),
   'service_role can execute it');
-SELECT ok(NOT has_function_privilege('anon', 'public.tenant_host_map()', 'EXECUTE'),
-  'anon cannot execute it (the publishable key cannot list tenant hosts)');
+SELECT ok(has_function_privilege('anon', 'public.tenant_host_map()', 'EXECUTE'),
+  'anon can execute it (the publishable key lists active tenant hosts, WD-1)');
 SELECT ok(NOT has_function_privilege('authenticated', 'public.tenant_host_map()', 'EXECUTE'),
   'authenticated cannot execute it');
 
@@ -131,7 +132,7 @@ BEGIN
     END;
   END LOOP;
 END $$;
-SELECT is(current_setting('m7_test.anon'), '42501', 'anon calling it is refused');
+SELECT is(current_setting('m7_test.anon'), 'called', 'anon calling it is answered (WD-1)');
 SELECT is(current_setting('m7_test.authenticated'), '42501', 'authenticated calling it is refused');
 SELECT is(current_setting('m7_test.tenant_app'), '42501', 'tenant_app calling it is refused');
 SELECT ok(NOT has_function_privilege('tenant_app', 'public.tenant_host_map()', 'EXECUTE'), 'tenant_app holds no EXECUTE on it');
