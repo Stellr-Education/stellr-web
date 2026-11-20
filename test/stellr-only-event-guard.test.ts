@@ -22,7 +22,7 @@ import { STELLR_ONLY_DISPOSITIONS } from '@/lib/security/stellr-only-disposition
 //     and carry the option instead.
 //   - every events/[slug] route still in the Stellr-only register
 //     (lib/security/stellr-only-dispositions.ts). Those not yet on the option are listed in
-//     PENDING_C19A, which only shrinks: C19a converted seven; awards and the admin check-in
+//     PENDING_C19A, which only shrinks: C19a converted seven and C19b the two awards routes; the admin check-in
 //     follow in C19's later parts.
 
 const OPTION = 'stellrOnlyEvent'
@@ -58,17 +58,18 @@ const STELLR_ACCOUNT_ROUTES = [
   `${EVENTS_DIR}/certificate-templates/route.ts`,
   `${EVENTS_DIR}/certificate-templates/preview/route.ts`,
   `${EVENTS_DIR}/certificates/route.ts`,
+  // C19b: awards become Stellr-issued credentials (W7-9).
+  `${EVENTS_DIR}/awards/route.ts`,
+  `${EVENTS_DIR}/awards/issue/route.ts`,
 ]
 
 /**
  * Register routes under events/[slug] that read people on legacy requireEventAccess(slug)
- * without the option. C19a converted credentials and the artwork routes; C19's later parts
- * convert these (awards and the admin check-in).
+ * without the option. C19a converted credentials and the artwork routes, C19b the awards;
+ * C19's last part converts the admin check-in.
  * Shrink-only: an entry that gains the option, or leaves the register, fails until removed.
  */
 const PENDING_C19A = new Set([
-  `${EVENTS_DIR}/awards/route.ts`,
-  `${EVENTS_DIR}/awards/issue/route.ts`,
   `${EVENTS_DIR}/check-in/route.ts`,
 ])
 

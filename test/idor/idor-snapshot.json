@@ -831,7 +831,7 @@
       }
     },
     "app/api/admin/events/[slug]/awards/issue/route.ts": {
-      "class": "stellr_only",
+      "class": "tenant_crew",
       "segments": [
         "slug"
       ],
@@ -842,7 +842,7 @@
       }
     },
     "app/api/admin/events/[slug]/awards/route.ts": {
-      "class": "stellr_only",
+      "class": "tenant_crew",
       "segments": [
         "slug"
       ],
