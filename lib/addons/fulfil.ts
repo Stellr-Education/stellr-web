@@ -8,6 +8,7 @@
 import type Stripe from 'stripe'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { reportError } from '@/lib/app-errors'
+import { assertLiveCredentials } from '@/lib/env-guards'
 import { sendEmail } from '@/lib/email'
 import { getEventBySlug } from '@/lib/events/repo'
 import { isRegistrationMinor } from '@/lib/registration-eligibility'
@@ -21,7 +22,7 @@ export type FulfilOutcome = 'paid' | 'already_paid' | 'not_found' | 'unpaid' | '
 
 const arr = <T>(x: T | T[] | null | undefined): T | undefined => (Array.isArray(x) ? x[0] : (x ?? undefined))
 
-export async function fulfilAddonOrder(db: SupabaseClient, session: Stripe.Checkout.Session): Promise<FulfilOutcome> {
+export async function fulfilAddonOrder(db: SupabaseClient, session: Stripe.Checkout.Session, stripe?: Stripe | null): Promise<FulfilOutcome> {
   const orderId = session.metadata?.orderId
   if (!orderId) return 'not_found'
   const { data: order } = await db
@@ -83,8 +84,8 @@ export async function fulfilAddonOrder(db: SupabaseClient, session: Stripe.Check
   const awaitingConsent: string[] = []
   for (const l of lines) {
     if (l.status !== 'pending_payment') {
-      // Released at the cut-off (or cancelled) before the payment landed: staff refund it (Phase 4 automates this).
-      await reportError(new Error(`add-on line ${l.id} was paid (order ${o.id}) while ${l.status}; refund or reinstate it`), { route: ROUTE, db })
+      // Released at the cut-off (or cancelled) before the payment landed: the money goes back.
+      await refundLatePayment(db, stripe ?? null, l, paymentIntent, o.id)
       continue
     }
     const needs = !!l.addon?.requires_addendum && isRegistrationMinor(l.participant?.date_of_birth ?? null, eventDate)
@@ -96,6 +97,32 @@ export async function fulfilAddonOrder(db: SupabaseClient, session: Stripe.Check
 
   await sendReceipt(db, o, lines, eventTitle, awaitingConsent).catch((e) => reportError(e, { route: `${ROUTE} receipt`, db }))
   return 'paid'
+}
+
+/** A line paid after it was released or cancelled: refund its amount on this payment (idempotent). */
+async function refundLatePayment(
+  db: SupabaseClient,
+  stripe: Stripe | null,
+  l: { id: string; participantId: string; registrationId: string; quantity: number; unitPriceCents: number; currency: string; addon?: { title: string } },
+  paymentIntent: string | null,
+  orderId: string,
+) {
+  const cents = l.unitPriceCents * l.quantity
+  try {
+    if (!stripe || !paymentIntent) throw new Error('no Stripe payment to refund on')
+    assertLiveCredentials('stripe')
+    const refund = await stripe.refunds.create(
+      { payment_intent: paymentIntent, amount: cents, metadata: { source: 'stellr_app', reason: 'addon_paid_after_release', addonLineId: l.id } },
+      { idempotencyKey: `addon-late-refund-${l.id}` },
+    )
+    await db.from('event_refunds').insert({
+      participant_id: l.participantId, registration_id: l.registrationId, paid_cents: cents, refund_type: 'cash', refund_cents: cents,
+      stripe_refund_id: refund.id, source: 'admin', kind: 'addon', addon_line_id: l.id, currency: l.currency,
+      note: `${l.addon?.title ?? 'Extra'} was paid after it was released; refunded`,
+    })
+  } catch (e) {
+    await reportError(new Error(`add-on line ${l.id} was paid (order ${orderId}) after it was released, and the refund failed (${e instanceof Error ? e.message : e}); refund it by hand`), { route: ROUTE, db })
+  }
 }
 
 /** A paid merch line joins the registration's event-merch order, ready for the event's bulk batch. */

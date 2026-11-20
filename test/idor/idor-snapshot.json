@@ -2541,10 +2541,12 @@
       "query": [],
       "body": [
         "addonId",
+        "lineIds",
         "participantIds",
         "variantId"
       ],
       "methods": {
+        "DELETE": "refused",
         "GET": "refused",
         "POST": "refused"
       }

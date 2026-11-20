@@ -72,3 +72,27 @@ export function addonPaidEmail({
   const text = `Hi ${firstName},\n\nThanks — we've received ${total} for these extras at ${eventTitle}:\n${lines.map((l) => `- ${lineText(l)}`).join('\n')}\n${awaitingConsent.length ? `\n${awaitingConsent.join(', ')} still need a parent or guardian to sign the overnight and off-site consent. The booking is confirmed once it's signed.\n` : ''}\nYou'll find them in your account, beside your registration.\n\n— Stellr Education`
   return { subject, html, text }
 }
+
+/** Seven days before the cut-off, an unpaid extra's reminder (Q17b). */
+export function addonReminderEmail({
+  firstName, eventTitle, lines, totalCents, currency, payUrl, closesAt,
+}: {
+  firstName: string; eventTitle: string; lines: EmailLine[]; totalCents: number; currency: string; payUrl: string; closesAt: string
+}) {
+  const total = formatAddonPrice(totalCents, currency)
+  const deadline = new Date(closesAt).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
+  const subject = `Your extras are released on ${deadline} unless paid: ${eventTitle}`
+  const html = emailLayout({
+    heading: 'Your Extras Are Still Unpaid',
+    preheader: `Pay by ${deadline} to keep them.`,
+    bodyHtml: `
+        <p>Hi ${esc(firstName)},</p>
+        <p>These extras at <strong>${esc(eventTitle)}</strong> are held for you, but not yet paid:</p>
+        ${linesHtml(lines)}
+        <p><strong>Total: ${esc(total)}</strong></p>
+        <p>If they aren’t paid by <strong>${esc(deadline)}</strong>, the places are released for someone else.</p>
+        <p><a href="${esc(payUrl)}">Pay for your extras</a>. Anyone can pay from this link.</p>`,
+  })
+  const text = `Hi ${firstName},\n\nThese extras at ${eventTitle} are held for you, but not yet paid:\n${lines.map((l) => `- ${lineText(l)}`).join('\n')}\n\nTotal: ${total}\n\nIf they aren't paid by ${deadline}, the places are released for someone else.\n\nPay here: ${payUrl}\n\n— Stellr Education`
+  return { subject, html, text }
+}

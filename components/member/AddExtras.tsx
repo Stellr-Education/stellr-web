@@ -132,6 +132,32 @@ export function AddExtras({ registrationId, paid, cancelled }: { registrationId:
     load()
   }
 
+  const cancelLine = async (l: Line) => {
+    const title = addonOf(l.addonId)?.title ?? 'this extra'
+    if (!confirm(`Cancel ${title}${organiser ? ` for ${nameOf(l.participantId)}` : ''}? If it was paid and is still within its refund date, it’s refunded to whoever paid for it.`)) return
+    setBusy(true)
+    setErrors([])
+    const res = await fetch(`/api/members/addons/${registrationId}`, {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ lineIds: [l.id] }),
+    })
+    const json = await res.json().catch(() => ({}))
+    setBusy(false)
+    if (!res.ok) return setErrors([json.error ?? 'That extra couldn’t be cancelled.'])
+    const r = json.cancelled?.[0]
+    setNotice(
+      r?.outcome === 'refunded'
+        ? `Cancelled. ${formatAddonPrice(r.refundCents, l.currency)} is being refunded to the card it was paid with.`
+        : r?.outcome === 'not_refundable'
+          ? 'Cancelled. It was past its refund date, so nothing is refunded.'
+          : r?.outcome === 'manual_required'
+            ? 'Cancelled. Stellr will arrange the refund and be in touch.'
+            : 'Cancelled.',
+    )
+    load()
+  }
+
   const myLines = data.lines.filter((l) => l.status !== 'cancelled')
   const forSelf = !organiser && data.actor.kind === 'member' ? data.actor.participantId : null
 
@@ -178,6 +204,11 @@ export function AddExtras({ registrationId, paid, cancelled }: { registrationId:
                 </span>
                 <span className="flex items-center gap-2">
                   <span className="text-content-muted">{PAYER_LABEL[l.payer] ?? ''}</span>
+                  {l.live && (
+                    <button type="button" onClick={() => cancelLine(l)} className="text-xs font-medium text-danger hover:underline" disabled={busy}>
+                      Cancel
+                    </button>
+                  )}
                   <Badge className={l.status === 'confirmed' ? 'bg-primary-soft text-primary-deep' : 'bg-surface text-content-body'}>
                     {LINE_STATUS_LABEL[l.status] ?? l.status}
                   </Badge>

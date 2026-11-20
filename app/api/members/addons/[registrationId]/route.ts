@@ -7,7 +7,9 @@ import { withAudit } from '@/lib/audit/route'
 import { requestTenant } from '@/lib/tenancy/request-tenant'
 import { STELLR_TENANT_ID } from '@/lib/tenancy/constants'
 import { rowTenant } from '@/lib/registration/event-context'
-import { teamAudit, TEAM_ADDON_BOOK_AUDIT } from '@/lib/registration/team-audit'
+import { teamAudit, TEAM_ADDON_BOOK_AUDIT, TEAM_ADDON_CANCEL_AUDIT } from '@/lib/registration/team-audit'
+import { cancelAddonLines } from '@/lib/addons/cancel'
+import { resyncAddonInvoice } from '@/lib/addons/invoice'
 import { getEventBySlug } from '@/lib/events/repo'
 import { stripeClient } from '@/lib/stripe'
 import { reportError } from '@/lib/app-errors'
@@ -177,4 +179,38 @@ async function openOrdersFor(db: ReturnType<typeof supabaseServer>, registration
     .eq('registration_id', registrationId)
     .eq('status', 'open')
   return (data ?? []) as { id: string; payer_kind: 'group' | 'self'; payer_participant_id: string | null; total_cents: number; currency: string; pay_token: string }[]
+}
+
+const cancelSchema = z.object({ lineIds: z.array(z.string().uuid()).min(1).max(100) })
+
+// DELETE — cancel extras: { lineIds }. An organiser cancels any of the group's; anyone else
+// only their own. Each line is refunded to whoever paid for it, by its rule (Q8).
+export const DELETE = withAudit(TEAM_ADDON_CANCEL_AUDIT, cancelLines)
+
+async function cancelLines(req: Request, { params }: Ctx) {
+  const blocked = await assertNotImpersonating()
+  if (blocked) return blocked
+  const { registrationId } = await params
+  const p = await place(registrationId)
+  if (!p.ok) return p.res
+  const { db, userId, member, registration, actor } = p
+  teamAudit(req, { registrationId, tenantId: STELLR_TENANT_ID, userId })
+  const parsed = cancelSchema.safeParse(await req.json().catch(() => null))
+  if (!parsed.success) return NextResponse.json({ error: 'Choose the extras to cancel.' }, { status: 400 })
+
+  const { data } = await db
+    .from('registration_addons')
+    .select('id, participant_id')
+    .eq('registration_id', registration.id)
+    .in('id', parsed.data.lineIds)
+  const mine = (data ?? []) as { id: string; participant_id: string }[]
+  const allowed = mine.filter((l) => actor.kind === 'organiser' || (actor.kind === 'member' && l.participant_id === actor.participantId))
+  if (allowed.length !== parsed.data.lineIds.length) return NextResponse.json({ error: 'You can only cancel extras you booked or that are yours.' }, { status: 403 })
+
+  const out = await cancelAddonLines(db, stripeClient(), allowed.map((l) => l.id), {
+    reason: actor.kind === 'organiser' ? 'removed' : 'member',
+    actorMemberId: member.id,
+    onInvoiceChanged: (regId) => resyncAddonInvoice(db, regId),
+  })
+  return NextResponse.json({ ok: true, cancelled: out })
 }
