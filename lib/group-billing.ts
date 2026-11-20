@@ -6,6 +6,7 @@ import { normalizeEventRole } from '@/lib/member-enums'
 import { runAfterResponse } from '@/lib/after-response'
 import { loadPayerPeople, seatsOnInvoice } from '@/lib/group-payer'
 import { STELLR_TENANT_ID } from '@/lib/tenancy/constants'
+import { invoiceAddons, linkLinesToInvoice, settleInvoiceAddonLines, type InvoiceAddons } from '@/lib/addons/invoice-items'
 
 // What a group pays when its roster changes after registration (29 Oct 2026).
 //
@@ -53,6 +54,8 @@ const COUNT_WRITE_ATTEMPTS = 5
 
 export type GroupBillingMode = 'invoice' | 'card' | 'individual' | 'free'
 export type LedgerStatus = 'draft' | 'open' | 'paid' | 'void' | 'uncollectible'
+/** seats: the group's main invoice; additional: places added after it was paid; addons: add-ons after it was paid. */
+export type InvoiceKind = 'seats' | 'additional' | 'addons'
 
 export interface GroupInvoiceRow {
   id: string
@@ -60,13 +63,15 @@ export interface GroupInvoiceRow {
   event_slug: string | null
   stripe_invoice_id: string
   stripe_invoice_number: string | null
-  kind: 'seats' | 'additional'
+  kind: InvoiceKind
   status: LedgerStatus
   seats: number
   per_seat_cents: number
   subtotal_cents: number
   discount_cents: number
   total_cents: number
+  /** The add-on part of total_cents (lib/addons); the place part is total_cents - addons_cents. */
+  addons_cents: number
   currency: string
   coupon_id: string | null
   promotion_code: string | null
@@ -357,7 +362,7 @@ async function upsertLedger(db: Db, tenantId: string | null, row: Partial<GroupI
 
 function ledgerRowFromInvoice(
   inv: Stripe.Invoice,
-  base: { registrationId: string; eventSlug: string; kind: 'seats' | 'additional'; seats: number; perSeatCents: number },
+  base: { registrationId: string; eventSlug: string; kind: InvoiceKind; seats: number; perSeatCents: number; addonsCents?: number },
 ): Partial<GroupInvoiceRow> & { stripe_invoice_id: string } {
   return {
     registration_id: base.registrationId,
@@ -371,8 +376,14 @@ function ledgerRowFromInvoice(
     subtotal_cents: inv.subtotal ?? 0,
     discount_cents: discountCents(inv),
     total_cents: inv.total ?? 0,
+    ...(base.addonsCents != null ? { addons_cents: base.addonsCents } : {}),
     currency: inv.currency ?? 'usd',
   }
+}
+
+/** The group's main invoice: kind 'seats', or a pre-ledger invoice with no kind. */
+function isSeatsKind(kind: string | undefined): boolean {
+  return kind !== 'additional' && kind !== 'addons'
 }
 
 /**
@@ -397,7 +408,7 @@ export async function currentSeatsInvoice(
       limit: 20,
     })
     // Main invoice only (not an "additional" one), never a draft revision.
-    const candidates = found.data.filter((inv) => inv.metadata?.kind !== 'additional' && inv.status !== 'draft')
+    const candidates = found.data.filter((inv) => isSeatsKind(inv.metadata?.kind) && inv.status !== 'draft')
     invoice = candidates.find((inv) => inv.status !== 'void') ?? candidates[0] ?? null
     if (!invoice) return null
   }
@@ -414,7 +425,7 @@ export async function currentSeatsInvoice(
       query: `metadata['registrationId']:'${reg.id.replace(/'/g, '')}'`,
       limit: 20,
     }).catch(() => null)
-    invoice = found?.data.find((inv) => inv.metadata?.kind !== 'additional' && inv.status !== 'draft' && inv.status !== 'void') ?? invoice
+    invoice = found?.data.find((inv) => isSeatsKind(inv.metadata?.kind) && inv.status !== 'draft' && inv.status !== 'void') ?? invoice
   }
   let row = ledger.find((r) => r.stripe_invoice_id === invoice!.id) ?? null
   if (!row) {
@@ -447,8 +458,51 @@ interface InvoiceSpec {
   reason: string
   actor: Actor
   couponId: string | null
-  kind: 'seats' | 'additional'
+  kind: InvoiceKind
   participantIds?: string[]
+  /** Add-on lines the invoice carries (seats and addons kinds); loaded when absent. */
+  addons?: InvoiceAddons
+}
+
+/** Seats and add-ons invoices carry the group's unpaid add-on lines; an "additional places" one never does. */
+async function withAddons(db: Db, spec: InvoiceSpec): Promise<InvoiceSpec> {
+  if (spec.kind === 'additional' || spec.addons) return spec
+  return { ...spec, addons: await invoiceAddons(db, spec.reg.id, spec.reg.event_title) }
+}
+
+/** The invoice's line items: the places (unless an add-ons invoice) and each add-on. The group's code discounts the places only (Q6). */
+async function addInvoiceItems(stripe: Stripe, invoiceId: string, spec: InvoiceSpec) {
+  const lineDiscount = spec.couponId && hasAddonItems(spec) ? { discounts: [{ coupon: spec.couponId }] } : {}
+  if (spec.kind !== 'addons' && spec.seats > 0) {
+    await stripe.invoiceItems.create({
+      customer: spec.customerId,
+      invoice: invoiceId,
+      currency: spec.currency,
+      quantity: spec.seats,
+      unit_amount_decimal: Stripe.Decimal.from(spec.perSeatCents),
+      description: lineDescription(spec.reg.event_title, spec.kind === 'additional' ? 'additional' : 'seats'),
+      ...lineDiscount,
+    })
+  }
+  for (const item of spec.addons?.items ?? []) {
+    await stripe.invoiceItems.create({
+      customer: spec.customerId,
+      invoice: invoiceId,
+      currency: item.currency,
+      quantity: item.quantity,
+      unit_amount_decimal: Stripe.Decimal.from(item.unitCents),
+      description: item.description,
+    })
+  }
+}
+
+function hasAddonItems(spec: InvoiceSpec): boolean {
+  return (spec.addons?.items.length ?? 0) > 0
+}
+
+/** The invoice-level discount: only when the places are the only line (unchanged from before add-ons). */
+function invoiceDiscounts(spec: InvoiceSpec) {
+  return spec.couponId && !hasAddonItems(spec) && spec.kind !== 'addons' ? [{ coupon: spec.couponId }] : null
 }
 
 function lineDescription(eventTitle: string, kind: 'seats' | 'additional') {
@@ -465,6 +519,7 @@ function metadataFor(spec: InvoiceSpec, extra: Record<string, string> = {}): Rec
     kind: spec.kind,
     seats: String(spec.seats),
     perSeatCents: String(spec.perSeatCents),
+    ...(spec.addons?.totalCents ? { addonsCents: String(spec.addons.totalCents) } : {}),
     ...(spec.participantIds?.length ? { participantIds: spec.participantIds.join(',').slice(0, 480) } : {}),
     ...extra,
   }
@@ -482,7 +537,10 @@ async function finishAndRecord(
   const finalized = await stripe.invoices.finalizeInvoice(draftId)
   if (afterFinalize) await afterFinalize(finalized)
   await upsertLedger(db, billingTenant(spec.reg), {
-    ...ledgerRowFromInvoice(finalized, { registrationId: spec.reg.id, eventSlug: spec.reg.event_slug, kind: spec.kind, seats: spec.seats, perSeatCents: spec.perSeatCents }),
+    ...ledgerRowFromInvoice(finalized, {
+      registrationId: spec.reg.id, eventSlug: spec.reg.event_slug, kind: spec.kind, seats: spec.seats, perSeatCents: spec.perSeatCents,
+      addonsCents: spec.addons?.totalCents ?? 0,
+    }),
     coupon_id: spec.couponId,
     promotion_code: spec.couponId ? spec.reg.invoice_promotion_code : null,
     replaces_stripe_invoice_id: replaces,
@@ -494,6 +552,10 @@ async function finishAndRecord(
     await db.from('group_invoices')
       .update({ status: 'void', voided_at: new Date().toISOString() })
       .eq('stripe_invoice_id', replaces)
+  }
+  if (spec.addons?.lineIds.length) {
+    const { data: ledgerRow } = await db.from('group_invoices').select('id').eq('stripe_invoice_id', finalized.id as string).maybeSingle()
+    await linkLinesToInvoice(db, spec.addons.lineIds, (ledgerRow as { id: string } | null)?.id ?? null)
   }
   try {
     return await stripe.invoices.sendInvoice(finalized.id as string)
@@ -514,27 +576,21 @@ async function draftWithLine(stripe: Stripe, spec: InvoiceSpec, params: Stripe.I
     auto_advance: false,
     // The money-back guarantee, printed on the invoice.
     footer: GUARANTEE_RECEIPT_LINE,
-    ...(spec.couponId ? { discounts: [{ coupon: spec.couponId }] } : {}),
+    ...(invoiceDiscounts(spec) ? { discounts: invoiceDiscounts(spec)! } : {}),
     ...params,
   })
-  await stripe.invoiceItems.create({
-    customer: spec.customerId,
-    invoice: draft.id as string,
-    currency: spec.currency,
-    quantity: spec.seats,
-    unit_amount_decimal: Stripe.Decimal.from(spec.perSeatCents),
-    description: lineDescription(spec.reg.event_title, spec.kind),
-  })
+  await addInvoiceItems(stripe, draft.id as string, spec)
   return draft
 }
 
 /** A fresh invoice: the group's first, or one for places added after payment. */
-export async function createGroupInvoice(db: Db, stripe: Stripe, spec: InvoiceSpec): Promise<Stripe.Invoice> {
-  assertStellrBilling(spec.reg)
+export async function createGroupInvoice(db: Db, stripe: Stripe, specIn: InvoiceSpec): Promise<Stripe.Invoice> {
+  assertStellrBilling(specIn.reg)
+  const spec = await withAddons(db, specIn)
   const draft = await draftWithLine(stripe, spec, {
     days_until_due: 14,
     metadata: metadataFor(spec),
-    ...(spec.kind === 'additional' ? { description: spec.reason } : {}),
+    ...(spec.kind !== 'seats' ? { description: spec.reason } : {}),
   })
   return finishAndRecord(db, stripe, draft.id as string, spec, null)
 }
@@ -552,7 +608,8 @@ function replacementNote(reason: string, original: Stripe.Invoice) {
  * payable invoices. The organiser keeps the original due date while it is still
  * ahead.
  */
-async function replaceGroupInvoice(db: Db, stripe: Stripe, original: Stripe.Invoice, spec: InvoiceSpec): Promise<Stripe.Invoice> {
+async function replaceGroupInvoice(db: Db, stripe: Stripe, original: Stripe.Invoice, specIn: InvoiceSpec): Promise<Stripe.Invoice> {
+  const spec = await withAddons(db, specIn)
   const dueDate = original.due_date && original.due_date > Date.now() / 1000 ? original.due_date : null
   const draft = await draftWithLine(stripe, spec, {
     ...(dueDate ? { due_date: dueDate } : { days_until_due: 14 }),
@@ -580,8 +637,9 @@ async function replaceGroupInvoice(db: Db, stripe: Stripe, original: Stripe.Invo
  * cap on a revision chain, or a credit note on the invoice), the invoice is
  * replaced with a new one instead.
  */
-export async function reviseGroupInvoice(db: Db, stripe: Stripe, original: Stripe.Invoice, spec: InvoiceSpec): Promise<Stripe.Invoice> {
-  assertStellrBilling(spec.reg)
+export async function reviseGroupInvoice(db: Db, stripe: Stripe, original: Stripe.Invoice, specIn: InvoiceSpec): Promise<Stripe.Invoice> {
+  assertStellrBilling(specIn.reg)
+  const spec = await withAddons(db, specIn)
   let draft: Stripe.Invoice
   try {
     draft = await stripe.invoices.create({ from_invoice: { action: 'revision', invoice: original.id as string } })
@@ -603,25 +661,18 @@ export async function reviseGroupInvoice(db: Db, stripe: Stripe, original: Strip
       throw e
     }
   }
-  // Replace the copied line(s) with one per-place line at the new size.
+  // Replace the copied lines with the per-place line at the new size and the add-on lines.
   const lines = draft.lines?.data ?? []
   if (lines.length > 0) {
     await stripe.invoices.removeLines(draft.id as string, {
       lines: lines.map((l) => ({ id: l.id as string, behavior: 'delete' as const })),
     })
   }
-  await stripe.invoiceItems.create({
-    customer: spec.customerId,
-    invoice: draft.id as string,
-    currency: spec.currency,
-    quantity: spec.seats,
-    unit_amount_decimal: Stripe.Decimal.from(spec.perSeatCents),
-    description: lineDescription(spec.reg.event_title, spec.kind),
-  })
+  await addInvoiceItems(stripe, draft.id as string, spec)
   await stripe.invoices.update(draft.id as string, {
     metadata: metadataFor(spec, { replaces: original.id as string }),
     description: replacementNote(spec.reason, original),
-    discounts: spec.couponId ? [{ coupon: spec.couponId }] : '',
+    discounts: invoiceDiscounts(spec) ?? '',
     footer: GUARANTEE_RECEIPT_LINE,
   })
   return finishAndRecord(db, stripe, draft.id as string, spec, original.id as string)
@@ -1103,7 +1154,7 @@ async function settleGroupInvoice(
     })
     return 'additional'
   }
-  const perPlace = perSeatPaidCents(invoice.amount_paid ?? invoice.total ?? 0, invoiceSeats) ?? 0
+  const perPlace = perSeatPaidCents((invoice.amount_paid ?? invoice.total ?? 0) - (row?.addons_cents ?? 0), invoiceSeats) ?? 0
   const owed = (invoiceSeats - seats) * perPlace
   await alertTeam(
     `The ${reg.event_title} group registered by ${reg.teacher_email ?? 'an organiser'} paid invoice ${invoice.number ?? invoice.id} for ${plural(invoiceSeats, 'participant')} just after its roster dropped to ${seats}. Check the roster, and refund ${formatMoney(owed, currency)} in Stripe if the places really came off.`,
@@ -1425,9 +1476,9 @@ export async function voidOpenGroupInvoices(db: Db, stripe: Stripe | null, regis
  * covered participant for an "additional" one). Returns the invoice kind so
  * the webhook confirms the registration only for the main invoice.
  */
-export async function recordGroupInvoicePaid(db: Db, stripe: Stripe, invoice: Stripe.Invoice): Promise<'seats' | 'additional'> {
+export async function recordGroupInvoicePaid(db: Db, stripe: Stripe, invoice: Stripe.Invoice): Promise<InvoiceKind> {
   const registrationId = invoice.metadata?.registrationId
-  const kind: 'seats' | 'additional' = invoice.metadata?.kind === 'additional' ? 'additional' : 'seats'
+  const kind: InvoiceKind = invoice.metadata?.kind === 'additional' ? 'additional' : invoice.metadata?.kind === 'addons' ? 'addons' : 'seats'
   if (!registrationId) return kind
   const paymentIntent = await invoicePaymentIntent(stripe, invoice.id as string)
   const { data: existing } = await db.from('group_invoices').select('id, participant_ids, seats').eq('stripe_invoice_id', invoice.id as string).maybeSingle()
@@ -1449,6 +1500,10 @@ export async function recordGroupInvoicePaid(db: Db, stripe: Stripe, invoice: St
       status: 'paid', paid_at: paidAt, payment_intent_id: paymentIntent, reason: 'Group registration',
     })
   }
+  // Add-on lines the invoice carried are paid with it (lib/addons).
+  const { data: settledRow } = await db.from('group_invoices').select('id').eq('stripe_invoice_id', invoice.id as string).maybeSingle()
+  if (settledRow) await settleInvoiceAddonLines(db, (settledRow as { id: string }).id, paidAt)
+  if (kind === 'addons') return kind
   if (!paymentIntent) return kind // paid outside Stripe (e.g. a cheque marked paid): nothing to refund against
   if (kind === 'seats') {
     await db.from('registrations').update({ stripe_payment_intent_id: paymentIntent })

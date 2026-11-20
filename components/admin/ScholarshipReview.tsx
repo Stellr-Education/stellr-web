@@ -112,7 +112,6 @@ function ScholarshipDecision({
   const [memberChoice, setMemberChoice] = useState<string>(exactEmail?.id ?? (members.length === 0 ? NEW_MEMBER : ''))
   const [percent, setPercent] = useState<number | null>(null)
   const [sendEmails, setSendEmails] = useState(true)
-  const [refundMethod, setRefundMethod] = useState<'cash' | 'credit'>('cash')
   const [quote, setQuote] = useState<RefundQuote | null>(null)
   const [confirming, setConfirming] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -175,7 +174,6 @@ function ScholarshipDecision({
       eventSlug,
       memberId: memberChoice === NEW_MEMBER ? null : memberChoice,
       sendEmails,
-      refundMethod,
     })
   }
 
@@ -293,19 +291,9 @@ function ScholarshipDecision({
           ) : refunding ? (
             <>
               <p>
-                {formatUsd(quote.refundCents)} back to the student
+                {formatUsd(quote.refundCents)} back to the student, to the card they paid with
                 <span className="text-content-body"> — {quote.detail}.</span>
               </p>
-              <div className="flex flex-wrap gap-4">
-                <label className="flex items-center gap-2">
-                  <input type="radio" name="sch-refund" checked={refundMethod === 'cash'} onChange={() => setRefundMethod('cash')} />
-                  Refund to the card they paid with
-                </label>
-                <label className="flex items-center gap-2">
-                  <input type="radio" name="sch-refund" checked={refundMethod === 'credit'} onChange={() => setRefundMethod('credit')} />
-                  Stellr account credit
-                </label>
-              </div>
             </>
           ) : (
             <p className="text-content-body">{quote.detail}.</p>
@@ -346,7 +334,7 @@ function ScholarshipDecision({
             {refunding && (
               <li>
                 <strong>{formatUsd(quote!.refundCents)}</strong>{' '}
-                {refundMethod === 'cash' ? 'is refunded to their card in Stripe now.' : 'is added to their Stellr account as credit.'}
+                is refunded to their card in Stripe now.
               </li>
             )}
           </ul>
@@ -412,7 +400,6 @@ export function ScholarshipRetryRefundButton({ id }: { id: string }) {
 
 function RetryRefundButton({ id }: { id: string }) {
   const router = useRouter()
-  const [method, setMethod] = useState<'cash' | 'credit'>('cash')
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
 
@@ -423,7 +410,7 @@ function RetryRefundButton({ id }: { id: string }) {
       const res = await fetch(`/api/admin/scholarships/${id}/refund`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ method }),
+        body: JSON.stringify({}),
       })
       const data = await res.json().catch(() => null)
       if (res.ok && data?.ok) router.refresh()
@@ -436,15 +423,6 @@ function RetryRefundButton({ id }: { id: string }) {
 
   return (
     <div className="flex flex-wrap items-center gap-3">
-      <select
-        value={method}
-        onChange={(e) => setMethod(e.target.value as 'cash' | 'credit')}
-        className="rounded-control border border-line-strong bg-white px-2 py-1.5 text-input mouse:text-sm text-ink"
-        aria-label="Reimburse as"
-      >
-        <option value="cash">Refund to card</option>
-        <option value="credit">Account credit</option>
-      </select>
       <Button variant="softBlue" className="text-sm !py-2" onClick={retry} disabled={busy}>
         {busy ? 'Trying…' : 'Retry reimbursement'}
       </Button>

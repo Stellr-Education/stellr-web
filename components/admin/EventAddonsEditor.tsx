@@ -4,11 +4,13 @@ import { useEffect, useState } from 'react'
 import { Loader2, Pencil, Plus, Trash2 } from 'lucide-react'
 import { Button, Choice, Field, Input, Select, Textarea, Badge } from '@stellr/web-ui'
 import { formatAddonPrice } from '@/lib/addons/rules'
-import { KIND_LABEL, type AddonKind, type AddonRow, type AddonSettings } from '@/lib/addons/types'
+import { KIND_LABEL, type AddonKind, type AddonRow, type AddonSettings, type AddonVariant } from '@/lib/addons/types'
+import { EventAddonBookings } from './EventAddonBookings'
 
 interface AdminAddon extends AddonRow {
   taken: number
   variantIds: string[]
+  variants: AddonVariant[]
 }
 interface ProductOpt {
   id: string
@@ -400,6 +402,16 @@ export function EventAddonsEditor({ eventSlug }: { eventSlug: string }) {
               Cancel
             </Button>
           </div>
+        </div>
+      )}
+
+      {!loading && addons.length > 0 && (
+        <div className="border-t border-line pt-5">
+          <h3 className="mb-3 font-heading text-lg font-bold text-ink">Bookings</h3>
+          <EventAddonBookings
+            eventSlug={eventSlug}
+            addons={addons.map((a) => ({ id: a.id, title: a.title, kind: a.kind, status: a.status, variants: a.variants.map((v) => ({ variantId: v.variantId, label: v.label })) }))}
+          />
         </div>
       )}
     </div>

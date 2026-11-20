@@ -7,22 +7,24 @@ import { withAudit } from '@/lib/audit/route'
 import { requestTenant } from '@/lib/tenancy/request-tenant'
 import { STELLR_TENANT_ID } from '@/lib/tenancy/constants'
 import { rowTenant } from '@/lib/registration/event-context'
-import { teamAudit, TEAM_ADDON_BOOK_AUDIT } from '@/lib/registration/team-audit'
+import { teamAudit, TEAM_ADDON_BOOK_AUDIT, TEAM_ADDON_CANCEL_AUDIT } from '@/lib/registration/team-audit'
+import { cancelAddonLines } from '@/lib/addons/cancel'
+import { resyncAddonInvoice } from '@/lib/addons/invoice'
 import { getEventBySlug } from '@/lib/events/repo'
-import { sendEmail } from '@/lib/email'
 import { stripeClient } from '@/lib/stripe'
 import { reportError } from '@/lib/app-errors'
 import { actorFor, memberForClerkUser } from '@/lib/addons/access'
-import { addonPayPageUrl, bookAddons, loadBookingContext, loadOrderByToken, loadOrderLines, loadRegistrationForAddons } from '@/lib/addons/booking'
+import { bookAddons, loadBookingContext, loadOrderByToken, loadRegistrationForAddons } from '@/lib/addons/booking'
 import { createAddonCheckout } from '@/lib/addons/checkout'
-import { addonPayLinkEmail } from '@/lib/addons/emails'
+import { syncAddonInvoice } from '@/lib/addons/invoice'
+import { markInvoiceSyncDue } from '@/lib/group-billing'
+import { sendAddonPayLinks } from '@/lib/addons/notify'
 import { isRegistrationMinor } from '@/lib/registration-eligibility'
 import { LIVE_LINE_STATUSES } from '@/lib/addons/types'
 
 export const dynamic = 'force-dynamic'
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://www.stellreducation.org'
-const GUARDIAN = /parent|guardian|mother|father|mom|dad|mum/i
 
 type Ctx = { params: Promise<{ registrationId: string }> }
 
@@ -75,6 +77,10 @@ export async function GET(_req: Request, { params }: Ctx) {
       minorsGroupOnly: a.minors_group_only, requiresAddendum: a.requires_addendum, maxPerPerson: a.max_per_person,
       saleClosesAt: a.sale_closes_at, status: a.status, variants: a.variants,
     })),
+    // Orders the viewer pays: their own link, or the organiser's card order. The token is theirs.
+    orders: (await openOrdersFor(db, registration.id))
+      .filter((o) => (o.payer_kind === 'self' ? o.payer_participant_id === mine || (mine == null && actor.kind === 'organiser') : actor.kind === 'organiser'))
+      .map((o) => ({ id: o.id, payerKind: o.payer_kind, totalCents: o.total_cents, currency: o.currency, payUrl: `/register/${registration.event_slug}/addons/pay/${o.pay_token}` })),
     lines: ctx.lines.filter((l) => visible(l.participant_id)).map((l) => ({
       id: l.id, participantId: l.participant_id, addonId: l.addon_id, variantId: l.variant_id, quantity: l.quantity,
       unitPriceCents: l.unit_price_cents, currency: l.currency, payer: l.payer, groupMethod: l.group_method, status: l.status,
@@ -112,10 +118,6 @@ async function book(req: Request, { params }: Ctx) {
 
   const parsed = bookSchema.safeParse(await req.json().catch(() => null))
   if (!parsed.success) return NextResponse.json({ error: 'Choose the extras, who they’re for and who pays.' }, { status: 400 })
-  // Invoices for add-ons arrive with Phase 3.
-  if (parsed.data.payer === 'group' && parsed.data.groupMethod === 'invoice' && !process.env.ADDONS_INVOICE_ENABLED) {
-    return NextResponse.json({ error: 'Paying for extras by invoice isn’t available yet. Choose card or “each person pays”.' }, { status: 400 })
-  }
 
   const ctx = await loadBookingContext(db, registration)
   const event = await getEventBySlug(registration.event_slug).catch(() => null)
@@ -126,9 +128,24 @@ async function book(req: Request, { params }: Ctx) {
   const result = await bookAddons(db, ctx, actor, parsed.data, { bookedByMemberId: member.id, eventDate, actorLabel: `member:${member.id}` })
   if (!result.ok) return NextResponse.json({ error: result.refusals[0]?.message ?? 'Those extras couldn’t be booked.', refusals: result.refusals }, { status: result.status })
 
+  // On the group's invoice (US-20): the unpaid invoice is revised, or an add-ons invoice issued.
+  let invoiced: string | null = null
+  if (parsed.data.payer === 'group' && parsed.data.groupMethod === 'invoice') {
+    const stripe = stripeClient()
+    if (!stripe) return NextResponse.json({ error: 'Payments are not configured' }, { status: 503 })
+    try {
+      const sync = await syncAddonInvoice(db, stripe, registration.id, { memberId: member.id, label: organiserName })
+      if (sync === 'busy') await markInvoiceSyncDue(db, registration.id)
+      invoiced = sync
+    } catch (e) {
+      await reportError(e, { route: 'API members/addons invoice', db })
+      await markInvoiceSyncDue(db, registration.id)
+      invoiced = 'deferred'
+    }
+  }
+
   const back = `${SITE_URL}/account/extras/${registration.id}`
   let checkoutUrl: string | null = null
-  const linksSent: string[] = []
   const stripe = stripeClient()
   for (const order of result.orders) {
     const full = order.payToken ? await loadOrderByToken(db, order.payToken) : null
@@ -146,30 +163,54 @@ async function book(req: Request, { params }: Ctx) {
       else return NextResponse.json({ error: co.error }, { status: co.status })
       continue
     }
-    // "Each person pays": email that person (and a parent or guardian on file, for a minor) their link.
-    const person = ctx.participants.find((x) => x.id === order.participantId)
-    if (!person?.email) continue
-    try {
-      const lines = await loadOrderLines(db, order.id)
-      const msg = addonPayLinkEmail({
-        firstName: person.first_name,
-        eventTitle,
-        lines: lines.map((l) => ({ title: l.title, firstName: l.firstName, quantity: l.quantity, unitPriceCents: l.unitPriceCents, currency: l.currency })),
-        totalCents: order.totalCents,
-        currency: lines[0]?.currency ?? 'usd',
-        payUrl: addonPayPageUrl(registration.event_slug, order.payToken!),
-        closesAt: lines.map((l) => l.saleClosesAt).filter((d): d is string => !!d).sort()[0] ?? null,
-        bookedBy: organiserName,
-      })
-      const guardian =
-        isRegistrationMinor(person.date_of_birth, eventDate) && person.emergency_contact_email && GUARDIAN.test(person.emergency_contact_relationship ?? '')
-          ? [person.emergency_contact_email]
-          : []
-      await sendEmail({ to: person.email, cc: guardian.length ? guardian : undefined, subject: msg.subject, html: msg.html, text: msg.text })
-      linksSent.push(person.first_name)
-    } catch (e) {
-      await reportError(e, { route: 'API members/addons pay link', db })
-    }
   }
-  return NextResponse.json({ ok: true, checkoutUrl, linksSent, booked: result.lineIds.length })
+  // "Each person pays": each person's own link, and a parent or guardian on file for a minor.
+  const linksSent = await sendAddonPayLinks(db, {
+    eventSlug: registration.event_slug, eventTitle, eventDate, bookedBy: organiserName, participants: ctx.participants,
+    orders: result.orders, exceptParticipantId: actor.kind === 'member' ? actor.participantId : null,
+  })
+  return NextResponse.json({ ok: true, checkoutUrl, linksSent, invoiced, booked: result.lineIds.length })
+}
+
+async function openOrdersFor(db: ReturnType<typeof supabaseServer>, registrationId: string) {
+  const { data } = await db
+    .from('addon_orders')
+    .select('id, payer_kind, payer_participant_id, total_cents, currency, pay_token')
+    .eq('registration_id', registrationId)
+    .eq('status', 'open')
+  return (data ?? []) as { id: string; payer_kind: 'group' | 'self'; payer_participant_id: string | null; total_cents: number; currency: string; pay_token: string }[]
+}
+
+const cancelSchema = z.object({ lineIds: z.array(z.string().uuid()).min(1).max(100) })
+
+// DELETE — cancel extras: { lineIds }. An organiser cancels any of the group's; anyone else
+// only their own. Each line is refunded to whoever paid for it, by its rule (Q8).
+export const DELETE = withAudit(TEAM_ADDON_CANCEL_AUDIT, cancelLines)
+
+async function cancelLines(req: Request, { params }: Ctx) {
+  const blocked = await assertNotImpersonating()
+  if (blocked) return blocked
+  const { registrationId } = await params
+  const p = await place(registrationId)
+  if (!p.ok) return p.res
+  const { db, userId, member, registration, actor } = p
+  teamAudit(req, { registrationId, tenantId: STELLR_TENANT_ID, userId })
+  const parsed = cancelSchema.safeParse(await req.json().catch(() => null))
+  if (!parsed.success) return NextResponse.json({ error: 'Choose the extras to cancel.' }, { status: 400 })
+
+  const { data } = await db
+    .from('registration_addons')
+    .select('id, participant_id')
+    .eq('registration_id', registration.id)
+    .in('id', parsed.data.lineIds)
+  const mine = (data ?? []) as { id: string; participant_id: string }[]
+  const allowed = mine.filter((l) => actor.kind === 'organiser' || (actor.kind === 'member' && l.participant_id === actor.participantId))
+  if (allowed.length !== parsed.data.lineIds.length) return NextResponse.json({ error: 'You can only cancel extras you booked or that are yours.' }, { status: 403 })
+
+  const out = await cancelAddonLines(db, stripeClient(), allowed.map((l) => l.id), {
+    reason: actor.kind === 'organiser' ? 'removed' : 'member',
+    actorMemberId: member.id,
+    onInvoiceChanged: (regId) => resyncAddonInvoice(db, regId),
+  })
+  return NextResponse.json({ ok: true, cancelled: out })
 }

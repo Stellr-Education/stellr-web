@@ -157,7 +157,7 @@ describe("C20b: Stellr's applications answer as before", () => {
     expect(await res.json()).toEqual({ ok: true, registrationId: 'reg-new', emailedTo: ['a@example.com'], refund: null })
     expect(h.offerScholarship).toHaveBeenCalledWith(
       expect.anything(),
-      expect.objectContaining({ applicationId: APP_ID, percent: 50, eventSlug: 'colorado', sendEmails: false, refundMethod: 'cash' }),
+      expect.objectContaining({ applicationId: APP_ID, percent: 50, eventSlug: 'colorado', sendEmails: false }),
     )
   })
 

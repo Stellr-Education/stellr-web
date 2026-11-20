@@ -227,9 +227,7 @@ export default async function ScholarshipApplicationPage({ params }: { params: P
                       ? 'Nothing to reimburse — they had paid no more than the scholarship price.'
                       : refund.type === 'cash'
                         ? `${formatUsd(refund.refundCents)} refunded to their card in Stripe.`
-                        : refund.type === 'credit'
-                          ? `${formatUsd(refund.refundCents)} added to their account as credit.`
-                          : `${refund.refundCents > 0 ? formatUsd(refund.refundCents) + ' still' : 'Still'} to reimburse manually — ${refund.note ?? 'the refund did not go through'}.`}
+                        : `${refund.refundCents > 0 ? formatUsd(refund.refundCents) + ' still' : 'Still'} to reimburse manually — ${refund.note ?? 'the refund did not go through'}.`}
                   </p>
                 )}
                 {refund?.type === 'manual_required' && <ScholarshipRetryRefundButton id={app.id} />}

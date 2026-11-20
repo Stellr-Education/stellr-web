@@ -103,13 +103,6 @@ vi.mock('@/lib/auto-membership-grant', async () => {
   const { rec } = await import('@/test/registration/fixtures')
   return { autoGrantBaseMembership: async () => { rec.event('hook autoGrantBaseMembership') } }
 })
-vi.mock('@/lib/store/event-merch', async () => {
-  const { rec } = await import('@/test/registration/fixtures')
-  return {
-    prepareRegistrationAddons: async () => { rec.event('hook prepareRegistrationAddons'); return [] },
-    addRegistrationAddons: async () => { rec.event('hook addRegistrationAddons') },
-  }
-})
 vi.mock('@/lib/registration-confirm', () => ({ confirmRegistration: async () => {} }))
 vi.mock('@/lib/registration-pay-link', async () => {
   const { rec } = await import('@/test/registration/fixtures')
@@ -163,7 +156,6 @@ function happyWrites(withLogin: boolean) {
     'hook autoGrantBaseMembership',
     'hook dispatchAgreement',
     ...(withLogin ? ['update members'] : []),
-    'hook prepareRegistrationAddons',
   ]
 }
 
@@ -214,7 +206,6 @@ describe('characterisation: POST /api/register/individual — a member already o
     'hook recordEventParticipation',
     'hook autoGrantBaseMembership',
     'hook dispatchAgreement',
-    'hook prepareRegistrationAddons',
   ]
 
   it.each([
@@ -558,8 +549,7 @@ describe('characterisation: POST /api/register/individual — rows written', () 
       'hook autoGrantBaseMembership',
       'hook dispatchAgreement',
       'update members',
-      'hook prepareRegistrationAddons',
-    ])
+      ])
   })
 
   it('the registration row: server title, pending, free, with a pay token', async () => {

@@ -128,7 +128,6 @@ async function registerForCohort(req: Request) {
     type: 'entitlement_booking',
     memberId: member.id,
     offeringId,
-    creditAppliedCents: '0',
   }
   // deep review PAY-15: refuse to take money on a production deployment holding
   // TEST keys — a test-mode charge looks successful and settles nothing. No-op on

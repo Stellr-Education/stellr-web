@@ -359,7 +359,6 @@
     "lib/object-roles.ts",
     "lib/refunds/execute.ts",
     "lib/refunds/preview.ts",
-    "lib/refunds/redeem.ts",
     "lib/registration-confirm.ts",
     "lib/registration-prefill.ts",
     "lib/resource-admin.ts",

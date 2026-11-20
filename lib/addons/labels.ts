@@ -15,3 +15,12 @@ export const PAYER_LABEL: Record<string, string> = {
   included: 'Waived',
   offline: 'Paid offline',
 }
+
+/** The full FR-5a message: what, why, and what to do. */
+export function minorIndividualMessage(addonTitle: string): string {
+  return (
+    `${addonTitle} is only available to students under 18 who are travelling with a school or group. ` +
+    'An overnight stay needs a responsible adult from the student’s own group. ' +
+    'To book it, join or register with a school or group for this event, or contact Stellr and we’ll help arrange it.'
+  )
+}

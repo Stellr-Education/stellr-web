@@ -111,7 +111,7 @@ export interface OfferEmailInput {
    */
   alreadyPaid?: boolean
   /** The reimbursement made (or owed) for an already-paid student. */
-  refund?: { method: 'cash' | 'credit' | 'manual' | 'none'; cents: number } | null
+  refund?: { method: 'cash' | 'manual' | 'none'; cents: number } | null
   /** No completed consent form (DocuSign) on the registration yet. */
   consentOutstanding?: boolean
 }
@@ -139,9 +139,6 @@ function refundLine(input: OfferEmailInput): string {
   const amount = r ? formatUsd(r.cents) : ''
   if (r?.method === 'cash' && r.cents > 0) {
     return `You’d already registered and paid, so we’ve refunded ${amount} to the card you paid with. It usually shows within 5–10 business days.`
-  }
-  if (r?.method === 'credit' && r.cents > 0) {
-    return `You’d already registered and paid, so we’ve added a ${amount} credit to your Stellr account for a future event or membership.`
   }
   if (r?.method === 'manual') {
     return r.cents > 0

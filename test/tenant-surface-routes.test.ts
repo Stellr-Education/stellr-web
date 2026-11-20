@@ -49,7 +49,8 @@ const MANIFEST_CLASS_COUNTS: Record<RouteClass, number> = {
   // +1 tenant_crew: admin events/[slug]/participants/[pid]/guardian-consent/resend (wave 8 CONSENT (c))
   // +2 tenant_crew, +1 participant on 17 Nov 2026: admin registrations/[id]/{receipt,paid-invoice}, members/billing/paid-invoice
   // +3 tenant_crew: admin events/[slug]/addons, addons/[id], addons/settings (event add-ons, 17 Nov)
-  tenant_crew: 51,
+  // +1 tenant_crew: admin events/[slug]/addons/bookings (event add-ons staff tools, 17 Nov)
+  tenant_crew: 52,
   // +2 on 17 Nov 2026: members/addons/[registrationId] and account/extras/[registrationId] (event add-ons)
   participant: 134,
   // +6 on 16 Nov 2026: the Classroom Qualifier hub, its two window pages, the library and the teacher stories list and detail.
@@ -75,7 +76,8 @@ const MANIFEST_CLASS_COUNTS: Record<RouteClass, number> = {
 // +1 on 16 Nov 2026: admin events/[slug]/participants/[pid]/guardian-consent/resend, the staff resend of a guardian's consent form (tenant_crew, denied on tenant hosts like every admin route).
 // +3 on 17 Nov 2026: payment documents, admin registrations/[id]/receipt and paid-invoice (tenant_crew, denied on tenant hosts like every admin route) and members/billing/paid-invoice (participant, pending like the other member routes).
 // +7 on 17 Nov 2026: event add-ons (3 admin, 2 member, 2 pay link; members/addons pending like every member API, the rest denied).
-const MANIFEST_TOTAL = 527
+// +1 on 17 Nov 2026: admin events/[slug]/addons/bookings (tenant_crew, denied on tenant hosts like every admin route).
+const MANIFEST_TOTAL = 528
 
 // The decisions. Moving a route between them is a deliberate diff here.
 const DECISION_COUNTS: Record<TenantSurfaceDecision, number> = {
@@ -85,7 +87,7 @@ const DECISION_COUNTS: Record<TenantSurfaceDecision, number> = {
   // files pinned under 'routes held back' below
   pending: 51,
   bypass: 4,
-  deny: 422,
+  deny: 423,
 }
 
 /** A concrete URL a manifest file serves, with sample values for its params. */

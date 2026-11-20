@@ -37,11 +37,9 @@ export function ScholarshipHistory({
                 <p className="text-xs text-content-body mt-0.5">
                   {s.refund.type === 'cash'
                     ? `${formatUsd(s.refund.cents)} refunded to the card`
-                    : s.refund.type === 'credit'
-                      ? `${formatUsd(s.refund.cents)} added as account credit`
-                      : audience === 'admin'
-                        ? `${formatUsd(s.refund.cents)} reimbursement needs doing manually`
-                        : `${formatUsd(s.refund.cents)} reimbursement being arranged`}
+                    : audience === 'admin'
+                      ? `${formatUsd(s.refund.cents)} reimbursement needs doing manually`
+                      : `${formatUsd(s.refund.cents)} reimbursement being arranged`}
                 </p>
               )}
             </div>

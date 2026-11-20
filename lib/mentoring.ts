@@ -9,7 +9,8 @@
 // (membership_tiers.includes_free_mentoring); credits are a per-tier annual grant
 // (membership_tiers.mentoring_credits_grant), 1 credit = 1 cohort enrollment;
 // unused credits roll over (allowance rows are never expired); paid top-ups are
-// allowed; cohort cancellation refunds the spent credit as account credit.
+// allowed; cohort cancellation restores the spent credit, and a paid booking is
+// refunded to the card.
 import 'server-only'
 import { STELLR_TENANT_ID } from '@/lib/tenancy/constants'
 import { supabaseServer } from '@/lib/supabase'
@@ -667,7 +668,7 @@ export async function deleteCohort(cohortId: string): Promise<void> {
   // a count error throws rather than letting the cascade proceed.
   await assertCohortDeletable(db, cohortId)
   // Refund spent enrollments BEFORE deleting — restore drawn allocations + refund
-  // paid bookings to account credit via the entitlements ledger (the offering and
+  // paid bookings to the card (lib/entitlements.ts cancelCohortViaLedger; the offering and
   // its bookings vanish when the cohort row is deleted).
   await cancelCohortViaLedger(cohortId)
   // FK cascades remove cohort_members, sessions, actions, training links.

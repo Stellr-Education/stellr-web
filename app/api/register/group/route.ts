@@ -17,6 +17,10 @@ import {
   saveGroupMembers,
 } from '@/lib/registration/group/persist'
 import { respondToGroupRegistration } from '@/lib/registration/group/respond'
+import { bookExtrasAtRegistration, type ExtrasOutcome } from '@/lib/addons/registration'
+import { syncAddonInvoice } from '@/lib/addons/invoice'
+import { markInvoiceSyncDue } from '@/lib/group-billing'
+import { stripeClient } from '@/lib/stripe'
 import { reportError, responseError } from '@/lib/app-errors'
 import {
   provisionRegistrantLogin,
@@ -103,6 +107,7 @@ export async function POST(req: NextRequest) {
       additional_adults,
       students,
       school_dpa_agreed,
+      extras,
     } = body
     // deep review REG-3 / REG-4: event_title and campaign status come from the
     // server event (resolved in the gate), never from the client body. Both are
@@ -200,7 +205,15 @@ export async function POST(req: NextRequest) {
 
     scheduleGroupFollowUp(group, fields, regId, participants, requestStartedAt)
 
-    return answer(await respondToGroupRegistration(group, fields, saved.registration, members, participants, signInToken, getEventBySlug))
+    // Extras chosen on the form (lib/addons): booked before the invoice is issued, so an
+    // invoiced group's extras go on it. Never fatal; refusals go back to the form.
+    const extrasOutcome = extras
+      ? await bookGroupExtras(saved.registration.regId, registrant_role, extras, teacher)
+      : null
+    const res = await respondToGroupRegistration(group, fields, saved.registration, members, participants, signInToken, getEventBySlug)
+    if (!extrasOutcome) return answer(res)
+    if (extrasOutcome.invoiced) await issueAddonInvoiceIfNeeded(saved.registration.regId)
+    return answer(await withExtras(res, extrasOutcome))
   } catch (e) {
     console.error('Group registration error:', e)
     await reportError(e, { route: ERROR_ROUTE })
@@ -209,4 +222,42 @@ export async function POST(req: NextRequest) {
   } finally {
     await recordRegistration(note)
   }
+}
+
+/** Book the organiser's chosen extras for the people on the roster (lib/addons/registration.ts). */
+async function bookGroupExtras(registrationId: string, registrantRole: string, extras: unknown, teacher: unknown): Promise<ExtrasOutcome> {
+  try {
+    const t = (teacher ?? {}) as { first_name?: string; last_name?: string }
+    return await bookExtrasAtRegistration(supabaseServer(), {
+      registrationId,
+      actor: { kind: 'organiser', role: registrantRole === 'student_manager' ? 'student_manager' : 'teacher' },
+      choice: extras,
+      bookedBy: [t.first_name, t.last_name].filter(Boolean).join(' ') || 'Your group’s organizer',
+      bookedByMemberId: null,
+    })
+  } catch (e) {
+    await reportError(e, { route: `${ERROR_ROUTE} extras` })
+    return { booked: 0, refusals: [{ code: 'extras_failed', message: 'Your group is registered, but its extras couldn’t be booked. Add them from your account.' }], payLinksSent: [], invoiced: false }
+  }
+}
+
+/** A group whose places aren't invoiced still gets its extras on an add-ons invoice (Q5); an invoiced one already has them. */
+async function issueAddonInvoiceIfNeeded(registrationId: string) {
+  const stripe = stripeClient()
+  if (!stripe) return
+  try {
+    const sync = await syncAddonInvoice(supabaseServer(), stripe, registrationId, { memberId: null, label: 'registration' })
+    if (sync === 'busy') await markInvoiceSyncDue(supabaseServer(), registrationId)
+  } catch (e) {
+    await reportError(e, { route: `${ERROR_ROUTE} extras invoice` })
+    await markInvoiceSyncDue(supabaseServer(), registrationId)
+  }
+}
+
+/** The registration's answer, with what happened to its extras added. */
+async function withExtras(res: Response, extras: ExtrasOutcome): Promise<Response> {
+  if (!res.ok) return res
+  const json = await res.clone().json().catch(() => null)
+  if (!json || typeof json !== 'object') return res
+  return NextResponse.json({ ...json, extras }, { status: res.status, headers: res.headers })
 }

@@ -5,7 +5,7 @@ import { Loader2 } from 'lucide-react'
 import { Badge, Button, Choice, Fieldset, Select } from '@stellr/web-ui'
 import Link from '@/components/ui/SiteLink'
 import { formatAddonPrice } from '@/lib/addons/rules'
-import { LINE_STATUS_LABEL, PAYER_LABEL } from '@/lib/addons/labels'
+import { LINE_STATUS_LABEL, PAYER_LABEL, minorIndividualMessage } from '@/lib/addons/labels'
 import { KIND_LABEL, type AddonKind, type AddonVariant } from '@/lib/addons/types'
 
 interface Person { id: string; firstName: string; lastName: string; adult: boolean; minor: boolean }
@@ -15,7 +15,9 @@ interface Addon {
   requiresAddendum: boolean; maxPerPerson: number; saleClosesAt: string | null; status: string; variants: AddonVariant[]
 }
 interface Line { id: string; participantId: string; addonId: string; variantId: string | null; quantity: number; unitPriceCents: number; currency: string; payer: string; status: string; live: boolean }
+interface Order { id: string; payerKind: 'group' | 'self'; totalCents: number; currency: string; payUrl: string }
 interface Data {
+  orders?: Order[]
   registration: { id: string; type: string; status: string; eventSlug: string; eventTitle: string | null }
   actor: { kind: 'organiser'; role: string } | { kind: 'member'; participantId: string }
   participants: Person[]
@@ -24,8 +26,7 @@ interface Data {
 }
 interface Choice2 { people: string[]; variantId: string; quantity: number }
 
-const MINOR_RULE = (title: string) =>
-  `${title} is only available to students under 18 who are travelling with a school or group. An overnight stay needs a responsible adult from the student’s own group. To book it, join or register with a school or group for this event, or contact Stellr and we’ll help arrange it.`
+const MINOR_RULE = minorIndividualMessage
 
 /**
  * Add extras to a registration (US-9 to US-17a). Organisers tick people per extra and
@@ -38,6 +39,7 @@ export function AddExtras({ registrationId, paid, cancelled }: { registrationId:
   const [loadError, setLoadError] = useState<string | null>(null)
   const [choices, setChoices] = useState<Record<string, Choice2>>({})
   const [payer, setPayer] = useState<'group' | 'self'>('self')
+  const [groupMethod, setGroupMethod] = useState<'card' | 'invoice'>('card')
   const [busy, setBusy] = useState(false)
   const [errors, setErrors] = useState<string[]>([])
   const [notice, setNotice] = useState<string | null>(paid ? 'Payment received. Your extras are booked; a receipt is on its way.' : cancelled ? 'Nothing was charged. Your extras are still held until their cut-off.' : null)
@@ -54,6 +56,7 @@ export function AddExtras({ registrationId, paid, cancelled }: { registrationId:
   }, []) // eslint-disable-line react-hooks/exhaustive-deps -- load once for this registration
 
   const organiser = data?.actor.kind === 'organiser'
+  const isStudentManager = data?.actor.kind === 'organiser' && data.actor.role === 'student_manager'
   const isGroup = data?.registration.type === 'group'
   const people = data?.participants ?? []
   const nameOf = (id: string) => people.find((p) => p.id === id)?.firstName ?? ''
@@ -106,7 +109,7 @@ export function AddExtras({ registrationId, paid, cancelled }: { registrationId:
     const res = await fetch(`/api/members/addons/${registrationId}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ items, payer, groupMethod: payer === 'group' ? 'card' : null }),
+      body: JSON.stringify({ items, payer, groupMethod: payer === 'group' ? groupMethod : null }),
     })
     const json = await res.json().catch(() => ({}))
     setBusy(false)
@@ -120,9 +123,37 @@ export function AddExtras({ registrationId, paid, cancelled }: { registrationId:
     }
     setChoices({})
     setNotice(
-      json.linksSent?.length
+      json.invoiced
+        ? 'Booked. The extras are on your group’s invoice: an unpaid invoice is updated and emailed again, or a new invoice for the extras is emailed.'
+        : json.linksSent?.length
         ? `Booked. We’ve emailed a pay link to ${json.linksSent.join(', ')}. Each place is held until the extra’s cut-off.`
         : 'Booked.',
+    )
+    load()
+  }
+
+  const cancelLine = async (l: Line) => {
+    const title = addonOf(l.addonId)?.title ?? 'this extra'
+    if (!confirm(`Cancel ${title}${organiser ? ` for ${nameOf(l.participantId)}` : ''}? If it was paid and is still within its refund date, it’s refunded to whoever paid for it.`)) return
+    setBusy(true)
+    setErrors([])
+    const res = await fetch(`/api/members/addons/${registrationId}`, {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ lineIds: [l.id] }),
+    })
+    const json = await res.json().catch(() => ({}))
+    setBusy(false)
+    if (!res.ok) return setErrors([json.error ?? 'That extra couldn’t be cancelled.'])
+    const r = json.cancelled?.[0]
+    setNotice(
+      r?.outcome === 'refunded'
+        ? `Cancelled. ${formatAddonPrice(r.refundCents, l.currency)} is being refunded to the card it was paid with.`
+        : r?.outcome === 'not_refundable'
+          ? 'Cancelled. It was past its refund date, so nothing is refunded.'
+          : r?.outcome === 'manual_required'
+            ? 'Cancelled. Stellr will arrange the refund and be in touch.'
+            : 'Cancelled.',
     )
     load()
   }
@@ -146,6 +177,20 @@ export function AddExtras({ registrationId, paid, cancelled }: { registrationId:
 
       {notice && <p role="status" className="rounded-control border border-line bg-white px-4 py-3 text-sm text-content-body">{notice}</p>}
 
+      {(data.orders ?? []).length > 0 && (
+        <section className="rounded-ds-card border border-line bg-white p-5">
+          <h2 className="font-heading text-lg font-bold text-ink">To pay</h2>
+          <ul className="mt-2 space-y-2">
+            {(data.orders ?? []).map((o) => (
+              <li key={o.id} className="flex flex-wrap items-center justify-between gap-2 text-sm">
+                <span className="text-content-body">{o.payerKind === 'group' ? 'Your group’s extras' : 'Extras'}: {formatAddonPrice(o.totalCents, o.currency)}</span>
+                <Link href={o.payUrl} className="btn-primary text-sm">Pay now</Link>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
       {myLines.length > 0 && (
         <section>
           <h2 className="mb-3 font-heading text-xl font-bold text-ink">Booked</h2>
@@ -159,6 +204,11 @@ export function AddExtras({ registrationId, paid, cancelled }: { registrationId:
                 </span>
                 <span className="flex items-center gap-2">
                   <span className="text-content-muted">{PAYER_LABEL[l.payer] ?? ''}</span>
+                  {l.live && (
+                    <button type="button" onClick={() => cancelLine(l)} className="text-xs font-medium text-danger hover:underline" disabled={busy}>
+                      Cancel
+                    </button>
+                  )}
                   <Badge className={l.status === 'confirmed' ? 'bg-primary-soft text-primary-deep' : 'bg-surface text-content-body'}>
                     {LINE_STATUS_LABEL[l.status] ?? l.status}
                   </Badge>
@@ -256,7 +306,18 @@ export function AddExtras({ registrationId, paid, cancelled }: { registrationId:
             <div className="space-y-4 rounded-ds-card border border-line bg-surface p-5">
               {organiser && (
                 <Fieldset legend="Who pays?">
-                  <Choice type="radio" name="payer" checked={payer === 'group'} onChange={() => setPayer('group')} label="I pay now by card, for everyone chosen" />
+                  <Choice type="radio" name="payer" checked={payer === 'group' && groupMethod === 'card'} onChange={() => { setPayer('group'); setGroupMethod('card') }} label="I pay now by card, for everyone chosen" />
+                  <Choice
+                    type="radio"
+                    name="payer"
+                    disabled={isStudentManager}
+                    checked={payer === 'group' && groupMethod === 'invoice'}
+                    onChange={() => { setPayer('group'); setGroupMethod('invoice') }}
+                    label="Add them to our school’s invoice"
+                  />
+                  {isStudentManager && (
+                    <p className="ml-8 text-xs text-content-muted">Extras go on your school’s invoice only with your teacher’s agreement. Ask your teacher to add them.</p>
+                  )}
                   <Choice type="radio" name="payer" checked={payer === 'self'} onChange={() => setPayer('self')} label="Each person pays: we email them a link to pay for their own" />
                 </Fieldset>
               )}
@@ -268,7 +329,11 @@ export function AddExtras({ registrationId, paid, cancelled }: { registrationId:
               )}
               <Button onClick={submit} disabled={busy}>
                 {busy && <Loader2 className="h-4 w-4 animate-spin" />}
-                {payer === 'group' || !organiser ? (total > 0 ? 'Continue to payment' : 'Book') : 'Book and send pay links'}
+                {payer === 'group' && groupMethod === 'invoice'
+                  ? 'Add to the invoice'
+                  : payer === 'group' || !organiser
+                    ? (total > 0 ? 'Continue to payment' : 'Book')
+                    : 'Book and send pay links'}
               </Button>
             </div>
           )}

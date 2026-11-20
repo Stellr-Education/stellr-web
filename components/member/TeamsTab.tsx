@@ -536,6 +536,12 @@ function TeacherTeamsView({ readOnly }: { readOnly: boolean }) {
                     code box of its own. Keyed on how the group pays, so a move to
                     invoice shows it straight away. */}
                 <GroupDiscountCode key={`${team.id}-${team.invoice_requested}`} registrationId={team.id} />
+                {/* Extras (lib/addons): accommodation, tours and merch for the group. A full page load: the account may show sign-in. */}
+                <p className="text-sm">
+                  <a href={`/account/extras/${team.id}`} className="font-medium text-primary-deep hover:underline">
+                    Extras for this group: book, pay or cancel
+                  </a>
+                </p>
 
                 {/* Join link — shown for every group, not just the email-link
                     method, so the organiser can always hand it to a member. The

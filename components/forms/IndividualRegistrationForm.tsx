@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useMemo, useRef, useCallback, useId, type RefObject } from 'react'
+import { useState, useEffect, useMemo, useRef, useCallback, type RefObject } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { MemberEmailFields, emailPairError } from '@/components/forms/MemberEmailFields'
@@ -19,6 +19,9 @@ import { authPath } from '@/lib/auth-path'
 import { ageFromDob } from '@/lib/utils'
 import { OnFilePrompt, needsAnAdultToRegister } from '@/components/forms/OnFilePrompt'
 import type { RegistrationPrefill } from '@/lib/registration-prefill'
+import { RegistrationExtras, EMPTY_EXTRAS, type ExtrasValue } from '@/components/forms/RegistrationExtras'
+import type { PublicAddon } from '@/lib/addons/types'
+import { isKnownMinorOn } from '@/lib/age'
 
 export interface ScholarshipFormOffer {
   token: string
@@ -121,7 +124,7 @@ export default function IndividualRegistrationForm({
   eventSlug,
   eventTitle,
   prefill,
-  addons = [],
+  extras = null,
   gradeMin = DEFAULT_GRADE_BAND.min,
   gradeMax = DEFAULT_GRADE_BAND.max,
   scholarship = null,
@@ -137,7 +140,8 @@ export default function IndividualRegistrationForm({
   gradeMin?: number
   gradeMax?: number
   prefill?: RegistrationPrefill | null
-  addons?: { variantId: string; name: string; unitCents: number }[]
+  /** The event's extras (lib/addons) and whether merch is promoted; null when none are offered. */
+  extras?: { addons: PublicAddon[]; settings: { merchUpsell: boolean } } | null
   /**
    * Arrived from a scholarship offer email: the token links this registration
    * to the offer, and the name/email seed the form for a student who isn't
@@ -162,7 +166,7 @@ export default function IndividualRegistrationForm({
   )
   const isAdult = registrantType === 'adult'
   const [step, setStep] = useState(1)
-  const [merchQty, setMerchQty] = useState<Record<string, number>>({})
+  const [extrasValue, setExtrasValue] = useState<ExtrasValue>(EMPTY_EXTRAS)
   const [submitting, setSubmitting] = useState(false)
   // Submit outcome. 'info' is the "we've emailed you a link" answer to an
   // unfinished registration — not a failure, so it isn't painted red.
@@ -175,7 +179,6 @@ export default function IndividualRegistrationForm({
   const [schoolError, setSchoolError] = useState<string | null>(null)
   const formRef = useRef<HTMLFormElement>(null)
   const focusFirstInvalid = useFocusFirstInvalid(formRef)
-  const merchIdPrefix = useId()
   const router = useRouter()
   const { signIn, setActive, isLoaded: signInLoaded } = useSignIn()
   const { isSignedIn } = useAuth()
@@ -322,10 +325,9 @@ export default function IndividualRegistrationForm({
             age_bracket === 'High School' ? 'School Student'
             : age_bracket === 'College' ? 'Mentor'
             : 'Adult',
-          // Paid merch add-ons selected during registration (collected at the event).
-          merch_addons: Object.entries(merchQty)
-            .filter(([, q]) => q > 0)
-            .map(([variantId, qty]) => ({ variantId, qty })),
+          // Extras chosen here (lib/addons): booked once the place is saved, paid by
+          // the registrant's own link right after the place.
+          ...(extrasValue.items.length ? { extras: { items: extrasValue.items, payer: 'self' } } : {}),
         }),
       })
 
@@ -632,34 +634,15 @@ export default function IndividualRegistrationForm({
             </Field>
           </div>
 
-          {addons.length > 0 && (
-            <div className="bg-white rounded-xl border border-line p-6 space-y-4">
-              <h3 className="font-semibold text-brand-blue-dark">Add Merchandise (optional)</h3>
-              <p className="text-xs text-content-faint -mt-2">Collect these in person when you check in at the event.</p>
-              {addons.map((a) => {
-                const qtyId = `${merchIdPrefix}-${a.variantId}`
-                return (
-                  <div key={a.variantId} className="flex items-center justify-between gap-3">
-                    <label htmlFor={qtyId} className="text-sm">
-                      <span className="text-ink">{a.name}</span>
-                      <span className="text-content-muted"> — ${(a.unitCents / 100).toFixed(2)}</span>
-                    </label>
-                    <div className="w-20 shrink-0">
-                      <Input
-                        id={qtyId}
-                        type="number"
-                        inputMode="numeric"
-                        min={0}
-                        value={merchQty[a.variantId] ?? 0}
-                        onChange={(e) =>
-                          setMerchQty((m) => ({ ...m, [a.variantId]: Math.max(0, Math.floor(Number(e.target.value) || 0)) }))
-                        }
-                      />
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
+          {extras && (
+            <RegistrationExtras
+              addons={extras.addons}
+              merchUpsell={extras.settings.merchUpsell}
+              mode="individual"
+              people={[{ key: 'self', label: 'You', adult: isAdult, minor: !isAdult && isKnownMinorOn(dob) }]}
+              value={extrasValue}
+              onChange={setExtrasValue}
+            />
           )}
 
           {notice && (

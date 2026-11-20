@@ -24,8 +24,6 @@ const schema = z.object({
   eventSlug: z.string().min(1, 'Choose an event'),
   memberId: z.guid().nullable().optional(),
   sendEmails: z.boolean().default(true),
-  /** Already paid: card refund (default) or account credit. */
-  refundMethod: z.enum(['cash', 'credit']).default('cash'),
 })
 
 type Args = [Request, { params: Promise<{ id: string }> }]
@@ -44,7 +42,7 @@ async function offer(req: Request, { params }: { params: Promise<{ id: string }>
     return NextResponse.json({ error: parsed.error.issues[0]?.message ?? 'Invalid request' }, { status: 400 })
   }
   const { id } = await params
-  const { percent, eventSlug, memberId, sendEmails, refundMethod } = parsed.data
+  const { percent, eventSlug, memberId, sendEmails } = parsed.data
   if (!isScholarshipPercent(percent)) return NextResponse.json({ error: 'Choose a scholarship level' }, { status: 400 })
 
   const db = supabaseServer()
@@ -53,7 +51,7 @@ async function offer(req: Request, { params }: { params: Promise<{ id: string }>
   // The event the offer registers the student for, which the reviewer chose.
   const foreign = await refuseUnlessStellrScholarshipEvent(db, eventSlug, ROUTE)
   if (foreign) return foreign
-  noteAuditSubject(req, { userId: reviewer.clerkUserId, tenantId: STELLR_TENANT_ID, id, eventSlug, detail: { percent, sendEmails, refundMethod } })
+  noteAuditSubject(req, { userId: reviewer.clerkUserId, tenantId: STELLR_TENANT_ID, id, eventSlug, detail: { percent, sendEmails } })
 
   const result = await offerScholarship(db, {
     applicationId: id,
@@ -62,10 +60,9 @@ async function offer(req: Request, { params }: { params: Promise<{ id: string }>
     memberId: memberId ?? null,
     reviewer,
     sendEmails,
-    refundMethod,
   })
   if (!result.ok) return NextResponse.json({ error: result.error }, { status: result.status })
-  noteAuditSubject(req, { detail: { percent, sendEmails, refundMethod, registrationId: result.registrationId ?? null } })
+  noteAuditSubject(req, { detail: { percent, sendEmails, registrationId: result.registrationId ?? null } })
   return NextResponse.json({
     ok: true,
     registrationId: result.registrationId,

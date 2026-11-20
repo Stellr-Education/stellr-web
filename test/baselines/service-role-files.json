@@ -157,6 +157,10 @@
       "class": "convert",
       "reason": "event add-ons pay link: the token is the only key (no session), as the pay-seat page; Stellr's orders only"
     },
+    "app/(stellr)/(flow)/register/[slug]/confirmation/confirmation-body.tsx": {
+      "class": "convert",
+      "reason": "event add-ons: a count of a registration's open add-on orders by its opaque id, no rows shown (the pay links stay off this tracked page); Stellr's page only"
+    },
     "app/(stellr)/(flow)/register/[slug]/individual/individual-body.tsx": {
       "class": "convert",
       "reason": "The individual registration page's body, moved here unchanged from its page.tsx by S5 B5b so a tenant page can reuse it without the tracking. Reads the scholarship offer and event add-ons signed out, with no session to scope them. Same access as before the move, for the area conversion to decide."
@@ -528,6 +532,10 @@
     "app/api/admin/events/[slug]/addons/[id]/route.ts": {
       "class": "convert",
       "reason": "Stellr-only admin route (stellrOnlyDb after stellrOnlyEvent): the event add-ons catalogue, as the merch offerings route; tenantDb when add-ons open to tenants"
+    },
+    "app/api/admin/events/[slug]/addons/bookings/route.ts": {
+      "class": "convert",
+      "reason": "Stellr-only admin route (stellrOnlyDb after stellrOnlyEvent): event add-on bookings for staff; every line is checked to be this event's; tenantDb when add-ons open to tenants"
     },
     "app/api/admin/events/[slug]/addons/route.ts": {
       "class": "convert",
@@ -1596,10 +1604,6 @@
     "lib/refunds/preview.ts": {
       "class": "convert",
       "reason": "auto: touches tenant or event-scoped tables; tables: event_refunds, participants"
-    },
-    "lib/refunds/redeem.ts": {
-      "class": "convert",
-      "reason": "auto: reaches tables it does not name (dynamic .from, rpc, or a client passed to a helper); review before converting; tables: account_credits, credit_redemptions"
     },
     "lib/registration-confirm.ts": {
       "class": "convert",

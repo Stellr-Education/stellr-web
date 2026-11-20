@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { prepareRegistrationAddons, addRegistrationAddons } from '@/lib/store/event-merch'
+import { bookExtrasAtRegistration, type ExtrasOutcome } from '@/lib/addons/registration'
 import { stripeClient } from '@/lib/stripe'
 import { createRegistrationCheckout, RegistrationCheckoutError, payPageUrl } from '@/lib/registration-checkout'
 import { sendPayLinkEmail } from '@/lib/registration-pay-link'
@@ -60,26 +60,24 @@ export async function respondToIndividualRegistration(
     )
   }
 
-  // Price any merch add-ons selected — validated + persisted as pending items
-  // on the registration's event-merch order until payment clears.
+  // Extras chosen on the form (lib/addons): booked for the registrant now, paid from
+  // their own pay link right after the place (emailed, and on their account), never in
+  // this Checkout, so no scholarship or code discounts them (D1). Never fatal.
   const event = await getEvent(event_slug)
   const stripe = stripeClient()
-  const addonLines = await prepareRegistrationAddons(db, event_slug, body.merch_addons ?? [])
-  if (addonLines.length > 0) {
-    await addRegistrationAddons(db, regId, addonLines, memberId)
-  }
+  const extras = await bookIndividualExtras(db, regId, row.participantId, body.extras, memberId)
 
-  // A full scholarship with no paid add-ons: nothing to collect, so confirm
-  // the registration here rather than sending the student through a $0
-  // checkout. Same confirmation step and email as a paid one.
-  if (scholarship?.percent_off === 100 && addonLines.length === 0) {
+  // A full scholarship: nothing to collect for the place, so confirm the
+  // registration here rather than sending the student through a $0 checkout.
+  // Same confirmation step and email as a paid one.
+  if (scholarship?.percent_off === 100) {
     await confirmRegistration(regId, false)
-    return NextResponse.json({ registrationId: regId, checkoutUrl: null, signInToken }, { status: 201 })
+    return NextResponse.json({ registrationId: regId, checkoutUrl: null, signInToken, ...(extras ? { extras } : {}) }, { status: 201 })
   }
 
   if (!stripe) {
     // No payment due — sign in (client) and go straight to /community.
-    return NextResponse.json({ registrationId: regId, checkoutUrl: null, signInToken }, { status: 201 })
+    return NextResponse.json({ registrationId: regId, checkoutUrl: null, signInToken, ...(extras ? { extras } : {}) }, { status: 201 })
   }
 
   // Stripe Checkout (event fee + any add-ons), built from the registration
@@ -100,8 +98,8 @@ export async function respondToIndividualRegistration(
     checkoutUrl = session.url
   } catch (e) {
     if (e instanceof RegistrationCheckoutError && e.code === 'nothing_to_pay') {
-      // Free event (and no add-ons) — nothing to collect.
-      return NextResponse.json({ registrationId: regId, checkoutUrl: null, signInToken }, { status: 201 })
+      // Free event — nothing to collect for the place.
+      return NextResponse.json({ registrationId: regId, checkoutUrl: null, signInToken, ...(extras ? { extras } : {}) }, { status: 201 })
     }
     throw e
   }
@@ -115,5 +113,28 @@ export async function respondToIndividualRegistration(
     console.error('[register/individual] pay-link email failed (non-fatal):', emailErr)
   }
 
-  return NextResponse.json({ registrationId: regId, checkoutUrl, signInToken }, { status: 201 })
+  return NextResponse.json({ registrationId: regId, checkoutUrl, signInToken, ...(extras ? { extras } : {}) }, { status: 201 })
+}
+
+/** The registrant's own extras: booked for their own participant, paid by their own link. */
+async function bookIndividualExtras(
+  db: GatedRegistration['db'],
+  registrationId: string,
+  participantId: string,
+  choice: unknown,
+  memberId: string | null,
+): Promise<ExtrasOutcome | null> {
+  if (!choice) return null
+  try {
+    return await bookExtrasAtRegistration(db, {
+      registrationId,
+      actor: { kind: 'member', participantId },
+      choice,
+      bookedBy: 'You',
+      bookedByMemberId: memberId,
+    })
+  } catch (e) {
+    console.error('[register/individual] extras could not be booked (non-fatal):', e)
+    return { booked: 0, refusals: [{ code: 'extras_failed', message: 'Your place is booked, but your extras couldn’t be. Add them from your account.' }], payLinksSent: [], invoiced: false }
+  }
 }
