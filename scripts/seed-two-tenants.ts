@@ -37,6 +37,15 @@
  *   npx tsx scripts/seed-two-tenants.ts --profile flow --remove                       # dry run of the teardown
  *   npx tsx scripts/seed-two-tenants.ts --profile flow --remove --apply --clerk       # teardown (K7a rollback)
  *
+ * --clerk-lookup (S5 wave 8, K11: CI's canary-local job, through scripts/canary-ci.ts)
+ * instead of --clerk: Clerk is only read. Each persona is looked up by its address;
+ * one the dev instance does not have gets a placeholder id (user_ci_placeholder_…)
+ * in the role rows, and no Clerk user is created or changed. Only on a Supabase
+ * stack on this machine with an sk_test_ key (lib/testing/canary-ci.ts), never the
+ * hosted dev project (WD-8).
+ *
+ *   npx tsx scripts/seed-two-tenants.ts --profile flow --zone <zone> --apply --clerk-lookup
+ *
  * --remove refuses while the canary event's document is published in the
  * Sanity dataset this env reads (unpublish and delete it first), and when
  * Sanity cannot be read.
@@ -68,6 +77,7 @@ import {
   type CanaryPersona,
 } from '../lib/testing/canary-flow-seed'
 import { STELLR_TENANT_ID } from '../lib/tenancy/constants'
+import { assertCanaryCiTarget, placeholderClerkId } from '../lib/testing/canary-ci'
 
 const envPath = path.resolve(process.cwd(), '.env.local')
 dotenv.config(fs.existsSync(envPath) ? { path: envPath } : {})
@@ -79,6 +89,7 @@ const PROFILE = flagValue('--profile') ?? 'honeytoken'
 const ZONE = flagValue('--zone')
 const CHECK = process.argv.includes('--check')
 const REMOVE = process.argv.includes('--remove')
+const CLERK_LOOKUP = process.argv.includes('--clerk-lookup')
 
 /** `--name value` or `--name=value`; '' when the flag has no value, undefined when absent. */
 function flagValue(name: string): string | undefined {
@@ -111,7 +122,7 @@ async function ensureClerkUser(user: SeedUser): Promise<string> {
 async function main() {
   if (PROFILE === 'flow') return mainFlow()
   if (PROFILE !== 'honeytoken') throw new Error(`unknown --profile ${PROFILE}: use honeytoken (the default) or flow`)
-  if (CHECK || REMOVE || ZONE !== undefined) throw new Error('--check, --remove and --zone belong to --profile flow')
+  if (CHECK || REMOVE || CLERK_LOOKUP || ZONE !== undefined) throw new Error('--check, --remove, --clerk-lookup and --zone belong to --profile flow')
   assertSeedTarget({ supabaseUrl: process.env.NEXT_PUBLIC_SUPABASE_URL, clerkSecretKey: process.env.CLERK_SECRET_KEY, useClerk: CLERK })
   const plan = planTwoTenantSeed()
 
@@ -178,6 +189,13 @@ async function ensureFlowClerkUser(persona: CanaryPersona): Promise<string> {
   return id
 }
 
+/** --clerk-lookup: the persona's Clerk user id if the dev instance has it, else a placeholder. Reads only. */
+async function lookUpFlowClerkUser(persona: CanaryPersona): Promise<string> {
+  const found = await clerk<{ id: string }[]>('GET', `/users?email_address=${encodeURIComponent(persona.email)}`)
+  console.log(`  persona ${persona.handle}: ${found.length ? 'on the dev Clerk instance' : 'not on the dev Clerk instance (placeholder id)'}`)
+  return found.length ? found[0].id : placeholderClerkId(persona.handle)
+}
+
 async function deleteFlowClerkUser(persona: CanaryPersona): Promise<'deleted' | 'absent'> {
   const found = await clerk<{ id: string }[]>('GET', `/users?email_address=${encodeURIComponent(persona.email)}`)
   if (!found.length) return 'absent'
@@ -187,6 +205,11 @@ async function deleteFlowClerkUser(persona: CanaryPersona): Promise<'deleted' | 
 
 async function mainFlow() {
   assertCanaryFlowTarget(flowTargetEnvFrom(process.env, CLERK))
+  if (CLERK_LOOKUP) {
+    // WD-8: placeholder role rows belong on a stack on this machine only.
+    assertCanaryCiTarget(process.env)
+    if (CLERK || REMOVE || CHECK) throw new Error('--clerk-lookup seeds only: it cannot be combined with --clerk, --remove or --check')
+  }
   if (CHECK && (APPLY || REMOVE)) throw new Error('--check is read-only; it cannot be combined with --apply or --remove')
   const target = new URL(process.env.NEXT_PUBLIC_SUPABASE_URL as string).host
 
@@ -237,7 +260,7 @@ async function mainFlow() {
     return
   }
 
-  console.log(`Canary flow seed — ${APPLY ? 'APPLY' : 'dry run'}${CLERK ? ' with Clerk users' : ''}`)
+  console.log(`Canary flow seed — ${APPLY ? 'APPLY' : 'dry run'}${CLERK ? ' with Clerk users' : CLERK_LOOKUP ? ' with Clerk users looked up (read only)' : ''}`)
   console.log(`  target: ${target}`)
   for (const line of describeCanaryFlowPlan(plan)) console.log(line)
   if (!APPLY) {
@@ -248,7 +271,7 @@ async function mainFlow() {
   const { syncEventManagerAssigned, syncTenantAdminGranted } = await import('../lib/authz/role-sync')
   await applyCanaryFlowSeed(plan, {
     db: supabaseServer(),
-    ensureClerkUser: CLERK ? ensureFlowClerkUser : undefined,
+    ensureClerkUser: CLERK ? ensureFlowClerkUser : CLERK_LOOKUP ? lookUpFlowClerkUser : undefined,
     syncEventManagerAssigned,
     syncTenantAdminGranted,
     log: (line) => console.log(line),

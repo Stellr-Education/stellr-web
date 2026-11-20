@@ -435,29 +435,64 @@ export function birthDateForAge(eventStartsOn: string, years: number): string {
 export const CANARY_SCHOOL_NAME = 'Dev Canary Test School'
 
 /**
- * What the runner posts to register/individual: the fields the gate requires, and a
- * guardian as the emergency contact for a minor. Nothing optional is guessed at.
+ * A fictional number (555-01xx is reserved for fiction in the North American plan),
+ * for the registrant and a minor's guardian alike.
  */
-export type RegistrationBody = Pick<IndividualBody, 'event_slug' | 'first_name' | 'last_name' | 'school_name'> &
-  Partial<Pick<IndividualBody, 'emergency_contact_first_name' | 'emergency_contact_last_name' | 'emergency_contact_email' | 'emergency_contact_relationship'>> & {
+export const CANARY_PHONE = '+1 555 010 0199'
+
+/**
+ * What the runner posts to register/individual: what components/forms/
+ * IndividualRegistrationForm.tsx sends, with values from its own option lists
+ * (lib/registration-constants): phone, gender, T-shirt size, ethnicity and dietary
+ * requirements, the age bracket and event role the form derives from the registrant
+ * type, a grade for a student, no add-ons, and a guardian as a minor's emergency
+ * contact. The adult names no emergency contact, so the run has no address beyond
+ * its registrants and guardians; those columns are nullable and the gate does not ask.
+ */
+export type RegistrationBody = Pick<
+  IndividualBody,
+  'event_slug' | 'first_name' | 'last_name' | 'school_name' | 'phone' | 'grade' | 'gender' | 't_shirt_size' | 'age_bracket' | 'event_role'
+> &
+  Partial<
+    Pick<
+      IndividualBody,
+      'emergency_contact_first_name' | 'emergency_contact_last_name' | 'emergency_contact_email' | 'emergency_contact_phone' | 'emergency_contact_relationship'
+    >
+  > & {
     email: string
     date_of_birth: string
+    ethnicity: string[]
+    dietary_requirements: string[]
+    merch_addons: { variantId: string; qty: number }[]
   }
 
 /** The register/individual body for one of the run's people. */
 export function registrationBody(person: RunIdentity, eventSlug: string, eventStartsOn: string): RegistrationBody {
+  const student = person.age < 18
   return {
     event_slug: eventSlug,
     email: person.email,
     first_name: person.firstName,
     last_name: person.lastName,
+    phone: CANARY_PHONE,
     date_of_birth: birthDateForAge(eventStartsOn, person.age),
+    // The form sends '' for an adult, and a school grade for a student.
+    grade: student ? '10' : '',
+    gender: 'Other',
+    t_shirt_size: 'M',
+    ethnicity: ['Prefer Not To Say'],
+    dietary_requirements: ['None'],
     school_name: CANARY_SCHOOL_NAME,
+    // registrantTypeToAgeBracket and the form's event_role, for 'high_school' or 'adult'.
+    age_bracket: student ? 'High School' : 'Adult',
+    event_role: student ? 'School Student' : 'Adult',
+    merch_addons: [],
     ...(person.guardian
       ? {
           emergency_contact_first_name: person.guardian.firstName,
           emergency_contact_last_name: person.guardian.lastName,
           emergency_contact_email: person.guardian.email,
+          emergency_contact_phone: CANARY_PHONE,
           emergency_contact_relationship: person.guardian.relationship,
         }
       : {}),
