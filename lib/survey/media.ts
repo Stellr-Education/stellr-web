@@ -32,6 +32,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { normaliseState } from '@/lib/locations'
 import { ageIfKnown, isMinorPerPolicy } from './minor'
+import { STELLR_TENANT_ID } from '@/lib/tenancy/constants'
 
 export type MediaStatus = 'yes' | 'no' | 'check'
 export type MediaReason =
@@ -134,6 +135,8 @@ interface AgreementRow {
   reused_from: string | null
   restricted_at: string | null
   template_id: string | null
+  /** S5: whose paperwork this is. NULL is Stellr's. */
+  tenant_id?: string | null
 }
 
 interface ColumnFacts {
@@ -142,17 +145,23 @@ interface ColumnFacts {
   form_opt_outs: Record<string, boolean> | null
 }
 
-const AGREEMENT_COLS = 'id, member_id, participant_id, completed_at, reused_from, restricted_at, template_id'
+const AGREEMENT_COLS = 'id, member_id, participant_id, completed_at, reused_from, restricted_at, template_id, tenant_id'
 
 /**
  * Agreement facts per subject. A subject's own participant row (the event's
  * agreement) wins over the member's newest, so a roster row reflects the form
  * signed for that event. Coverage rows resolve to the signed original.
+ *
+ * S5 wave 8, A11b: only this tenant's paperwork counts (decision WD-7: one tenant's form
+ * never answers for another's). The media lists are Stellr's, so the default is Stellr,
+ * and for Stellr, whose rows are all Stellr's or NULL, the answer is unchanged.
  */
 export async function loadMediaAgreements(
   db: SupabaseClient,
   subjects: { key: string; memberId: string | null; participantId: string | null }[],
+  tenantId: string = STELLR_TENANT_ID,
 ): Promise<Map<string, MediaAgreementFacts>> {
+  const ours = (r: AgreementRow) => (r.tenant_id ?? STELLR_TENANT_ID) === tenantId
   const out = new Map<string, MediaAgreementFacts>()
   if (!subjects.length) return out
   const memberIds = [...new Set(subjects.map((s) => s.memberId).filter(Boolean))] as string[]
@@ -164,7 +173,7 @@ export async function loadMediaAgreements(
       ...(await inChunks(ids, async (slice) => {
         const { data, error } = await db.from('agreements').select(AGREEMENT_COLS).in(col, slice).eq('status', 'completed')
         if (error) throw new Error(`Reading agreements failed: ${error.message}`)
-        return (data ?? []) as AgreementRow[]
+        return ((data ?? []) as AgreementRow[]).filter(ours)
       })),
     )
   }
@@ -173,7 +182,7 @@ export async function loadMediaAgreements(
   for (const r of await inChunks(rootIds, async (slice) => {
     const { data, error } = await db.from('agreements').select(AGREEMENT_COLS).in('id', slice).eq('status', 'completed')
     if (error) throw new Error(`Reading original agreements failed: ${error.message}`)
-    return (data ?? []) as AgreementRow[]
+    return ((data ?? []) as AgreementRow[]).filter(ours)
   })) roots.set(r.id, r)
 
   const newest = (list: AgreementRow[]) => [...list].sort((a, b) => (b.completed_at ?? '').localeCompare(a.completed_at ?? ''))[0]
@@ -300,7 +309,7 @@ const PARTICIPANT_COLS =
 const MEMBER_COLS = 'id, first_name, last_name, date_of_birth, grade, age_bracket, event_role'
 
 /** Decide for participant rows (and, with `memberOnlyIds`, members with no participant row). */
-async function decide(db: SupabaseClient, parts: ParticipantRow[], memberOnlyIds: string[] = []): Promise<MediaPerson[]> {
+async function decide(db: SupabaseClient, parts: ParticipantRow[], memberOnlyIds: string[] = [], tenantId: string = STELLR_TENANT_ID): Promise<MediaPerson[]> {
   const memberIds = [...new Set([...parts.map((p) => p.member_id).filter(Boolean), ...memberOnlyIds])] as string[]
   const members = new Map<string, MemberRow>()
   const prefs = new Map<string, boolean | null>()
@@ -329,7 +338,7 @@ async function decide(db: SupabaseClient, parts: ParticipantRow[], memberOnlyIds
     ...parts.map((p) => ({ key: `participant:${p.id}`, memberId: p.member_id, participantId: p.id, p, m: p.member_id ? members.get(p.member_id) : undefined })),
     ...memberOnlyIds.map((id) => ({ key: `member:${id}`, memberId: id, participantId: null, m: members.get(id) })),
   ]
-  const agreements = await loadMediaAgreements(db, subjects)
+  const agreements = await loadMediaAgreements(db, subjects, tenantId)
 
   return subjects.map((s) => {
     const p = s.p
@@ -436,7 +445,7 @@ export async function mediaDoNotUseList(
     memberOnly = (data ?? []).map((r) => r.member_id as string).filter((id) => !withParticipant.has(id))
   }
 
-  const people = await decide(db, parts, memberOnly)
+  const people = await decide(db, parts, memberOnly, f.tenant?.value ?? STELLR_TENANT_ID)
   const rank: Record<MediaStatus, number> = { no: 0, check: 1, yes: 2 }
   const rows = people
     .filter((p) => f.includeOk || p.decision.status !== 'yes')

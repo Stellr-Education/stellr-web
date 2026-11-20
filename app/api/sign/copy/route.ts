@@ -1,6 +1,7 @@
 import { supabaseServer } from '@/lib/supabase'
 import { verifyToken } from '@/lib/esign/native/tokens'
 import { STORED_RECORD_COLUMNS, loadSignedRecord, logRecordAccess, type StoredRecordRow } from '@/lib/esign/archive'
+import { recordOnHost } from '@/lib/tenancy/host-record'
 import { actingSession, invalidLink, json, readJson, sameOrigin, throttle } from '@/lib/esign/native/http'
 
 // POST /api/sign/copy — a signer's own copy of the signed agreement, as a
@@ -44,11 +45,13 @@ export async function POST(req: Request) {
 
   const { data: row } = await db
     .from('agreements')
-    .select(STORED_RECORD_COLUMNS)
+    .select(`${STORED_RECORD_COLUMNS}, tenant_id`)
     .eq('id', envelopeRow)
     .eq('provider', 'native')
     .maybeSingle()
-  const record = row as StoredRecordRow | null
+  const record = row as (StoredRecordRow & { tenant_id: string | null }) | null
+  // S5 wave 8, A11: another tenant's record is a dead link on this host.
+  if (record && !(await recordOnHost(record))) return invalidLink()
   if (!record || record.status !== 'completed' || record.restricted_at) {
     return json({ state: 'pending', message: 'Your copy is being prepared. Try again in a minute.' }, 409)
   }

@@ -4,6 +4,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { SITE_URL, AUTH_APP_URL } from '@/lib/env'
 import { rateLimit } from '@/lib/rate-limit-async'
 import { requestTenant } from '@/lib/tenancy/request-tenant'
+import { recordOnHost } from '@/lib/tenancy/host-record'
 import { SESSION_COOKIE, SESSION_TTL_SECONDS } from '@/lib/esign/native/tokens'
 import { resolveSession, type RequestMeta, type SessionContext } from '@/lib/esign/native/flow'
 
@@ -115,6 +116,10 @@ export async function actingSession(
   const ctx = await resolveSession(db, await sessionCookie(ref), mode)
   if (!ctx) return null
   if (ref && ctx.recipient.id !== ref) return null
+  // S5 wave 8, A11: another tenant's envelope is no session on this host, so every
+  // signing route gives it the answer it gives a dead link (lib/tenancy/host-record.ts).
+  // The envelope select carries tenant_id, so NULL (Stellr's, not yet backfilled) is the only gap.
+  if (!(await recordOnHost({ tenant_id: ctx.envelope.tenant_id ?? null }))) return null
   return ctx
 }
 
