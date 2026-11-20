@@ -129,7 +129,7 @@ export const ROUTE_MANIFEST: Record<string, RouteClass> = {
   'app/api/admin/events/[slug]/certificate-templates/preview/route.ts': 'tenant_crew',
   'app/api/admin/events/[slug]/certificate-templates/route.ts': 'tenant_crew',
   'app/api/admin/events/[slug]/certificates/route.ts': 'tenant_crew',
-  'app/api/admin/events/[slug]/check-in/route.ts': 'stellr_only',
+  'app/api/admin/events/[slug]/check-in/route.ts': 'tenant_crew',
   'app/api/admin/events/[slug]/companies/route.ts': 'tenant_crew',
   'app/api/admin/events/[slug]/credentials/route.ts': 'tenant_crew',
   'app/api/admin/events/[slug]/docusign-reissue/route.ts': 'tenant_crew',

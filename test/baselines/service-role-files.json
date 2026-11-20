@@ -551,7 +551,7 @@
     },
     "app/api/admin/events/[slug]/awards/route.ts": {
       "class": "convert",
-      "reason": "auto: reaches tables it does not name (dynamic .from, rpc, or a client passed to a helper); review before converting"
+      "reason": "auto: touches tenant or event-scoped tables; tables: event_award_assignments, event_settings"
     },
     "app/api/admin/events/[slug]/background-reports/route.ts": {
       "class": "convert",
@@ -583,7 +583,7 @@
     },
     "app/api/admin/events/[slug]/check-in/route.ts": {
       "class": "convert",
-      "reason": "auto: touches tenant or event-scoped tables; tables: event_settings, members, participants, registrations, store_order_items"
+      "reason": "auto: reaches tables it does not name (dynamic .from, rpc, or a client passed to a helper); review before converting"
     },
     "app/api/admin/events/[slug]/companies/route.ts": {
       "class": "convert",
