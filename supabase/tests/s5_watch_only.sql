@@ -179,4 +179,18 @@ WHERE day >= (:'flip_at'::timestamptz AT TIME ZONE 'UTC')::date
 GROUP BY 1
 ORDER BY 1;
 
+-- ENF-dev's 7-day clock (docs/TENANCY-S5.md, "Wave 8 status"). Only the reasons enforce
+-- refuses count: no_key (23502), no_event (23503), mismatch (23514) and error. `kept` is a
+-- write that supplied its own tenant for a slug with no mirror row, such as the 'membership'
+-- program agreement; enforce accepts it, so it never stops the clock. Read sample_key: an
+-- e2e-* key is a test fixture, anything else is an app writer to fix before the flip.
+\echo '== ENF-dev clock: rows enforce would refuse, since the clock start'
+SELECT table_name, reason, sample_key LIKE 'e2e-%' AS e2e_fixture,
+       count(*) AS rows, max(last_seen) AS last_seen
+FROM public.tenancy_derivation_log
+WHERE last_seen >= :'flip_at'::timestamptz
+  AND reason IN ('no_key', 'no_event', 'mismatch', 'error')
+GROUP BY 1, 2, 3
+ORDER BY 5 DESC;
+
 ROLLBACK;
