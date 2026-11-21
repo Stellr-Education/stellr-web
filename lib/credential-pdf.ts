@@ -3,7 +3,7 @@ import { type CourseTheme } from '@/lib/training-display'
 import { renderCertificatePdf } from '@/lib/certificate'
 import { credentialUrl, type CredentialView } from '@/lib/credentials'
 import { generateCertificatesPdf } from '@/lib/event-pdf'
-import { EVENT_AWARDS, artworkSupersededFor, isAwardType } from '@/lib/event-awards'
+import { EVENT_AWARDS, artworkSupersededFor, isAwardType, relabelIssuedAward } from '@/lib/event-awards'
 import { downloadArtwork, loadTemplate, placementOf } from '@/lib/event-certificates'
 import { renderPdCertificatePdf } from '@/lib/pd-certificate'
 import { loadPdArtwork, loadPdLayout, pdTheme } from '@/lib/pd-certificate-store'
@@ -68,7 +68,9 @@ export async function renderCredentialPdf(
   const event = cred.source === 'event' ? eventHeading(cred.award_type) : null
   const out = await renderCertificatePdf({
     memberName:  cred.recipient_name || 'Member',
-    courseTitle: cred.title,
+    // The certificate carries the award's full name, even where the public
+    // credential uses the short one (PUBLIC_NAME_AWARD_TYPES).
+    courseTitle: relabelIssuedAward(cred, 'certificate').title,
     heading:     event?.heading,
     lead:        event?.lead,
     theme:       (cred.theme as CourseTheme | null) ?? null,

@@ -11,7 +11,7 @@ import {
   type CredentialTheme,
 } from '@/lib/credentials'
 import { sendCredentialIssuedEmail } from '@/lib/credentials-notify'
-import { ASSIGNED_AWARD_TYPES, EVENT_AWARDS, awardCredentialTitle } from '@/lib/event-awards'
+import { ASSIGNED_AWARD_TYPES, EVENT_AWARDS, awardCredentialTitle, credentialAwardLabel } from '@/lib/event-awards'
 import { listAssignments, listEventStudents, type AssignmentRow } from '@/lib/event-certificates'
 
 // ── Issuing judged awards ────────────────────────────────────────────────────
@@ -125,7 +125,8 @@ export async function issueAwards(
           criteria: def.criteria,
           issuer: 'Stellr Education',
           roleLabel: 'Student',
-          award: def.label,
+          // The public name for an award named after a person (PUBLIC_NAME_AWARD_TYPES).
+          award: credentialAwardLabel(a.award_type),
           theme: opts.theme,
           eventTenant,
         })
