@@ -509,7 +509,7 @@
       }
     },
     "app/api/admin/deletion-requests/[id]/route.ts": {
-      "class": "platform_destined",
+      "class": "platform_admin",
       "segments": [
         "id"
       ],
@@ -520,7 +520,7 @@
       }
     },
     "app/api/admin/deletion/preflight/route.ts": {
-      "class": "platform_destined",
+      "class": "platform_admin",
       "segments": [],
       "query": [
         "id"
@@ -531,7 +531,7 @@
       }
     },
     "app/api/admin/deletion/route.ts": {
-      "class": "platform_destined",
+      "class": "platform_admin",
       "segments": [],
       "query": [],
       "body": [
@@ -575,7 +575,7 @@
       }
     },
     "app/api/admin/duties/route.ts": {
-      "class": "platform_destined",
+      "class": "platform_admin",
       "segments": [],
       "query": [],
       "body": [
@@ -1282,7 +1282,7 @@
       }
     },
     "app/api/admin/impersonation/route.ts": {
-      "class": "platform_destined",
+      "class": "platform_admin",
       "segments": [],
       "query": [],
       "body": [
@@ -1532,7 +1532,7 @@
       }
     },
     "app/api/admin/members/merge/route.ts": {
-      "class": "platform_destined",
+      "class": "platform_admin",
       "segments": [],
       "query": [],
       "body": [
@@ -1604,7 +1604,7 @@
       }
     },
     "app/api/admin/privacy-requests/[id]/route.ts": {
-      "class": "platform_destined",
+      "class": "platform_admin",
       "segments": [
         "id"
       ],

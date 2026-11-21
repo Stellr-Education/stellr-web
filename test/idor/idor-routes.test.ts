@@ -46,6 +46,7 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { describe, expect, it, vi } from 'vitest'
 import { idorTargets, crewTargets, type IdorTarget } from '@/lib/security/idor-targets'
 import { ROUTE_MANIFEST } from '@/lib/security/route-manifest'
+import { GUARD_EXCEPTIONS } from '@/lib/security/route-guards'
 import { honeytokenFor } from '@/lib/testing/honeytokens'
 import { followBodyHelpers } from './body-helpers'
 import { applyEnv, CASE_FIXTURES, fixtureFor, HELD_BACK_FIXTURES, type CaseFixture } from './case-fixtures'
@@ -164,8 +165,10 @@ describe('cross-tenant / IDOR: tenant-A participant naming tenant-B honeytokens'
   // Every tenant_crew, platform_admin and platform_destined route handler, with or without
   // an id. test/idor/fixtures.test.ts runs the same functions over handlers with known
   // guards, and the canary proves they can fail.
-  it('runs the crew personas on routes: the nine platform_destined at least', () => {
-    expect(crew.filter((t) => t.cls === 'platform_destined')).toHaveLength(9)
+  // C15's nine: seven went to platform_admin under BF-15 (a), 21 Nov 2026; two stay platform_destined.
+  it('runs the crew personas on routes: the nine platform routes at least', () => {
+    expect(crew.filter((t) => t.cls === 'platform_destined')).toHaveLength(2)
+    expect(crew.filter((t) => t.cls === 'platform_admin').length).toBeGreaterThanOrEqual(7)
   })
 
   for (const t of crew) {
@@ -378,7 +381,9 @@ function checkTarget(t: IdorTarget, results: Record<string, CaseResult>) {
     const entry = snap.methods[m]
     const accepted = acceptedOf(entry)
     const detail = `${t.file}\n${describeResult(r)}`
-    if (isCrewClass(t.cls)) {
+    // A reviewed guard exception (ending view-as on platform_admin impersonation, BF-15 (a)) has no
+    // guard to refuse with; it keeps the snapshot's accepted reason, checked below.
+    if (isCrewClass(t.cls) && !(`${t.file}#${m}` in GUARD_EXCEPTIONS)) {
       expect(accepted, `${detail}\n${t.cls} may not accept any outcome`).toBeUndefined()
       expect([401, 403, 404], `${detail}\na ${t.cls} route must refuse a participant`).toContain(r.status)
     }

@@ -3,16 +3,16 @@
   "totals": {
     "routes": 28,
     "cases": 128,
-    "failing": 2,
-    "unproven": 22,
+    "failing": 0,
+    "unproven": 24,
     "byOutcome": {
       "leak": 2,
       "ok": 10,
       "ok_untouched": 12,
-      "oracle_4xx": 2,
       "refused": 92,
-      "refused_untouched": 10
+      "refused_untouched": 10,
+      "unexercised": 2
     }
   },
-  "caseHash": "ed4abe2fe6c66f5aa01b6c52ed4165bc8a39dcb7685f9d16da2ded4544f98e81"
+  "caseHash": "9aefea1487711b8cde324bdaf6757d94bd893ea1d7576251c0725f68a24f0144"
 }

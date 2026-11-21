@@ -48,8 +48,8 @@
 //   - a write in a class method, a shorthand member of an exported object, a
 //     default-exported helper, or a function another module only returns is not
 //     followed. The only default export in lib/ today is lib/tokens.ts;
-//   - a write in a helper OPERATIONAL_WRITERS names is not counted. That list awaits the
-//     owner's decision, below.
+//   - a write in a helper OPERATIONAL_WRITERS names is not counted. That list is
+//     owner-approved (21 Nov 2026), below.
 //
 // A handler re-exported from another module (`export { POST } from './x'`) and any
 // `export *` cannot be followed, so they are reported as unaudited.
@@ -112,10 +112,13 @@ export const AUDIT_EXEMPTIONS: Readonly<Record<string, string>> = {
  * a module that does nothing else, with why.
  *
  * This list is an exemption in all but name, so it stands as an owner decision
- * (docs/TENANCY-S5.md, Owner gates). The two lib/pending-consent entries are the ones
- * that need it most: they record through the activity log, and they are here because
- * taking them off makes every member route's GET a mutation on the baseline, not because
- * that write is bookkeeping.
+ * (docs/TENANCY-S5.md, Owner gates). Owner-approved 21 Nov 2026, as it stands (the
+ * lib/app-errors entry covering authz_mismatch rows included, BF-9 (a)). The two
+ * lib/pending-consent entries needed it most: they record through the activity log, and
+ * they are here because taking them off makes every member route's GET a mutation on the
+ * baseline, not because that write is bookkeeping. The owner settled that the sign-in
+ * consent gate needs no platform audit event: its activity-log row already records who
+ * and when.
  */
 export const OPERATIONAL_WRITERS: Readonly<Record<string, string>> = {
   'lib/app-errors': 'the error log itself: writes a scrubbed row to app_errors, and only when something failed',
@@ -133,8 +136,8 @@ export const OPERATIONAL_WRITERS: Readonly<Record<string, string>> = {
   'lib/rate-limit-store#takeFromStore':
     "the rate limiter's request counter: rate_limit_take adds one to a window keyed by an HMAC of the limiter key, and stores nothing else. Owner-approved 9 Nov 2026",
   'lib/pending-consent#childAwaitingConsent':
-    'the sign-in gate every member route passes through. It closes a request whose consent is already signed, at most once per member, and writes guardian_consent_received to the activity log when it does. Awaiting the owner decision above',
-  'lib/pending-consent#childAwaitingConsentBlock': 'the same gate, for routes that resolve the member themselves. Awaiting the owner decision above',
+    'the sign-in gate every member route passes through. It closes a request whose consent is already signed, at most once per member, and writes guardian_consent_received to the activity log when it does, which records who and when. Owner-approved 21 Nov 2026: no platform audit event needed',
+  'lib/pending-consent#childAwaitingConsentBlock': 'the same gate, for routes that resolve the member themselves. Owner-approved 21 Nov 2026',
 }
 
 export const MUTATING_METHODS = ['POST', 'PUT', 'PATCH', 'DELETE'] as const

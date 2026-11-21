@@ -22,7 +22,8 @@ import { DISPOSITION_REGISTER_STATUS, STELLR_ONLY_DISPOSITIONS, dispositionCount
 // Stellr-only for other tenants (S5 wave 9). None is left.
 const MAX_TENANT_DESTINED_STELLR_ONLY = 0
 
-// platform_destined routes stay listed: the owner's choice for each is still to come.
+// platform_destined routes stay listed. BF-15 (a), 21 Nov 2026, took seven to platform_admin, which
+// leave the register; events/slug-guard and schools/[id] stay platform_destined.
 const stellrOnly = idorTargets().filter((t) => t.cls === 'stellr_only' || t.cls === 'platform_destined').map((t) => t.file)
 
 describe('stellr_only disposition register', () => {

@@ -206,10 +206,12 @@ function signSessionFixture(): CaseFixture {
  * a live link differently from a missing one, because that is what they do for Stellr.
  * With it on they refuse the other tenant's event, link and registration as unknown (A7).
  *
- * Not the scholarship offer variant. On a tenant's host the individual route refuses any
- * offer link before it reads one (offers are Stellr's), so with routing on that case uses
- * no Canary value and proves nothing, which the unproven cap does not allow to rise. It
- * stays as it was until the owner decides how that case is counted.
+ * The scholarship offer variant too (owner decision, 21 Nov 2026). On a tenant's host the
+ * individual route refuses any offer link before it reads one (offers are Stellr's, A7), so
+ * with routing on its canary_to_stellr cases use no Canary value and prove nothing. The
+ * owner accepted them as unproven (TENANT_HOST_UNPROVEN names them by full case key): the
+ * suite cannot yet model a scholarship offer, and they are not a leak. With routing off
+ * they had counted as failing (Stellr's own offer on Stellr's host, #828).
  */
 const ROUTING_ON = { TENANT_ROUTING_ENABLED: 'true' }
 const HOST_READ = 'tenant routing on, so the route reads the host the case is on'
@@ -244,7 +246,7 @@ const FIXTURES: Record<string, () => CaseFixture> = {
 
 /** Routes that take a second kind of record: each runs as a case of its own. */
 const EXTRA_VARIANTS: Record<string, Record<string, () => CaseFixture>> = {
-  'app/api/register/individual/route.ts': { scholarship_offer: () => individualOfferFixture },
+  'app/api/register/individual/route.ts': { scholarship_offer: () => hostChecked(individualOfferFixture) },
 }
 
 function withBase(file: string, own: CaseFixture | undefined): CaseFixture {
@@ -344,10 +346,11 @@ export function printHostCases(cases: HostCases, env: Record<string, string | un
 }
 
 /**
- * The reason named for an unproven case, by `<route file> <METHOD> <persona>` or, for
- * both people, `<route file> <METHOD>`. A key is what a case's baseline key starts with.
+ * The reason named for an unproven case: by its full key `<route file> <METHOD> <persona>
+ * <direction>[ <variant>]`, by `<route file> <METHOD> <persona>` or, for both people,
+ * `<route file> <METHOD>`. A shorter key is what a case's baseline key starts with.
  */
 export function unprovenReasonKey(file: string, caseKey: string, reasons: Record<string, string>): string | undefined {
   const [method, persona] = caseKey.split(' ')
-  return [`${file} ${method} ${persona}`, `${file} ${method}`].find((k) => reasons[k])
+  return [`${file} ${caseKey}`, `${file} ${method} ${persona}`, `${file} ${method}`].find((k) => reasons[k])
 }
