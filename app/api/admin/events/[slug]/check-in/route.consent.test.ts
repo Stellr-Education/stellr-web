@@ -51,12 +51,6 @@ vi.mock('@/lib/events/mirror', () => ({
   },
 }))
 vi.mock('@clerk/nextjs/server', () => ({ auth: async () => ({ userId: 'clerk-admin' }) }))
-vi.mock('@/lib/event-access', () => ({
-  requireEventAccess: async () => {
-    if (h.access.throws) throw new Error('auth backend down')
-    return h.access
-  },
-}))
 // C19c: the route asks lib/authz requireEventRoute; it answers for the caller h.access describes.
 vi.mock('@/lib/authz', async () => {
   const { eventRouteFromAccess } = await import('@/test/fixtures/event-route')

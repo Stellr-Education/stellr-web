@@ -58,7 +58,6 @@ vi.mock('@/lib/authz', async (orig) => ({
     h.access.ok ? { ...eventRouteFor(slug), userId: h.access.userId, isAdmin: false } : eventRouteRefused(h.access.status as 401 | 403),
 }))
 vi.mock('@clerk/nextjs/server', () => ({ auth: async () => ({ userId: 'user_someoneelse' }) }))
-vi.mock('@/lib/event-access', () => ({ requireEventAccess: async () => h.access }))
 vi.mock('@/lib/supabase', () => ({ supabaseServer: () => h.db.client }))
 vi.mock('@/lib/events/repo', () => ({ getEventBySlug: async () => ({ title: 'Tenant Event', type: 'space', setting: 'in_person' }) }))
 vi.mock('@/lib/campaigns', () => ({ themeFromType: () => 'space' }))

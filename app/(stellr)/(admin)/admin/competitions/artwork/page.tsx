@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
-import { requireEventAccess } from '@/lib/event-access'
+import { hasCapability, requireEventAccess } from '@/lib/authz'
 import { ARTWORK_THEMES, ARTWORK_THEME_LABEL, isArtworkTheme } from '@/lib/artwork-theme'
 import EventBadges from '@/components/admin/EventBadges'
 import EventCertificates from '@/components/admin/EventCertificates'
@@ -11,12 +11,14 @@ export const dynamic = 'force-dynamic'
 
 // The artwork every event falls back to, per competition theme (30 Oct 2026):
 // name badges, the six event certificates and the educator PD certificate.
-// An event's own upload on its Settings tab overrides any of them. Admins only:
-// a change here reaches every event of the theme. lib/artwork-defaults.ts.
+// An event's own upload on its Settings tab overrides any of them. Admins and Staff
+// (competitions:write, as the artwork-defaults and PD certificate routes take; owner
+// decision, 21 Nov 2026), never an event manager: a change here reaches every event of
+// the theme. lib/artwork-defaults.ts.
 export default async function ArtworkDefaultsPage({ searchParams }: { searchParams: Promise<{ theme?: string }> }) {
-  const access = await requireEventAccess()
+  const access = await requireEventAccess(undefined, { route: '/admin/competitions/artwork' })
   if (!access.ok) redirect(access.status === 401 ? '/sign-in' : '/admin')
-  if (!access.isAdmin) redirect('/admin/competitions')
+  if (!access.isAdmin && !(await hasCapability('competitions:write', { route: '/admin/competitions/artwork' }))) redirect('/admin/competitions')
 
   const requested = (await searchParams).theme
   const theme = isArtworkTheme(requested) ? requested : 'space'

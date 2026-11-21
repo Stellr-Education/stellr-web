@@ -24,7 +24,12 @@ vi.mock('@/lib/spaces', () => ({ getSpaceForMember: getSpaceForMemberMock }))
 vi.mock('@/lib/campaign-registrations', () => ({ getMemberCampaignRegistration: getRegistrationMock }))
 vi.mock('@/lib/resource-upload', () => ({ memberManagesContainer: memberManagesContainerMock }))
 const requireEventAccessMock = vi.fn()
-vi.mock('@/lib/event-access', () => ({ requireEventAccess: requireEventAccessMock }))
+// The admin and capability checks are the real lib/authz (AUTHZ_SOURCE unset = the Clerk claim);
+// the event gate is stubbed, as each test says who the event's caller is.
+vi.mock('@/lib/authz', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/authz')>()),
+  requireEventAccess: requireEventAccessMock,
+}))
 // The license row the compliance purposes look up (null = none on file).
 const licenseRow: { current: { id: string } | null } = { current: null }
 vi.mock('@/lib/supabase', () => ({
@@ -54,8 +59,10 @@ beforeEach(() => {
   createSignedUploadUrl.mockResolvedValue({ data: { path: 'p', token: 't' }, error: null })
 })
 
-const asAdmin = () => authMock.mockResolvedValue({ sessionClaims: { metadata: { role: 'admin' } } })
+const asAdmin = () => authMock.mockResolvedValue({ userId: 'u-admin', sessionClaims: { metadata: { role: 'admin' } } })
 const asVisitor = () => authMock.mockResolvedValue({ sessionClaims: {} })
+// Staff with a second factor on the session (lib/authz staff-role.8).
+const asStaff = () => authMock.mockResolvedValue({ userId: 'u-staff', sessionClaims: { metadata: { role: 'staff' } }, factorVerificationAge: [0, 0] })
 
 describe('signUpload', () => {
   it('issues a signed URL to an admin', async () => {
@@ -64,6 +71,14 @@ describe('signUpload', () => {
       purpose: 'admin-resource', ctx: {}, fileName: 'a.pdf', fileSize: 1024, contentType: 'application/pdf',
     })
     expect(result).toEqual({ bucket: 'community-resources', path: 'p', token: 't' })
+  })
+
+  it('refuses Staff on an admin-only purpose: only the competitions artwork kinds open to Staff', async () => {
+    asStaff()
+    for (const purpose of ['admin-resource', 'training-item'] as const) {
+      expect(await signUpload({ purpose, ctx: {}, fileName: 'a.pdf', fileSize: 1024, contentType: 'application/pdf' }), purpose).toEqual({ error: 'Forbidden', status: 403 })
+    }
+    expect(createSignedUploadUrl).not.toHaveBeenCalled()
   })
 
   it('refuses a non-admin on an admin purpose', async () => {
@@ -120,7 +135,7 @@ describe('signUpload — event-artwork', () => {
   it('signs for an event manager assigned to the event', async () => {
     requireEventAccessMock.mockResolvedValue({ ok: true, userId: 'u1', isAdmin: false, assignedSlugs: ['colorado'] })
     expect(await sign('certificate-anita_gale')).toEqual({ bucket: 'community-resources', path: 'p', token: 't' })
-    expect(requireEventAccessMock).toHaveBeenCalledWith('colorado')
+    expect(requireEventAccessMock).toHaveBeenCalledWith('colorado', { route: 'lib/uploads' })
     expect(createSignedUploadUrl.mock.calls[0][0]).toMatch(/^event-artwork\/colorado\/certificate-anita_gale-\d+-art\.png$/)
   })
 
@@ -142,6 +157,27 @@ describe('signUpload — event-artwork', () => {
   })
 })
 
+// The event gate is lib/authz requireEventAccess (S5 C25 batch 4): Staff reach every Stellr
+// event with isAdmin false (owner decision, 21 Nov 2026), so their answer signs; before, the
+// legacy gate gave Staff 403 here.
+describe('signUpload — the event gate is lib/authz', () => {
+  it.each(['event-artwork', 'event-email-attachment'] as const)('%s signs for Staff and passes the slug on', async (purpose) => {
+    requireEventAccessMock.mockResolvedValue({ ok: true, userId: 'u-staff', isAdmin: false, assignedSlugs: null, tenantId: 't' })
+    const ctx = purpose === 'event-artwork' ? { slug: 'nevada', kind: 'badge' } : { slug: 'nevada' }
+    const r = await signUpload({ purpose, ctx, fileName: 'a.png', fileSize: 10, contentType: 'image/png' })
+    expect(r).toEqual({ bucket: 'community-resources', path: 'p', token: 't' })
+    expect(requireEventAccessMock).toHaveBeenCalledWith('nevada', { route: 'lib/uploads' })
+  })
+
+  it('pd-certificate-artwork signs for Staff and refuses an event manager', async () => {
+    const sign = () => signUpload({ purpose: 'pd-certificate-artwork', ctx: {}, fileName: 'front.png', fileSize: 10, contentType: 'image/png' })
+    asStaff()
+    expect(await sign()).toEqual({ bucket: 'community-resources', path: 'p', token: 't' })
+    authMock.mockResolvedValue({ userId: 'u-em', sessionClaims: { metadata: { role: 'event_manager' } } })
+    expect(await sign()).toEqual({ error: 'Forbidden', status: 403 })
+  })
+})
+
 // A theme default is inherited by every event of that theme, so only an admin
 // may sign one — an event manager uploads their own event's art instead.
 describe('signUpload — artwork-default', () => {
@@ -157,7 +193,21 @@ describe('signUpload — artwork-default', () => {
   it('refuses anyone else, event managers included', async () => {
     authMock.mockResolvedValue({ sessionClaims: { metadata: { role: 'event_manager' } } })
     expect(await sign({ theme: 'space', kind: 'badge' })).toEqual({ error: 'Forbidden', status: 403 })
+    authMock.mockResolvedValue({ userId: 'u-em', sessionClaims: { metadata: { role: 'event_manager' } } })
+    expect(await sign({ theme: 'space', kind: 'badge' })).toEqual({ error: 'Forbidden', status: 403 })
+    authMock.mockResolvedValue({ userId: 'u-m', sessionClaims: { metadata: { role: 'member' } } })
+    expect(await sign({ theme: 'space', kind: 'badge' })).toEqual({ error: 'Forbidden', status: 403 })
     expect(createSignedUploadUrl).not.toHaveBeenCalled()
+  })
+
+  it('signs for Staff, as the artwork-defaults routes take competitions:write (21 Nov 2026)', async () => {
+    asStaff()
+    expect(await sign({ theme: 'space', kind: 'badge' })).toEqual({ bucket: 'community-resources', path: 'p', token: 't' })
+  })
+
+  it('refuses Staff on a session with no second factor', async () => {
+    authMock.mockResolvedValue({ userId: 'u-staff', sessionClaims: { metadata: { role: 'staff' } }, factorVerificationAge: [0, -1] })
+    expect(await sign({ theme: 'space', kind: 'badge' })).toEqual({ error: 'Forbidden', status: 403 })
   })
 
   it('refuses an unknown theme or kind', async () => {

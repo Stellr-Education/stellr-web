@@ -389,11 +389,9 @@ describe('guard list: lib/authz', () => {
     `import { ${imports} } from '@/lib/authz'\nexport async function GET(req, { params }) { ${body}; return new Response() }`
 
   it('a tenant_crew or platform_admin handler with only a legacy admin check fails', () => {
+    // The lib/admin-auth and lib/event-access helpers were deleted at S5 C25 batch 4; the
+    // inline claim compare is the one legacy shape the guard list still knows.
     const legacy = [
-      calling('@/lib/admin-auth', 'isAdminClaims'),
-      calling('@/lib/admin-auth', 'currentUserIsAdmin'),
-      calling('@/lib/admin-auth', 'requireAdminPage'),
-      calling('@/lib/event-access', 'requireEventAccess'),
       `import { auth } from '@clerk/nextjs/server'
        export async function GET() {
          const { sessionClaims } = await auth()
@@ -495,9 +493,9 @@ describe('guard list: lib/authz', () => {
       for (const code of admin) expect(satisfies(handler(code)).has('admin'), code).toBe(true)
     })
 
-    it('leaves a legacy check as it was: that blind spot goes when the check does', () => {
+    it('a deleted legacy helper proves nothing now (S5 C25 batch 4): the guard list no longer names it', () => {
       expect([...satisfies(handler(`import { currentUserIsAdmin } from '@/lib/admin-auth'
-        export async function GET() { await currentUserIsAdmin(); return 1 }`))].sort()).toEqual(['admin', 'session'])
+        export async function GET() { await currentUserIsAdmin(); return 1 }`))].sort()).toEqual([])
     })
   })
 
@@ -829,8 +827,8 @@ describe('route-ast analyser (fixtures)', () => {
   })
 
   it('does not count a guard inside a closure that never runs', () => {
-    expect(kinds(`import { requireAdminPage } from '@/lib/admin-auth'
-      export async function GET() { const never = () => requireAdminPage(); return members() }`)).toEqual([])
+    expect(kinds(`import { authz } from '@/lib/authz'
+      export async function GET() { const never = () => authz.page.requireStellrAdmin(); return members() }`)).toEqual([])
     expect(kinds(`import { auth } from '@clerk/nextjs/server'
       export async function GET() { return { later: async () => auth() } }`)).toEqual([])
   })
@@ -908,8 +906,8 @@ describe('route-ast analyser (fixtures)', () => {
   it('follows a local component rendered by a page', () => {
     const facts = analyzeDefaultExport(
       'app/fixture/page.tsx',
-      `import { requireAdminPage } from '@/lib/admin-auth'
-       async function Data() { await requireAdminPage(); return null }
+      `import { authz } from '@/lib/authz'
+       async function Data() { await authz.page.requireStellrAdmin(); return null }
        export default function Page() { return <main><Data /></main> }`,
     )!
     expect(satisfies(facts).has('admin')).toBe(true)

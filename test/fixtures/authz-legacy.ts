@@ -6,9 +6,16 @@
 // lib/authz/equivalence.test.ts holds the live module to it as well.
 //
 // Never edit the logic here to make a test pass: this file is what "today's answers" means.
+//
+// S5 C25 batch 4 (21 Nov 2026) deleted the live helpers, and lib/event-access.ts with them.
+// requireEventAccess is frozen at the foot of this file as it stood before C25 batch 3B. The
+// one user left is the codemod's equivalence proof (scripts/codemods/authz.equivalence.test.ts):
+// the codemod still rewrites these idioms, so it still needs them to compare against.
+// lib/authz/equivalence.test.ts pins lib/authz's own table now, with Staff in it.
 import { auth } from '@clerk/nextjs/server'
 import { notFound, redirect } from 'next/navigation'
 import { supabaseServer } from '@/lib/supabase'
+import { activeAssignmentFilter } from '@/lib/event-manager-active'
 
 type Claims = Record<string, unknown> | null | undefined
 
@@ -60,4 +67,38 @@ export async function currentUserHasScope(scope: DutyScope): Promise<boolean> {
   const { data } = await db.from('admin_duties').select('scopes').eq('member_id', member.id).maybeSingle()
   const scopes = (data?.scopes as string[] | null) ?? []
   return scopes.includes('all') || scopes.includes(scope)
+}
+
+// lib/event-access.ts, as it stood before S5 C25 batch 3B, word for word.
+async function getAssignedEventSlugs(clerkUserId: string): Promise<string[]> {
+  const db = supabaseServer()
+  const { data, error } = await db
+    .from('event_manager_assignments')
+    .select('event_slug')
+    .eq('clerk_user_id', clerkUserId)
+    // Expired grants give no access, even before the daily sweep deletes them.
+    .or(activeAssignmentFilter())
+  if (error) throw new Error(`Failed to load event assignments: ${error.message}`)
+  return (data ?? []).map((row) => row.event_slug)
+}
+
+export type EventAccess =
+  | { ok: true; userId: string; isAdmin: boolean; assignedSlugs: string[] | null } // null = all events
+  | { ok: false; status: 401 | 403 }
+
+export async function requireEventAccess(eventSlug?: string): Promise<EventAccess> {
+  const { userId, sessionClaims } = await auth()
+  if (!userId) return { ok: false, status: 401 }
+
+  if (isAdminClaims(sessionClaims)) {
+    return { ok: true, userId, isAdmin: true, assignedSlugs: null }
+  }
+
+  if (!isEventManagerClaims(sessionClaims)) return { ok: false, status: 403 }
+
+  const assignedSlugs = await getAssignedEventSlugs(userId)
+  if (eventSlug && !assignedSlugs.includes(eventSlug)) {
+    return { ok: false, status: 403 }
+  }
+  return { ok: true, userId, isAdmin: false, assignedSlugs }
 }

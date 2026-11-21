@@ -50,21 +50,28 @@ export function pickBannerEvent(open: OpenCheckIn[], today: string): OpenCheckIn
   return [...usable].sort((a, b) => daysAway(a, today) - daysAway(b, today) || a.slug.localeCompare(b.slug))[0]
 }
 
-/** Who is asking: lib/event-access's answer for an allowed caller. */
+/** Who is asking: lib/authz requireEventAccess's answer for an allowed caller. */
 export interface CheckInViewer {
   isAdmin: boolean
-  /** The events an event manager is assigned to; null for a full admin. */
+  /** The events an event manager is assigned to; null for every event of `tenantId` (an admin, or Staff). */
   assignedSlugs: string[] | null
+  /** The tenant the answer holds in. The open check-ins listed here are Stellr's alone. */
+  tenantId?: string
 }
 
 /**
- * Whether `viewer` may see, or close, check-in for `slug`. A full admin sees
- * every event; an event manager only the events they are assigned to. Anything
- * short of `isAdmin: true` counts as an event manager, so a malformed viewer
- * (no assignment list) sees nothing extra.
+ * Whether `viewer` may see, or close, check-in for `slug`, one of Stellr's open
+ * check-ins. A full admin sees every event, and so does Staff: an answer in the
+ * Stellr tenant with no assignment list (owner decision, 21 Nov 2026). An event
+ * manager sees only the events they are assigned to. An answer held in another
+ * tenant sees none of Stellr's. Without a tenant, anything short of
+ * `isAdmin: true` counts as an event manager, so a malformed viewer (no
+ * assignment list) sees nothing extra.
  */
 export function canSeeCheckIn(viewer: CheckInViewer, slug: string): boolean {
+  if (viewer.tenantId !== undefined && viewer.tenantId !== STELLR_TENANT_ID) return false
   if (viewer.isAdmin === true) return true
+  if (viewer.tenantId === STELLR_TENANT_ID && viewer.assignedSlugs === null) return true
   return (viewer.assignedSlugs ?? []).includes(slug)
 }
 

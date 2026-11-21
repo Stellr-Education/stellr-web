@@ -6,7 +6,7 @@ import { supabaseServer } from '@/lib/supabase'
 import { getEventBySlug } from '@/lib/events/repo'
 import { type StellarEvent } from '@/lib/sanity'
 import { formatDate } from '@/lib/utils'
-import { requireEventAccess } from '@/lib/event-access'
+import { hasCapability, requireEventAccess } from '@/lib/authz'
 import { getEventRoster } from '@/lib/event-admin'
 import { heldOptOuts, rosterOptOuts, type RosterOptOut } from '@/lib/roster-optouts'
 import { pendingConsentParticipantIds } from '@/lib/registration/tenant-guardian-consent'
@@ -69,8 +69,21 @@ export default async function AdminEventDetailPage({
     ? (rawTab as Tab)
     : 'overview'
 
-  const access = await requireEventAccess(slug)
+  const access = await requireEventAccess(slug, { route: '/admin/competitions/[slug]' })
   if (!access.ok) redirect(access.status === 401 ? '/sign-in' : '/admin/competitions')
+
+  // Staff reach every Stellr event (owner decision, 21 Nov 2026) with isAdmin false. Each
+  // admin-only control below opens to the capability its API already takes from Staff:
+  // assigning Event Managers, a theme's default artwork, and the Checkr reports (the
+  // background-reports route's full mode). An event manager holds none, so their page is
+  // as it was; an admin holds all.
+  const [canAssignManagers, canEditArtworkDefaults, canExportReports] = access.isAdmin
+    ? [true, true, true]
+    : await Promise.all(
+        (['event_managers:assign', 'competitions:write', 'export'] as const).map((cap) =>
+          hasCapability(cap, { route: '/admin/competitions/[slug]' }),
+        ),
+      )
 
   const event = (await getEventBySlug(slug)) as (StellarEvent & { activityType?: string }) | null
   if (!event) notFound()
@@ -152,9 +165,9 @@ export default async function AdminEventDetailPage({
     }
   }
 
-  // ── Admin assignments (overview, admins only) ─────────────────────────────
+  // ── Event Manager assignments (overview, admins and Staff) ────────────────
   let assignments: { id: string; clerk_user_id: string; email: string | null; member_id: string | null; expires_on: string | null; active: boolean }[] = []
-  if (tab === 'overview' && access.isAdmin) {
+  if (tab === 'overview' && canAssignManagers) {
     const { data: raw } = await db
       .from('event_manager_assignments')
       .select('id, clerk_user_id, expires_at')
@@ -355,7 +368,7 @@ export default async function AdminEventDetailPage({
             </Collapsible>
           </div>
 
-          {access.isAdmin && <EventManagerAssignments eventSlug={slug} initialAssignments={assignments} />}
+          {canAssignManagers && <EventManagerAssignments eventSlug={slug} initialAssignments={assignments} />}
         </div>
         </CollapsibleGroup>
       )}
@@ -365,7 +378,7 @@ export default async function AdminEventDetailPage({
         <CollapsibleGroup storageKey={`event.${slug}.roster`}>
         <div className="space-y-4">
           <CollapseAllControls className="justify-end" label="Expand or collapse roster sections" />
-          <EventVolunteersPanel slug={slug} isAdmin={access.isAdmin} />
+          <EventVolunteersPanel slug={slug} isAdmin={canExportReports} />
           {!isCampaign && roster && (
             <EventCompanies eventSlug={slug} companies={companies} studentCount={studentCount} />
           )}
@@ -376,7 +389,7 @@ export default async function AdminEventDetailPage({
               exportHref={`/api/admin/events/${slug}/export`}
               eventSlug={slug}
               companies={companies}
-              isAdmin={access.isAdmin}
+              isAdmin={canExportReports}
               optOuts={optOuts}
               consentPending={consentPending}
             />
@@ -459,9 +472,9 @@ export default async function AdminEventDetailPage({
             />
           </Collapsible>
 
-          <EventBadges eventSlug={slug} theme={artworkTheme} canEditDefaults={access.isAdmin} />
+          <EventBadges eventSlug={slug} theme={artworkTheme} canEditDefaults={canEditArtworkDefaults} />
 
-          <EventCertificates eventSlug={slug} theme={artworkTheme} canEditDefaults={access.isAdmin} />
+          <EventCertificates eventSlug={slug} theme={artworkTheme} canEditDefaults={canEditArtworkDefaults} />
 
           <EventAwards eventSlug={slug} />
 

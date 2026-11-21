@@ -6,7 +6,6 @@ import {
   VIDEO_SIGNED_URL_TTL_SECONDS,
 } from '@/lib/community'
 import { getVideoProvider, getEmbedConfig, trainingRoomName } from '@/lib/video-provider'
-import { currentUserHasScope } from '@/lib/admin-auth'
 import { isInteractiveKey } from '@/lib/interactive-lessons-meta'
 import {
   type MaterialKind,
@@ -395,7 +394,11 @@ async function liveLessonMedia(
   // rather than a blank/broken player.
   try {
     const room = trainingRoomName(itemId)
-    const isHost = await currentUserHasScope('community')
+    // Host: an admin, or a member whose admin_duties holds community or all (lib/authz
+    // hasScope, the same truth table as the legacy currentUserHasScope; a read error is
+    // not a host). Loaded on first use: operator scripts reach this module under tsx.
+    const { hasScope } = await import('@/lib/authz')
+    const isHost = await hasScope('community', { route: 'lib/training' })
     const jwt = await getVideoProvider().getJoinToken(
       room,
       { id: member.id, name: memberDisplayName(member), email: member.email },

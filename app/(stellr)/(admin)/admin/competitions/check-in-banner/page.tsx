@@ -3,7 +3,7 @@ import { redirect } from 'next/navigation'
 import QRCode from 'qrcode'
 import { Download } from 'lucide-react'
 import { Button } from '@stellr/web-ui'
-import { requireEventAccess } from '@/lib/event-access'
+import { requireEventAccess } from '@/lib/authz'
 import { supabaseServer } from '@/lib/supabase'
 import { SITE_URL } from '@/lib/env'
 import { isRealProductionApp } from '@/lib/env-guards'
@@ -24,7 +24,7 @@ export const dynamic = 'force-dynamic'
 // carried to every in-person event. The files go to a designer or print shop;
 // the page also shows where a scan goes right now.
 export default async function CheckInBannerAdminPage() {
-  const access = await requireEventAccess()
+  const access = await requireEventAccess(undefined, { route: '/admin/competitions/check-in-banner' })
   if (!access.ok) redirect(access.status === 401 ? '/sign-in' : '/admin')
 
   const url = new URL(CHECK_IN_BANNER_PATH, SITE_URL).toString()
@@ -39,8 +39,9 @@ export default async function CheckInBannerAdminPage() {
   ])
   const svgHref = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`
 
-  // An event manager sees only the events they run. Where a scan goes is worked
-  // out across every event, but another event is not named to them.
+  // An event manager sees only the events they run; an admin and Staff every Stellr
+  // event. Where a scan goes is worked out across every event, but another event is
+  // not named to an event manager.
   const inPersonOpen = checkInsVisibleTo(open, access).filter((e) => e.inPerson)
   const target = pickBannerEvent(open, todayUtc())
   const targetShown = target && canSeeCheckIn(access, target.slug) ? target : null
