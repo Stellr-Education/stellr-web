@@ -7,6 +7,7 @@ import { getAllEvents, getAllCampaigns } from '@/lib/events/repo'
 import { STELLR_TENANT_ID } from '@/lib/tenancy/constants'
 import { withAudit } from '@/lib/audit/route'
 import { adminAuditSubject, noteAuditSubject } from '@/lib/audit/route-subject'
+import { stellrRows } from '@/lib/tenancy/stellr-scope'
 
 // GET /api/admin/access/objects — every object in the converged model, across
 // all seven types, for the Objects-tab list. Content metadata for events stays
@@ -24,10 +25,10 @@ export async function GET() {
 
   const db = supabaseServer()
   const [containers, spaces, modules, resources, liveEvents, campaigns] = await Promise.all([
-    db.from('mentoring_cohorts').select('id, name, container_type, lifecycle, campaign_ref'),
-    db.from('community_spaces').select('id, name, slug, is_archived'),
-    db.from('training_modules').select('id, title'),
-    db.from('community_resources').select('id, title'),
+    stellrRows(db.from('mentoring_cohorts').select('id, name, container_type, lifecycle, campaign_ref')),
+    stellrRows(db.from('community_spaces').select('id, name, slug, is_archived')),
+    stellrRows(db.from('training_modules').select('id, title')),
+    stellrRows(db.from('community_resources').select('id, title')),
     getAllEvents().catch(() => []),
     getAllCampaigns().catch(() => []),
   ])

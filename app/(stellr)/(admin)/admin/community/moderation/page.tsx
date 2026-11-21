@@ -1,6 +1,7 @@
 import { supabaseServer } from '@/lib/supabase'
 import { FlagQueue } from '@/components/admin/community/FlagQueue'
 import { authz } from '@/lib/authz'
+import { stellrRows } from '@/lib/tenancy/stellr-scope'
 
 export const metadata = { title: 'Admin — Community Moderation' }
 
@@ -37,10 +38,10 @@ export default async function AdminModerationPage({
   const containerIds = [...new Set(resourceFlags.map((f) => f.viewed_in_container).filter((x): x is string => !!x))]
   const [titles, objects] = await Promise.all([
     binaryIds.length
-      ? db.from('community_resources').select('id, title').in('id', binaryIds)
+      ? stellrRows(db.from('community_resources').select('id, title')).in('id', binaryIds)
       : Promise.resolve({ data: [] as { id: string; title: string }[] }),
     containerIds.length
-      ? db.from('mentoring_cohorts').select('id, name').in('id', containerIds)
+      ? stellrRows(db.from('mentoring_cohorts').select('id, name')).in('id', containerIds)
       : Promise.resolve({ data: [] as { id: string; name: string }[] }),
   ])
   const titleMap = new Map((titles.data ?? []).map((r) => [r.id as string, r.title as string]))

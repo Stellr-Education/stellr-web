@@ -4,6 +4,7 @@ import { supabaseServer } from '@/lib/supabase'
 import { getSignedInMember, signedDownloadUrl } from '@/lib/community'
 import { courseIssuer, type MaterialKind, type CourseTheme } from '@/lib/training-display'
 import { renderCertificatePdf } from '@/lib/certificate'
+import { stellrRows } from '@/lib/tenancy/stellr-scope'
 
 // GET /api/admin/training/cert-preview?moduleId=
 // Admin-only sample certificate for a course, so the admin can verify how the
@@ -14,9 +15,9 @@ export async function GET(req: Request) {
   if (!moduleId) return NextResponse.json({ error: 'moduleId required' }, { status: 400 })
 
   const db = supabaseServer()
-  const { data: mod } = await db
+  const { data: mod } = await stellrRows(db
     .from('training_modules')
-    .select('title, theme, material_kind, cert_template_path')
+    .select('title, theme, material_kind, cert_template_path'))
     .eq('id', moduleId)
     .maybeSingle()
   if (!mod) return NextResponse.json({ error: 'Not found' }, { status: 404 })

@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { hasCapability } from '@/lib/authz'
 import { supabaseServer } from '@/lib/supabase'
 import { getAllEvents, getAllCampaigns } from '@/lib/events/repo'
+import { stellrRows } from '@/lib/tenancy/stellr-scope'
 
 // GET /api/admin/community/spaces/sources/search?type=event|training|mentoring|coaching&q=…
 // Powers the Access-tab object picker: resolve human-friendly options for linking
@@ -26,13 +27,13 @@ export async function GET(req: Request) {
     }
   } else if (type === 'training') {
     const db = supabaseServer()
-    let query = db.from('training_modules').select('id, title').order('title').limit(25)
+    let query = stellrRows(db.from('training_modules').select('id, title')).order('title').limit(25)
     if (q) query = query.ilike('title', `%${q}%`)
     const { data } = await query
     for (const m of (data ?? []) as Array<{ id: string; title: string }>) options.push({ ref: m.id, label: m.title })
   } else if (type === 'mentoring' || type === 'coaching') {
     const db = supabaseServer()
-    let query = db.from('mentoring_cohorts').select('id, name').eq('container_type', type).order('name').limit(25)
+    let query = stellrRows(db.from('mentoring_cohorts').select('id, name')).eq('container_type', type).order('name').limit(25)
     if (q) query = query.ilike('name', `%${q}%`)
     const { data } = await query
     for (const c of (data ?? []) as Array<{ id: string; name: string | null }>) options.push({ ref: c.id, label: c.name ?? c.id })

@@ -6,6 +6,7 @@ import { SCHOLARSHIP_COLUMNS, withStages, type ScholarshipApplication, type Scho
 import { ScholarshipStagePill } from '@/components/admin/ScholarshipStagePill'
 import { SchoolLink } from '@/components/admin/RecordLinks'
 import { resolveSchoolIds } from '@/lib/school-ids'
+import { stellrRows } from '@/lib/tenancy/stellr-scope'
 
 export const metadata = { title: 'Admin — Scholarships' }
 export const dynamic = 'force-dynamic'
@@ -25,9 +26,9 @@ export default async function AdminScholarshipsPage({ searchParams }: { searchPa
   const filter: Filter = show === 'offered' || show === 'all' ? show : 'review'
 
   const db = supabaseServer()
-  const { data } = await db
+  const { data } = await stellrRows(db
     .from('scholarship_applications')
-    .select(SCHOLARSHIP_COLUMNS)
+    .select(SCHOLARSHIP_COLUMNS))
     .order('created_at', { ascending: false })
   const apps = await withStages(db, (data ?? []) as ScholarshipApplication[])
 

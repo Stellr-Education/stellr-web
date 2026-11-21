@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { hasCapability } from '@/lib/authz'
 import { supabaseServer } from '@/lib/supabase'
+import { stellrRows } from '@/lib/tenancy/stellr-scope'
 
 // GET /api/admin/community/resources/search?q=…&limit=…
 // Admin resource picker: search the Global Resources Catalogue (every stored
@@ -15,9 +16,9 @@ export async function GET(req: Request) {
   const limit = Math.min(Math.max(Number(searchParams.get('limit') ?? 20), 1), 50)
 
   const db = supabaseServer()
-  let query = db
+  let query = stellrRows(db
     .from('community_resources')
-    .select('id, title, file_type, file_size_bytes, created_at')
+    .select('id, title, file_type, file_size_bytes, created_at'))
     .not('storage_path', 'is', null)
     .order('created_at', { ascending: false })
     .limit(limit)

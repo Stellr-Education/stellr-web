@@ -7,6 +7,7 @@ import { slugify } from '@/lib/utils'
 import { assertSpaceDeletable, CommunityDeleteBlockedError } from '@/lib/community-delete-guard'
 import { withAudit } from '@/lib/audit/route'
 import { STELLR_TENANT_ID } from '@/lib/tenancy/constants'
+import { stellrRows } from '@/lib/tenancy/stellr-scope'
 
 // What this request acted on, which withAudit's spec cannot read for itself: the body has gone.
 const auditedId = new WeakMap<Request, string>()
@@ -21,9 +22,9 @@ const THEME = new Set(['space', 'enviro', 'campaign', 'college'])
 export async function GET() {
   if (!(await hasCapability('portal:read', { route: '/api/admin/community/spaces' }))) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   const db = supabaseServer()
-  const { data } = await db
+  const { data } = await stellrRows(db
     .from('community_spaces')
-    .select('id, slug, name, description, access_type, theme, posting_policy, allow_member_uploads, display_order, is_archived')
+    .select('id, slug, name, description, access_type, theme, posting_policy, allow_member_uploads, display_order, is_archived'))
     .order('display_order', { ascending: true })
   return NextResponse.json({ spaces: data ?? [] })
 }
