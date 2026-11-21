@@ -1,17 +1,28 @@
 import { auth, clerkClient } from '@clerk/nextjs/server'
 import { NextResponse } from 'next/server'
 import { supabaseServer } from '@/lib/supabase'
-import { isStellrAdmin, hasCapability } from '@/lib/authz'
+import { hasCapability, requireEventCrew, requireEventRoute } from '@/lib/authz'
+import { stellrOnlyDb } from '@/lib/events/admin-records'
+import { refuseOutsideStellr, stellrOnlyEvent } from '@/lib/tenancy/load-scoped'
 import { withAudit } from '@/lib/audit/route'
 import { actorFromAuth } from '@/lib/activity-log'
-import { assignEventManager, removeEventManager, expiryTimestampToDate, isAssignmentActive } from '@/lib/event-manager'
+import { assignEventManager, removeEventManager, expiryTimestampToDate, isAssignmentActive, listEventManagerAssignments } from '@/lib/event-manager'
 
 const ROUTE = '/api/admin/event-managers'
 
 // Admin-only management of Event Manager → event assignments, from an event's
-// Overview panel. Event Managers cannot manage assignments, only admins. Who holds an
-// event is a Stellr admin's call until C21 settles who may grant it in a tenant, so this
-// keeps the admin guard and stays stellr_only.
+// Overview panel. Event Managers cannot manage assignments, only admins.
+//
+// S5 wave 9, C21: tenant_crew, Stellr-only for other tenants. Each handler asks its
+// capability first (portal:read to list, event_managers:assign to change, which no event
+// manager holds), then lib/authz, and then the Stellr-only option. The list asks
+// requireEventCrew, as it may span every event: a tenant's staff get refuseOutsideStellr's
+// 503, and it holds Stellr's rows only, so another tenant's event lists as empty, as an
+// unknown one does. A change names its event, so it asks requireEventRoute for it and then
+// stellrOnlyEvent: another tenant's event answers 404 for everyone, a Stellr admin
+// included, as a slug nobody knows does. An assignment sets the person's Clerk role and
+// their one Stellr event_manager membership, so who may grant one in another tenant waits
+// for the owner; until then nothing changes for Stellr.
 //
 // POST and DELETE go through lib/event-manager, the same as the member page
 // (Classification → Event Manager), so the clearance gate, expiry, Clerk role,
@@ -34,16 +45,15 @@ function eventFor(req: Request) {
 // GET /api/admin/event-managers?event_slug=... — list assignments (optionally per event)
 export async function GET(req: Request) {
   if (!(await hasCapability('portal:read', { route: ROUTE }))) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  const crew = await requireEventCrew({ route: ROUTE })
+  if (!crew.ok) return NextResponse.json({ error: 'Forbidden' }, { status: crew.status })
 
+  const outside = refuseOutsideStellr(crew.scope)
+  if (outside) return outside
   const eventSlug = new URL(req.url).searchParams.get('event_slug')
-  const db = supabaseServer()
-  let query = db
-    .from('event_manager_assignments')
-    .select('id, clerk_user_id, event_slug, expires_at, created_at')
-    .order('created_at', { ascending: true })
-  if (eventSlug) query = query.eq('event_slug', eventSlug)
+  if (eventSlug && !crew.covers(eventSlug)) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
-  const { data, error } = await query
+  const { data, error } = await listEventManagerAssignments(stellrOnlyDb(crew.scope, supabaseServer()), eventSlug)
   if (error) {
     console.error('Event manager assignments fetch error:', error)
     return NextResponse.json({ error: 'Database error' }, { status: 500 })
@@ -74,6 +84,11 @@ async function assignManager(req: Request) {
   if ((!clerkUserId && !email) || !eventSlug) {
     return NextResponse.json({ error: 'event_slug and clerk_user_id or email are required' }, { status: 400 })
   }
+  // Before an account is looked up, so another tenant's event is refused having asked Clerk nothing.
+  const crew = await requireEventRoute(eventSlug, { route: ROUTE })
+  if (!crew.ok) return crew.response
+  const foreign = await stellrOnlyEvent(crew.scope, supabaseServer(), eventSlug, ROUTE)
+  if (foreign) return foreign
 
   if (!clerkUserId) {
     const client = await clerkClient()
@@ -85,7 +100,7 @@ async function assignManager(req: Request) {
   }
   audited.set(req, { userId, eventSlug, clerkUserId })
 
-  const result = await assignEventManager(supabaseServer(), {
+  const result = await assignEventManager(stellrOnlyDb(crew.scope, supabaseServer()), {
     member: { clerkUserId },
     eventSlug,
     expiresOn,
@@ -112,9 +127,13 @@ async function removeManager(req: Request) {
   if (!clerkUserId || !eventSlug) {
     return NextResponse.json({ error: 'clerk_user_id and event_slug are required' }, { status: 400 })
   }
+  const crew = await requireEventRoute(eventSlug, { route: ROUTE })
+  if (!crew.ok) return crew.response
+  const foreign = await stellrOnlyEvent(crew.scope, supabaseServer(), eventSlug, ROUTE)
+  if (foreign) return foreign
   audited.set(req, { userId, eventSlug, clerkUserId })
 
-  const result = await removeEventManager(supabaseServer(), { clerkUserId, eventSlug, reason: 'admin', actor: await actorFromAuth(), routePath: ROUTE })
+  const result = await removeEventManager(stellrOnlyDb(crew.scope, supabaseServer()), { clerkUserId, eventSlug, reason: 'admin', actor: await actorFromAuth(), routePath: ROUTE })
   if (!result.ok) return NextResponse.json({ error: result.error }, { status: result.status })
   return NextResponse.json({ ok: true })
 }

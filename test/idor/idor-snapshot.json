@@ -743,7 +743,7 @@
       }
     },
     "app/api/admin/event-managers/route.ts": {
-      "class": "stellr_only",
+      "class": "tenant_crew",
       "segments": [],
       "query": [
         "event_slug"
@@ -1714,7 +1714,7 @@
       }
     },
     "app/api/admin/scholarships/[id]/cancel/route.ts": {
-      "class": "stellr_only",
+      "class": "tenant_crew",
       "segments": [
         "id"
       ],
@@ -1725,7 +1725,7 @@
       }
     },
     "app/api/admin/scholarships/[id]/not-offered/route.ts": {
-      "class": "stellr_only",
+      "class": "tenant_crew",
       "segments": [
         "id"
       ],
@@ -1736,7 +1736,7 @@
       }
     },
     "app/api/admin/scholarships/[id]/offer/route.ts": {
-      "class": "stellr_only",
+      "class": "tenant_crew",
       "segments": [
         "id"
       ],
@@ -1750,7 +1750,7 @@
       }
     },
     "app/api/admin/scholarships/[id]/refund-quote/route.ts": {
-      "class": "stellr_only",
+      "class": "tenant_crew",
       "segments": [
         "id"
       ],
@@ -1763,7 +1763,7 @@
       }
     },
     "app/api/admin/scholarships/[id]/refund/route.ts": {
-      "class": "stellr_only",
+      "class": "tenant_crew",
       "segments": [
         "id"
       ],
@@ -1774,7 +1774,7 @@
       }
     },
     "app/api/admin/scholarships/[id]/resend/route.ts": {
-      "class": "stellr_only",
+      "class": "tenant_crew",
       "segments": [
         "id"
       ],
@@ -1785,7 +1785,7 @@
       }
     },
     "app/api/admin/scholarships/[id]/route.ts": {
-      "class": "stellr_only",
+      "class": "tenant_crew",
       "segments": [
         "id"
       ],

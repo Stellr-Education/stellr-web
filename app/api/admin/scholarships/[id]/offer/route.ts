@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import { supabaseServer } from '@/lib/supabase'
+import { requireEventCrew } from '@/lib/authz'
 import { loadStellrScholarship, refuseUnlessStellrScholarshipEvent, requireScholarshipAdmin } from '@/lib/scholarship-admin'
 import { offerScholarship } from '@/lib/scholarship-offer'
 import { isScholarshipPercent } from '@/lib/scholarships'
@@ -22,7 +23,9 @@ const ROUTE = '/api/admin/scholarships/[id]/offer'
 const schema = z.object({
   percent: z.number().refine(isScholarshipPercent, 'Choose a scholarship level'),
   eventSlug: z.string().min(1, 'Choose an event'),
-  memberId: z.guid().nullable().optional(),
+  // Checked as a GUID once the application is known to be Stellr's (C20), so a malformed
+  // member id says nothing about an application that is not.
+  memberId: z.string().nullable().optional(),
   sendEmails: z.boolean().default(true),
 })
 
@@ -36,6 +39,8 @@ export const POST = withAudit(
 async function offer(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const reviewer = await requireScholarshipAdmin()
   if (!reviewer) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  const crew = await requireEventCrew({ route: ROUTE })
+  if (!crew.ok) return NextResponse.json({ error: 'Forbidden' }, { status: crew.status })
 
   const parsed = schema.safeParse(await req.json().catch(() => null))
   if (!parsed.success) {
@@ -45,12 +50,13 @@ async function offer(req: Request, { params }: { params: Promise<{ id: string }>
   const { percent, eventSlug, memberId, sendEmails } = parsed.data
   if (!isScholarshipPercent(percent)) return NextResponse.json({ error: 'Choose a scholarship level' }, { status: 400 })
 
-  const db = supabaseServer()
-  const loaded = await loadStellrScholarship(db, id, { label: ROUTE })
+  const loaded = await loadStellrScholarship(crew, supabaseServer(), id, { label: ROUTE })
   if (!loaded.ok) return loaded.response
+  const { db } = loaded
   // The event the offer registers the student for, which the reviewer chose.
-  const foreign = await refuseUnlessStellrScholarshipEvent(db, eventSlug, ROUTE)
+  const foreign = await refuseUnlessStellrScholarshipEvent(crew, db, eventSlug, ROUTE)
   if (foreign) return foreign
+  if (memberId != null && !z.guid().safeParse(memberId).success) return NextResponse.json({ error: 'Invalid GUID' }, { status: 400 })
   noteAuditSubject(req, { userId: reviewer.clerkUserId, tenantId: STELLR_TENANT_ID, id, eventSlug, detail: { percent, sendEmails } })
 
   const result = await offerScholarship(db, {

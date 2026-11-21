@@ -86,6 +86,9 @@ const STRIPE_CHECKOUT = { env: STRIPE_ENV, member: STRIPE_MEMBER, stripe: true }
 /** HubSpot's forms endpoint, the one lead-capture write that needs no token. */
 const hubspotForms = (url: string) => (url.startsWith('https://api.hsforms.com/') ? Response.json({ inlineMessage: 'ok' }) : undefined)
 
+const STAFF_NO_SCHOLARSHIPS =
+  'deciding on a scholarship is admin-only (owner, 2 Oct 2026): Staff do not hold scholarships:write, so requireScholarshipAdmin refuses Staff before the application is read (C20)'
+
 export const CASE_FIXTURES: Record<string, CaseFixture> = {
   // ── request shape: enums and zod bodies ────────────────────────────────────
   'app/api/community/cohorts/respond/route.ts': {
@@ -136,6 +139,39 @@ export const CASE_FIXTURES: Record<string, CaseFixture> = {
     reason: 'only a group registration goes on to the event check',
     refusesWithoutQuery: 'the participant holds no role: the staff check answers before any read',
     honey: { type: 'group' },
+  },
+// C20 (S5 wave 9): the scholarship routes are tenant_crew. Deciding stays admin-only, so the
+// Staff persona stops at the capability, on every route but the refund quote (portal:read).
+  'app/api/admin/scholarships/[id]/route.ts': {
+    reason: 'Staff cannot reach the application: the scholarship decision is admin-only',
+    refusesWithoutQuery: 'the participant holds no role: the scholarships:write capability check answers before any read',
+    crewUnproven: { stellr_staff: STAFF_NO_SCHOLARSHIPS },
+  },
+  'app/api/admin/scholarships/[id]/cancel/route.ts': {
+    reason: 'Staff cannot reach the application: the scholarship decision is admin-only',
+    refusesWithoutQuery: 'the participant holds no role: the scholarships:write capability check answers before any read',
+    crewUnproven: { stellr_staff: STAFF_NO_SCHOLARSHIPS },
+  },
+  'app/api/admin/scholarships/[id]/not-offered/route.ts': {
+    reason: 'Staff cannot reach the application: the scholarship decision is admin-only',
+    refusesWithoutQuery: 'the participant holds no role: the scholarships:write capability check answers before any read',
+    crewUnproven: { stellr_staff: STAFF_NO_SCHOLARSHIPS },
+  },
+  'app/api/admin/scholarships/[id]/refund/route.ts': {
+    reason: 'Staff cannot reach the application: the scholarship decision is admin-only',
+    refusesWithoutQuery: 'the participant holds no role: the scholarships:write capability check answers before any read',
+    crewUnproven: { stellr_staff: STAFF_NO_SCHOLARSHIPS },
+  },
+  'app/api/admin/scholarships/[id]/resend/route.ts': {
+    reason: 'Staff cannot reach the application: the scholarship decision is admin-only',
+    refusesWithoutQuery: 'the participant holds no role: the scholarships:write capability check answers before any read',
+    crewUnproven: { stellr_staff: STAFF_NO_SCHOLARSHIPS },
+  },
+  'app/api/admin/scholarships/[id]/offer/route.ts': {
+    reason: 'percent must be a scholarship level, checked before the application is read; and Staff cannot reach it',
+    refusesWithoutQuery: 'the participant holds no role: the scholarships:write capability check answers before any read',
+    body: { percent: 50, sendEmails: false },
+    crewUnproven: { stellr_staff: STAFF_NO_SCHOLARSHIPS },
   },
   // Staff holds schools:write, so the stellr_staff persona gets past the guard; without a
   // field to update it then stopped at 400 before the id was used.

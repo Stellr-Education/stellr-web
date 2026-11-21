@@ -1,18 +1,18 @@
 import { NextResponse } from 'next/server'
 import { supabaseServer } from '@/lib/supabase'
+import { requireEventCrew } from '@/lib/authz'
 import { stripeClient } from '@/lib/stripe'
 import {
   loadStellrScholarship,
   refuseUnlessStellrScholarshipEvent,
   requireScholarshipAdmin,
-  scholarshipScope,
 } from '@/lib/scholarship-admin'
 import { quoteScholarshipRefund, registrationNotFoundQuote } from '@/lib/scholarship-refund'
 import { isScholarshipPercent } from '@/lib/scholarship-levels'
 import { withAudit } from '@/lib/audit/route'
 import { auditSubject, noteAuditSubject } from '@/lib/audit/route-subject'
 import { STELLR_TENANT_ID } from '@/lib/tenancy/constants'
-import { loadRecord } from '@/lib/tenancy/load-scoped'
+import { loadEventRecord } from '@/lib/tenancy/load-scoped'
 
 const ROUTE = '/api/admin/scholarships/[id]/refund-quote'
 
@@ -33,6 +33,14 @@ export const GET = withAudit(
 async function refundQuote(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const reviewer = await requireScholarshipAdmin('portal:read')
   if (!reviewer) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  const crew = await requireEventCrew({ route: ROUTE })
+  if (!crew.ok) return NextResponse.json({ error: 'Forbidden' }, { status: crew.status })
+  // The application first (C20): one that is not Stellr's answers as missing whatever was asked.
+  const { id } = await params
+  const loaded = await loadStellrScholarship(crew, supabaseServer(), id, { label: ROUTE })
+  if (!loaded.ok) return loaded.response
+  const { db } = loaded
+
   const url = new URL(req.url)
   const registrationId = url.searchParams.get('registrationId')
   const percent = Number(url.searchParams.get('percent'))
@@ -40,13 +48,8 @@ async function refundQuote(req: Request, { params }: { params: Promise<{ id: str
     return NextResponse.json({ error: 'registrationId and a scholarship level are required' }, { status: 400 })
   }
 
-  const { id } = await params
-  const db = supabaseServer()
-  const loaded = await loadStellrScholarship(db, id, { label: ROUTE })
-  if (!loaded.ok) return loaded.response
-
   const missing = () => NextResponse.json(registrationNotFoundQuote())
-  const reg = await loadRecord<{ id: string; event_slug: string; tenant_id: string | null }>(scholarshipScope(), 'registrations', registrationId, {
+  const reg = await loadEventRecord<{ id: string; event_slug: string; tenant_id: string | null }>(crew, 'registrations', registrationId, {
     db,
     select: 'id, event_slug, tenant_id',
     notFound: missing,
@@ -54,7 +57,7 @@ async function refundQuote(req: Request, { params }: { params: Promise<{ id: str
   })
   if (!reg.ok) return reg.response
   if ((reg.row.tenant_id ?? STELLR_TENANT_ID) !== STELLR_TENANT_ID) return missing()
-  const foreign = await refuseUnlessStellrScholarshipEvent(db, reg.row.event_slug, ROUTE, missing)
+  const foreign = await refuseUnlessStellrScholarshipEvent(crew, db, reg.row.event_slug, ROUTE, missing)
   if (foreign) return foreign
   noteAuditSubject(req, { userId: reviewer.clerkUserId, tenantId: STELLR_TENANT_ID, id, eventSlug: reg.row.event_slug, detail: { registrationId, percent } })
 

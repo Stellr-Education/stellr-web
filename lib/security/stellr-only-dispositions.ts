@@ -55,17 +55,14 @@ const GROUPS: readonly DispositionGroup[] = [
   {
     disposition: 'tenant_destined',
     convertedBy: 'C21',
-    reason: 'assigning event managers: C16 moved its check to lib/authz and left it on the Stellr admin guard until roles are settled',
-    routes: ['event-managers'],
+    reason: 'assigning event managers: C16 moved its check to lib/authz; C21 made it tenant_crew, Stellr-only for other tenants until the owner settles who grants one in a tenant. Empty since C21',
+    routes: [],
   },
   {
     disposition: 'tenant_destined',
     convertedBy: 'C20',
-    reason: 'an event-scoped table; the owner to confirm whether tenants get scholarships in release 1',
-    routes: [
-      'scholarships/[id]', 'scholarships/[id]/cancel', 'scholarships/[id]/not-offered', 'scholarships/[id]/offer',
-      'scholarships/[id]/refund', 'scholarships/[id]/refund-quote', 'scholarships/[id]/resend',
-    ],
+    reason: 'an event-scoped table: C20b put the routes on loadScoped and C20 made them tenant_crew, Stellr-only for other tenants until the owner says tenants get scholarships (WD-4, SQ-16). Empty since C20',
+    routes: [],
   },
   {
     disposition: 'platform_destined',

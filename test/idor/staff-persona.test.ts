@@ -139,6 +139,11 @@ const ADMIN_ONLY_AREAS: RegExp[] = [
   /^scholarships(\/|$)/,
 ]
 const adminRoute = (file: string) => file.replace(/^app\/api\/admin\//, '').replace(/\/route\.tsx?$/, '')
+// C20 (S5 wave 9) moved the scholarship routes to tenant_crew. Deciding stays admin-only to
+// Staff (scholarships:write), so they stay here as well: the crew suite runs them, with the
+// Staff case unproven there (test/idor/case-fixtures.ts), and this file refuses Staff on them.
+const ADMIN_ONLY_CREW_AREAS: RegExp[] = [/^scholarships(\/|$)/]
+const adminOnlyCrew = (f: string) => ROUTE_MANIFEST[f] === 'tenant_crew' && ADMIN_ONLY_CREW_AREAS.some((re) => re.test(adminRoute(f)))
 const ADMIN_ONLY_FILES = Object.keys(ROUTE_MANIFEST)
   .filter((f) => /^app\/api\/admin\/.*\/route\.tsx?$/.test(f) && ADMIN_ONLY_AREAS.some((re) => re.test(adminRoute(f))))
   .sort()
@@ -164,11 +169,12 @@ const licenseVerify = (): CaseInput => ({
 })
 
 describe('stellr_staff in the admin-only areas the crew suite never runs', () => {
-  it('finds the areas, every route in them classed stellr_only, none a crew target', () => {
+  it('finds the areas, every route in them classed stellr_only, none a crew target, but the admin-only crew areas', () => {
     for (const re of ADMIN_ONLY_AREAS) expect(ADMIN_ONLY_FILES.some((f) => re.test(adminRoute(f))), String(re)).toBe(true)
-    expect(ADMIN_ONLY_FILES.filter((f) => ROUTE_MANIFEST[f] !== 'stellr_only')).toEqual([])
+    expect(ADMIN_ONLY_FILES.filter((f) => ROUTE_MANIFEST[f] !== 'stellr_only' && !adminOnlyCrew(f))).toEqual([])
     const crew = new Set(CREW.map((t) => t.file))
-    expect(ADMIN_ONLY_FILES.filter((f) => crew.has(f))).toEqual([])
+    expect(ADMIN_ONLY_FILES.filter((f) => crew.has(f) && !adminOnlyCrew(f))).toEqual([])
+    expect(ADMIN_ONLY_FILES.filter(adminOnlyCrew).length).toBe(7)
   })
 
   // Written out: a handler here that starts checking a capability Staff holds shows, and

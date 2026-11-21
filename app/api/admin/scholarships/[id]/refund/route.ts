@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import { supabaseServer } from '@/lib/supabase'
+import { requireEventCrew } from '@/lib/authz'
 import { stripeClient } from '@/lib/stripe'
 import { loadStellrScholarship, requireScholarshipAdmin } from '@/lib/scholarship-admin'
 import { issueScholarshipRefund } from '@/lib/scholarship-refund'
@@ -17,7 +18,7 @@ const ROUTE = '/api/admin/scholarships/[id]/refund'
 // already issued is not issued again, and the Stripe refund carries the same
 // idempotency key as the first attempt.
 //
-// Stellr's applications only (C20b, lib/scholarship-admin.ts): the refund is on
+// Stellr's applications only (C20b; tenant_crew since C20, lib/scholarship-admin.ts): the refund is on
 // Stellr's Stripe account, so another tenant's is refused before Stripe is called.
 const schema = z.object({}).passthrough()
 
@@ -31,19 +32,20 @@ export const POST = withAudit(
 async function refund(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const reviewer = await requireScholarshipAdmin()
   if (!reviewer) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  const crew = await requireEventCrew({ route: ROUTE })
+  if (!crew.ok) return NextResponse.json({ error: 'Forbidden' }, { status: crew.status })
   const parsed = schema.safeParse(await req.json().catch(() => ({})))
   if (!parsed.success) return NextResponse.json({ error: 'Invalid request' }, { status: 400 })
 
   const { id } = await params
-  const db = supabaseServer()
-  const loaded = await loadStellrScholarship<ScholarshipApplication & { tenant_id: string | null }>(db, id, {
+  const loaded = await loadStellrScholarship<ScholarshipApplication & { tenant_id: string | null }>(crew, supabaseServer(), id, {
     label: ROUTE,
     select: `${SCHOLARSHIP_COLUMNS}, tenant_id`,
     // A missing application has no reimbursement, as before.
     notFound: noReimbursement,
   })
   if (!loaded.ok) return loaded.response
-  const app = loaded.row
+  const { db, row: app } = loaded
   if (app.status !== 'offered' || !app.registration_id || app.percent_off == null || !app.registration_paid_at_offer) {
     return noReimbursement()
   }

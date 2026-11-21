@@ -241,10 +241,10 @@ describe('the routes C16 converted', () => {
     }
   })
 
-  it('event-managers keeps the Stellr admin guard, as the register says', () => {
+  it('event-managers, held back from C16, is tenant_crew since C21 and has left the register', () => {
     const f = 'app/api/admin/event-managers/route.ts'
-    expect(ROUTE_MANIFEST[f]).toBe('stellr_only')
-    expect(STELLR_ONLY_DISPOSITIONS[f]).toMatchObject({ disposition: 'tenant_destined', convertedBy: 'C21' })
+    expect(ROUTE_MANIFEST[f]).toBe('tenant_crew')
+    expect(STELLR_ONLY_DISPOSITIONS[f]).toBeUndefined()
   })
 
   it('every handler that writes goes through the audit gate, with a catalogued action', () => {
