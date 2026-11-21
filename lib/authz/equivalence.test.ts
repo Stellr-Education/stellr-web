@@ -1,41 +1,47 @@
 /**
- * Equivalence harness for lib/authz.ts (multi-tenancy plan S5, slice C1).
+ * The truth table of lib/authz.ts (multi-tenancy plan S5; slice C1, pinned as a table at C25).
  *
- * For every Stellr role scenario (Clerk claim × assignments × member row ×
- * admin_duties scopes × the owner's platform flag), every legacy idiom is run
- * against the real legacy helper and against its lib/authz replacement:
+ * For every Stellr role scenario (Clerk claim × assignments × member row × admin_duties
+ * scopes × the owner's platform flag), every decision that replaced a legacy guard idiom is
+ * run through lib/authz and compared with the answer this file writes down for it
+ * (`expected`, below):
  *
- *   clerk source     must agree with legacy in EVERY scenario. This is the
- *                    "nothing changes" guarantee for the default.
- *   postgres source  reads tenant_memberships / platform_admins written by the
- *                    S3 mapping (lib/tenancy/role-mapping.ts) from the same
- *                    data. It must agree with legacy whenever today's data is
- *                    synced. Where it is not (a Clerk event_manager with no
- *                    assignment, or an assignment without the Clerk role) the
- *                    portal / event-manager answers follow the tables; the
- *                    harness pins exactly which answers move, and that every
- *                    admin-only and scope answer still agrees.
+ *   clerk source     must give the expected answer in EVERY scenario. This is the default.
+ *   postgres source  reads tenant_memberships / platform_admins written by the S3 mapping
+ *                    (lib/tenancy/role-mapping.ts) from the same data. It must give the same
+ *                    answers whenever today's data is synced. Where it is not (a Clerk
+ *                    event_manager with no assignment, or an assignment without the Clerk
+ *                    role) the portal / event-manager answers follow the tables; the harness
+ *                    pins exactly which answers move, and that every admin-only and scope
+ *                    answer still agrees.
  *
- * Since C14 lib/admin-auth.ts is a shim over lib/authz, so "legacy" here is the frozen
- * pre-C14 code in test/fixtures/authz-legacy.ts, mocked in for the module so that
- * lib/event-access and the domain wrappers run on it too. Comparing with the live module
- * would compare lib/authz with itself. The live module is held to the frozen one below.
+ * Until C25 the expected side was the legacy helpers themselves (lib/admin-auth.ts, frozen in
+ * test/fixtures/authz-legacy.ts, and lib/event-access.ts). C25 batch 4 (21 Nov 2026) deleted
+ * them, so the table is written out here instead, with the legacy rule for every claim the
+ * legacy helpers knew, and one deliberate change: Staff (the owner's decision of 21 Nov 2026,
+ * docs/RUNBOOK-staff-role.md) reach every Stellr event, not as an admin. Staff were already
+ * in the portal and in the crew-target list. The Staff scenarios are added here; the shared
+ * fixture (test/fixtures/authz-principal.ts) keeps its legacy claim list, because the
+ * codemod's equivalence proof still compares against the frozen legacy code, which has no
+ * Staff.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   allScenarios,
+  ASSIGNMENT_SETS,
   fakeDb,
   isSynced,
   MEMBER,
+  SCOPE_SETS,
   scenarioAuth,
   scenarioTables,
   USER,
   type FakeDb,
   type Scenario,
 } from '@/test/fixtures/authz-principal'
+import { STELLR_TENANT_ID } from '@/lib/tenancy/constants'
 
 vi.mock('@clerk/nextjs/server', () => ({ auth: vi.fn(), clerkClient: vi.fn(), currentUser: vi.fn(async () => null) }))
-vi.mock('@/lib/admin-auth', () => import('@/test/fixtures/authz-legacy'))
 vi.mock('@/lib/supabase', () => ({ supabaseServer: vi.fn() }))
 vi.mock('next/navigation', () => ({
   redirect: vi.fn((to: string) => {
@@ -50,16 +56,6 @@ vi.mock('@/lib/esign/native/template-admin', () => ({ TemplateAdminError: class 
 
 import { auth, clerkClient } from '@clerk/nextjs/server'
 import { supabaseServer } from '@/lib/supabase'
-import {
-  currentUserHasScope,
-  currentUserIsAdmin,
-  hasAdminPortalAccess,
-  isAdminClaims,
-  isEventManagerClaims,
-  isCrewRole,
-  requireAdminPage,
-} from '@/test/fixtures/authz-legacy'
-import { requireEventAccess as legacyEventAccess } from '@/lib/event-access'
 import { requireScholarshipAdmin } from '@/lib/scholarship-admin'
 import { requireSurveyAdmin } from '@/lib/survey/admin-auth'
 import { canManageStoreCatalog } from '@/lib/store/auth'
@@ -68,13 +64,43 @@ import * as authz from '@/lib/authz'
 
 const SLUGS = [undefined, 'ev-a', 'ev-b', 'ev-z'] as const
 const SCOPES = ['events', 'community'] as const
+const PORTAL_ROLES = ['admin', 'staff', 'event_manager']
+
+/** The Staff scenarios: the shared fixture's combinations, with the 'staff' claim. */
+function staffScenarios(): Scenario[] {
+  const out: Scenario[] = []
+  for (const assignments of ASSIGNMENT_SETS)
+    for (const hasMember of [true, false])
+      for (const dutyScopes of hasMember ? SCOPE_SETS : [null])
+        for (const platformFlag of [false, true])
+          out.push({
+            name: `role=staff assigned=${assignments.join('+') || '-'} member=${hasMember} scopes=${dutyScopes === null ? '-' : dutyScopes.join('+') || 'none'} platform=${platformFlag}`,
+            signedIn: true,
+            claimsRole: 'staff',
+            assignments,
+            dutyScopes,
+            hasMember,
+            platformFlag,
+          })
+  return out
+}
 
 let db: FakeDb
 
+/** The tables for a scenario; Staff also holds its Stellr 'staff' membership, as lib/staff.ts writes it. */
+function tablesFor(s: Scenario) {
+  const tables = scenarioTables(s)
+  if (s.signedIn && s.claimsRole === 'staff') {
+    tables.tenant_memberships = [...(tables.tenant_memberships ?? []), { tenant_id: STELLR_TENANT_ID, role: 'staff', clerk_user_id: USER, member_id: null }]
+  }
+  return tables
+}
+
 function use(s: Scenario) {
-  db = fakeDb(scenarioTables(s))
+  db = fakeDb(tablesFor(s))
   vi.mocked(supabaseServer).mockReturnValue(db.client)
-  vi.mocked(auth).mockResolvedValue(scenarioAuth(s) as never)
+  // Staff counts only on a session with a second factor (staff-role.8); every Staff scenario has one.
+  vi.mocked(auth).mockResolvedValue({ ...scenarioAuth(s), factorVerificationAge: s.signedIn ? [0, 0] : null } as never)
 }
 
 async function outcome(run: () => Promise<unknown>): Promise<string> {
@@ -86,59 +112,79 @@ async function outcome(run: () => Promise<unknown>): Promise<string> {
   }
 }
 
-/** Every legacy answer for the current scenario, by idiom name. */
-async function legacy(s: Scenario): Promise<Record<string, unknown>> {
-  const claims = scenarioAuth(s).sessionClaims
+/** The expected answer to each decision, written out from the rules. */
+function expected(s: Scenario): Record<string, unknown> {
+  const role = s.signedIn ? s.claimsRole : undefined
+  const admin = role === 'admin'
+  const staff = role === 'staff'
+  const portal = role !== undefined && PORTAL_ROLES.includes(role)
+  const page = (allowed: boolean) => (!s.signedIn ? 'REDIRECT /sign-in' : allowed ? 'ok' : 'NOT_FOUND')
   const out: Record<string, unknown> = {
-    isAdminClaims: isAdminClaims(claims),
-    currentUserIsAdmin: await currentUserIsAdmin(),
-    isEventManagerClaims: isEventManagerClaims(claims),
-    hasAdminPortalAccess: hasAdminPortalAccess(claims),
-    requireAdminPage: await outcome(requireAdminPage),
-    isCrewRole: isCrewRole(s.signedIn ? s.claimsRole : undefined),
+    isStellrAdmin: admin,
+    requireStellrAdmin: admin ? 'ok' : s.signedIn ? 403 : 401,
+    hasPortalAccess: portal,
+    'page.requireAdmin': page(portal),
+    // Admin-only pages refuse Staff: only an admin passes.
+    'page.requireStellrAdmin': page(admin),
+    'page.requireCapability(portal:read)': page(admin || staff),
+    isCrewTarget: portal,
+    'hasCapability(competitions:write)': admin || staff,
+    'hasCapability(access:manage)': admin,
+    requireScholarshipAdmin: admin,
+    requireSurveyAdmin: !s.signedIn ? 401 : admin || staff ? 'ok' : 403,
+    canManageStoreCatalog: admin,
+    adminName: admin,
+  }
+  for (const slug of SLUGS) {
+    let answer: unknown
+    if (!s.signedIn) answer = { ok: false, status: 401 }
+    else if (admin) answer = { ok: true, userId: USER, isAdmin: true, assignedSlugs: null, tenantId: STELLR_TENANT_ID }
+    // Owner decision, 21 Nov 2026: Staff reach every Stellr event, not as an admin.
+    else if (staff) answer = { ok: true, userId: USER, isAdmin: false, assignedSlugs: null, tenantId: STELLR_TENANT_ID }
+    else if (role === 'event_manager')
+      answer =
+        slug && !s.assignments.includes(slug)
+          ? { ok: false, status: 403 }
+          : { ok: true, userId: USER, isAdmin: false, assignedSlugs: s.assignments, tenantId: STELLR_TENANT_ID }
+    else answer = { ok: false, status: 403 }
+    out[`requireEventAccess(${slug ?? ''})`] = answer
+  }
+  for (const scope of SCOPES) {
+    const held = s.hasMember && s.dutyScopes !== null && (s.dutyScopes.includes('all') || s.dutyScopes.includes(scope))
+    out[`hasScope(${scope})`] = s.signedIn && (admin || held)
+  }
+  return out
+}
+
+/** lib/authz's answer to each decision, under the configured source. */
+async function actual(s: Scenario): Promise<Record<string, unknown>> {
+  const adminDecision = await authz.requireStellrAdmin()
+  const out: Record<string, unknown> = {
+    isStellrAdmin: await authz.isStellrAdmin(),
+    requireStellrAdmin: adminDecision.ok ? 'ok' : adminDecision.status,
+    hasPortalAccess: await authz.hasPortalAccess(),
+    'page.requireAdmin': await outcome(() => authz.page.requireAdmin()),
+    'page.requireStellrAdmin': await outcome(() => authz.page.requireStellrAdmin()),
+    'page.requireCapability(portal:read)': await outcome(() => authz.page.requireCapability('portal:read')),
+    isCrewTarget: await authz.isCrewTarget({ clerkUserId: s.signedIn ? USER : null, clerkRole: s.signedIn ? s.claimsRole : undefined }),
+    'hasCapability(competitions:write)': await authz.hasCapability('competitions:write'),
+    'hasCapability(access:manage)': await authz.hasCapability('access:manage'),
     requireScholarshipAdmin: (await requireScholarshipAdmin()) !== null,
     requireSurveyAdmin: await requireSurveyAdmin().then((r) => (r.ok ? 'ok' : r.response.status)),
     canManageStoreCatalog: await canManageStoreCatalog(),
     adminName: (await adminName()) !== null,
   }
-  for (const slug of SLUGS) out[`requireEventAccess(${slug ?? ''})`] = await legacyEventAccess(slug)
-  for (const scope of SCOPES) out[`currentUserHasScope(${scope})`] = await currentUserHasScope(scope)
+  for (const slug of SLUGS) out[`requireEventAccess(${slug ?? ''})`] = await authz.requireEventAccess(slug)
+  for (const scope of SCOPES) out[`hasScope(${scope})`] = await authz.hasScope(scope)
   return out
 }
 
-/** Legacy has no tenant; lib/authz adds one, so it is compared without it. */
-function legacyShape(access: authz.EventAccess): unknown {
-  if (!access.ok) return access
-  const { tenantId: _tenantId, ...rest } = access
-  return rest
-}
+/** The decisions whose postgres answer may follow the tables when data is not synced. */
+const DRIFT_SENSITIVE = /^(hasPortalAccess|page\.requireAdmin|isCrewTarget|requireEventAccess)/
 
-/** The lib/authz answer to each legacy idiom, under the configured source. */
-async function viaAuthz(s: Scenario): Promise<Record<string, unknown>> {
-  const admin = await authz.isStellrAdmin()
-  const adminDecision = await authz.requireStellrAdmin()
-  const section = await authz.requireEventAccess()
-  const out: Record<string, unknown> = {
-    isAdminClaims: admin,
-    currentUserIsAdmin: admin,
-    isEventManagerClaims: section.ok && !section.isAdmin,
-    hasAdminPortalAccess: await authz.hasPortalAccess(),
-    requireAdminPage: await outcome(() => authz.page.requireAdmin()),
-    isCrewRole: await authz.isCrewTarget({ clerkUserId: s.signedIn ? USER : null, clerkRole: s.signedIn ? s.claimsRole : undefined }),
-    requireScholarshipAdmin: admin,
-    requireSurveyAdmin: adminDecision.ok ? 'ok' : adminDecision.status,
-    canManageStoreCatalog: admin,
-    adminName: admin,
-  }
-  for (const slug of SLUGS) out[`requireEventAccess(${slug ?? ''})`] = legacyShape(await authz.requireEventAccess(slug))
-  for (const scope of SCOPES) out[`currentUserHasScope(${scope})`] = await authz.hasScope(scope)
-  return out
-}
-
-/** The idioms whose postgres answer may follow the tables when data is not synced. */
-const DRIFT_SENSITIVE = /^(isEventManagerClaims|hasAdminPortalAccess|requireAdminPage|isCrewRole|requireEventAccess)/
-
-const scenarios = allScenarios()
+const legacyScenarios = allScenarios()
+const staff = staffScenarios()
+const scenarios = [...legacyScenarios, ...staff]
 
 beforeEach(() => {
   vi.stubEnv('AUTHZ_SOURCE', '')
@@ -147,52 +193,49 @@ afterEach(() => {
   vi.unstubAllEnvs()
 })
 
-describe('authz equivalence with the legacy guard idioms', () => {
-  it('covers the whole truth table', () => {
-    expect(scenarios.length).toBe(151)
+describe('the lib/authz truth table', () => {
+  it('covers the whole truth table, Staff included', () => {
+    expect(legacyScenarios.length).toBe(151)
+    expect(staff.length).toBe(30)
     expect(scenarios.filter(isSynced).length).toBeGreaterThan(60)
     expect(scenarios.filter((s) => !isSynced(s)).length).toBeGreaterThan(30)
   })
 
-  it.each(scenarios.map((s) => [s.name, s] as const))('clerk source equals legacy: %s', async (_name, s) => {
+  it.each(scenarios.map((s) => [s.name, s] as const))('clerk source gives the expected answers: %s', async (_name, s) => {
     use(s)
-    const want = await legacy(s)
     vi.stubEnv('AUTHZ_SOURCE', 'clerk')
-    expect(await viaAuthz(s)).toEqual(want)
+    expect(await actual(s)).toEqual(expected(s))
   })
 
-  it.each(scenarios.filter(isSynced).map((s) => [s.name, s] as const))(
-    'postgres source equals legacy on synced data: %s',
-    async (_name, s) => {
-      use(s)
-      const want = await legacy(s)
-      vi.stubEnv('AUTHZ_SOURCE', 'postgres')
-      expect(await viaAuthz(s)).toEqual(want)
-    },
-  )
+  it.each(scenarios.filter(isSynced).map((s) => [s.name, s] as const))('postgres source gives them on synced data: %s', async (_name, s) => {
+    use(s)
+    vi.stubEnv('AUTHZ_SOURCE', 'postgres')
+    expect(await actual(s)).toEqual(expected(s))
+  })
 
-  it('on unsynced data only the event-manager answers move, and admin and scope answers never do', async () => {
+  it('on unsynced data only the event-manager answers move, and admin, Staff and scope answers never do', async () => {
     const moved = new Set<string>()
     for (const s of scenarios.filter((x) => !isSynced(x))) {
       use(s)
-      const want = await legacy(s)
+      const want = expected(s)
       vi.stubEnv('AUTHZ_SOURCE', 'postgres')
-      const got = await viaAuthz(s)
+      const got = await actual(s)
       vi.stubEnv('AUTHZ_SOURCE', '')
       for (const key of Object.keys(want)) {
         if (JSON.stringify(want[key]) === JSON.stringify(got[key])) continue
         expect(key, s.name).toMatch(DRIFT_SENSITIVE)
-        // The staff-target check protects, so drift may only add protection.
-        if (key === 'isCrewRole') expect([want[key], got[key]], s.name).toEqual([false, true])
+        // Staff holding an assignment as well answers as Staff in both sources.
+        expect(s.claimsRole, `${s.name} ${key}`).not.toBe('staff')
+        // The crew-target check protects, so drift may only add protection.
+        if (key === 'isCrewTarget') expect([want[key], got[key]], s.name).toEqual([false, true])
         moved.add(key)
       }
     }
     // The drift is real (so a role-sync check is needed before any flip) …
     expect([...moved].sort()).toEqual([
-      'hasAdminPortalAccess',
-      'isCrewRole',
-      'isEventManagerClaims',
-      'requireAdminPage',
+      'hasPortalAccess',
+      'isCrewTarget',
+      'page.requireAdmin',
       'requireEventAccess()',
       'requireEventAccess(ev-a)',
       'requireEventAccess(ev-b)',
@@ -208,7 +251,7 @@ describe('authz equivalence with the legacy guard idioms', () => {
     const stray = scenarios.find((s) => s.claimsRole === 'student' && s.assignments.length === 1 && s.hasMember)!
     use(stray)
     expect(await authz.hasPortalAccess()).toBe(true)
-    expect(legacyShape(await authz.requireEventAccess('ev-a'))).toEqual({ ok: true, userId: USER, isAdmin: false, assignedSlugs: ['ev-a'] })
+    expect(await authz.requireEventAccess('ev-a')).toEqual({ ok: true, userId: USER, isAdmin: false, assignedSlugs: ['ev-a'], tenantId: STELLR_TENANT_ID })
     expect(await authz.isStellrAdmin()).toBe(false)
   })
 
@@ -219,84 +262,132 @@ describe('authz equivalence with the legacy guard idioms', () => {
       await authz.isStellrAdmin()
       await authz.requireStellrAdmin()
       await authz.hasPortalAccess()
+      await authz.hasCapability('competitions:write')
       await outcome(() => authz.page.requireAdmin())
       await authz.isCrewTarget({ clerkUserId: USER, clerkRole: s.claimsRole })
       expect(db.reads, s.name).toEqual([])
     }
   })
 
-  it('the clerk source reads assignments exactly as legacy does (event_slug only, event managers only)', async () => {
+  it('the clerk source reads assignments for an event manager only, as the legacy gate did (Staff and admins need none)', async () => {
     for (const s of scenarios) {
       use(s)
-      await legacyEventAccess('ev-a')
-      const legacyReads = [...db.reads]
-      db.reads.length = 0
       vi.stubEnv('AUTHZ_SOURCE', 'clerk')
       await authz.requireEventAccess('ev-a')
-      expect(db.reads, s.name).toEqual(legacyReads)
+      expect(db.reads, s.name).toEqual(s.signedIn && s.claimsRole === 'event_manager' ? ['event_manager_assignments'] : [])
       vi.stubEnv('AUTHZ_SOURCE', '')
     }
   })
 })
 
-describe('lib/admin-auth, the shims, answer as the frozen legacy code did', () => {
-  const load = () => vi.importActual<typeof import('@/lib/admin-auth')>('@/lib/admin-auth')
+describe('Staff, the owner decision of 21 Nov 2026', () => {
+  const plain = staff.find((s) => s.assignments.length === 0 && !s.hasMember && !s.platformFlag)!
 
-  async function answers(m: Awaited<ReturnType<typeof load>>, s: Scenario) {
-    const claims = scenarioAuth(s).sessionClaims
-    const out: Record<string, unknown> = {
-      isAdminClaims: m.isAdminClaims(claims),
-      isEventManagerClaims: m.isEventManagerClaims(claims),
-      hasAdminPortalAccess: m.hasAdminPortalAccess(claims),
-      isCrewRole: m.isCrewRole(s.claimsRole),
-      currentUserIsAdmin: await m.currentUserIsAdmin(),
-      requireAdminPage: await outcome(m.requireAdminPage),
-    }
-    for (const scope of SCOPES) out[`currentUserHasScope(${scope})`] = await m.currentUserHasScope(scope)
-    return out
-  }
-
-  it.each(scenarios.map((s) => [s.name, s] as const))('%s', async (_name, s) => {
-    use(s)
-    const legacyModule = await import('@/test/fixtures/authz-legacy')
-    const want = await answers(legacyModule as never, s)
-    const wantReads = [...db.reads]
-    db.reads.length = 0
-    expect(await answers(await load(), s)).toEqual(want)
-    expect(db.reads).toEqual(wantReads)
-  })
-
-  it('the claim predicates take any claim shape the same way', async () => {
-    const shim = await load()
-    const shapes = [null, undefined, {}, { metadata: null }, { metadata: {} }, { metadata: { role: 'Admin' } }, { metadata: { role: 7 } }, { metadata: { role: ['admin'] } }]
-    for (const c of shapes as Record<string, unknown>[]) {
-      expect(shim.isAdminClaims(c), JSON.stringify(c)).toBe(isAdminClaims(c))
-      expect(shim.isEventManagerClaims(c), JSON.stringify(c)).toBe(isEventManagerClaims(c))
-      expect(shim.hasAdminPortalAccess(c), JSON.stringify(c)).toBe(hasAdminPortalAccess(c))
+  it.each(['clerk', 'postgres'])('under %s Staff reaches a Stellr event and every event in the list, not as an admin', async (source) => {
+    use(plain)
+    vi.stubEnv('AUTHZ_SOURCE', source)
+    for (const slug of ['ev-a', 'ev-z', undefined]) {
+      expect(await authz.requireEventAccess(slug), String(slug)).toEqual({ ok: true, userId: USER, isAdmin: false, assignedSlugs: null, tenantId: STELLR_TENANT_ID })
     }
   })
 
-  it('isCrewRole takes any value the same way', async () => {
-    const shim = await load()
-    for (const v of [undefined, null, '', 'admin', 'event_manager', 'member', 'Admin', 7, ['admin'], {}]) {
-      expect(shim.isCrewRole(v), String(v)).toBe(isCrewRole(v))
+  it.each(['clerk', 'postgres'])('under %s Staff is refused the admin-only pages and decisions', async (source) => {
+    use(plain)
+    vi.stubEnv('AUTHZ_SOURCE', source)
+    expect(await outcome(() => authz.page.requireStellrAdmin())).toBe('NOT_FOUND')
+    expect(await authz.isStellrAdmin()).toBe(false)
+    for (const cap of ['access:manage', 'roles:manage', 'duties:manage', 'impersonate', 'privacy:read', 'scholarships:write', 'store:write'] as const) {
+      expect(await authz.hasCapability(cap), cap).toBe(false)
     }
-    // The Staff role (13 Nov 2026) is the one deliberate addition to the frozen list.
-    expect([...shim.CREW_CLERK_ROLES]).toEqual(['admin', 'staff', 'event_manager'])
+  })
+
+  it('Staff on a session with no second factor is treated as not Staff: no event, no portal', async () => {
+    use(plain)
+    vi.mocked(auth).mockResolvedValue({ ...scenarioAuth(plain), factorVerificationAge: [0, -1] } as never)
+    vi.mocked(clerkClient).mockResolvedValue({ users: { getUser: async () => ({ twoFactorEnabled: false }) } } as never)
+    vi.stubEnv('AUTHZ_SOURCE', 'clerk')
+    expect(await authz.requireEventAccess('ev-a')).toEqual({ ok: false, status: 403 })
+    expect(await authz.hasPortalAccess()).toBe(false)
+  })
+
+  it('an event manager keeps exactly their assigned events, and a plain member gains nothing', async () => {
+    const em = legacyScenarios.find((s) => s.claimsRole === 'event_manager' && s.assignments.join() === 'ev-a' && !s.hasMember && !s.platformFlag)!
+    use(em)
+    vi.stubEnv('AUTHZ_SOURCE', 'clerk')
+    expect(await authz.requireEventAccess('ev-a')).toMatchObject({ ok: true, isAdmin: false, assignedSlugs: ['ev-a'] })
+    expect(await authz.requireEventAccess('ev-b')).toEqual({ ok: false, status: 403 })
+    expect(await authz.requireEventAccess()).toMatchObject({ ok: true, assignedSlugs: ['ev-a'] })
+
+    const member = legacyScenarios.find((s) => s.claimsRole === 'member' && s.assignments.length === 0 && !s.hasMember && !s.platformFlag)!
+    use(member)
+    expect(await authz.requireEventAccess('ev-a')).toEqual({ ok: false, status: 403 })
+    expect(await authz.requireEventAccess()).toEqual({ ok: false, status: 403 })
+    expect(await authz.hasPortalAccess()).toBe(false)
+  })
+})
+
+describe('the claim and crew-target rules take any value the same way', () => {
+  it('portalRoleFromClaims (replaced isAdminClaims, isEventManagerClaims, hasAdminPortalAccess)', () => {
+    const table: [unknown, string | null][] = [
+      [null, null],
+      [undefined, null],
+      [{}, null],
+      [{ metadata: null }, null],
+      [{ metadata: {} }, null],
+      [{ metadata: { role: 'admin' } }, 'admin'],
+      [{ metadata: { role: 'staff' } }, 'staff'],
+      [{ metadata: { role: 'event_manager' } }, 'event_manager'],
+      [{ metadata: { role: 'Admin' } }, null],
+      [{ metadata: { role: 7 } }, null],
+      [{ metadata: { role: ['admin'] } }, null],
+      [{ metadata: { role: 'member' } }, null],
+    ]
+    for (const [claims, want] of table) expect(authz.portalRoleFromClaims(claims as never), JSON.stringify(claims)).toBe(want)
+  })
+
+  it('isCrewTarget on the Clerk role (replaced isCrewRole and CREW_CLERK_ROLES): admin, Staff and event managers only', async () => {
+    vi.stubEnv('AUTHZ_SOURCE', 'clerk')
+    db = fakeDb({})
+    vi.mocked(supabaseServer).mockReturnValue(db.client)
+    const table: [unknown, boolean][] = [
+      [undefined, false],
+      [null, false],
+      ['', false],
+      ['admin', true],
+      ['staff', true],
+      ['event_manager', true],
+      ['member', false],
+      ['Admin', false],
+      [7, false],
+      [['admin'], false],
+      [{}, false],
+    ]
+    for (const [role, want] of table) expect(await authz.isCrewTarget({ clerkUserId: USER, clerkRole: role }), String(role)).toBe(want)
   })
 })
 
 describe('the view-as refusal, against the rule the start route held before C14', () => {
   type Clerk = 'no_login' | 'not_found' | 'down' | { role: unknown }
-  const CLERK_STATES: Clerk[] = ['no_login', 'not_found', 'down', { role: undefined }, { role: 'admin' }, { role: 'event_manager' }, { role: 'student' }, { role: 'member' }, { role: 7 }]
+  const CLERK_STATES: Clerk[] = [
+    'no_login',
+    'not_found',
+    'down',
+    { role: undefined },
+    { role: 'admin' },
+    { role: 'staff' },
+    { role: 'event_manager' },
+    { role: 'student' },
+    { role: 'member' },
+    { role: 7 },
+  ]
 
-  /** Word for word what app/api/admin/impersonation/route.ts answered: 403, 503, or carry on. */
-  function legacyRefusal(row: 'none' | 'held' | 'read_fails', clerk: Clerk): 403 | 503 | null {
+  /** What app/api/admin/impersonation/route.ts answered: 403, 503, or carry on. Staff joined the crew roles on 13 Nov 2026. */
+  function expectedRefusal(row: 'none' | 'held' | 'read_fails', clerk: Clerk): 403 | 503 | null {
     if (row === 'read_fails') return 503
     if (row === 'held') return 403
     if (clerk === 'no_login' || clerk === 'not_found') return null
     if (clerk === 'down') return 503
-    return isCrewRole(clerk.role) ? 403 : null
+    return typeof clerk.role === 'string' && PORTAL_ROLES.includes(clerk.role) ? 403 : null
   }
 
   function target(row: 'none' | 'held' | 'read_fails', clerk: Clerk) {
@@ -325,7 +416,7 @@ describe('the view-as refusal, against the rule the start route held before C14'
   it.each(cases)('row %s, Clerk %j', async (row, clerk) => {
     const { args, getUser } = target(row, clerk)
     vi.stubEnv('AUTHZ_SOURCE', 'clerk')
-    expect(await refusal(args)).toBe(legacyRefusal(row, clerk))
+    expect(await refusal(args)).toBe(expectedRefusal(row, clerk))
     // The row is read first, so a holder or a failed read never reaches Clerk, as before.
     if (row !== 'none' || clerk === 'no_login') expect(getUser).not.toHaveBeenCalled()
     // And no read beyond the row: the rest is the Clerk record.

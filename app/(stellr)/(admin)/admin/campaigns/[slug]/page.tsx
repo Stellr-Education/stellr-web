@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import { redirect, notFound } from 'next/navigation'
-import { requireEventAccess } from '@/lib/event-access'
+import { requireEventAccess } from '@/lib/authz'
 import { supabaseServer } from '@/lib/supabase'
 import { getEventBySlug } from '@/lib/events/repo'
 import { themeFromType, THEME_META, deadlineInfo, seasonLabel } from '@/lib/campaigns'
@@ -26,7 +26,7 @@ interface RegRow {
 
 export default async function AdminCampaignPage({ params }: PageProps) {
   const { slug } = await params
-  const access = await requireEventAccess(slug)
+  const access = await requireEventAccess(slug, { route: '/admin/campaigns/[slug]' })
   if (!access.ok) redirect('/account')
 
   const campaign = await getEventBySlug(slug).catch(() => null)

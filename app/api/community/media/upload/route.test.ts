@@ -19,7 +19,6 @@ vi.mock('@/lib/impersonation', () => ({ assertNotImpersonating: async () => null
 vi.mock('@/lib/spaces', () => ({ getSpaceForMember: vi.fn() }))
 vi.mock('@/lib/campaign-registrations', () => ({ getMemberCampaignRegistration: vi.fn() }))
 vi.mock('@/lib/resource-upload', () => ({ memberManagesContainer: vi.fn() }))
-vi.mock('@/lib/event-access', () => ({ requireEventAccess: vi.fn() }))
 vi.mock('@/lib/supabase', () => ({
   supabaseServer: () => ({ storage: { from: () => ({ download, remove, upload }) } }),
 }))

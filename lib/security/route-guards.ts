@@ -32,10 +32,11 @@ const EVENT_NAMED = 'requireEventAccess#slug'
  */
 export const BASE_GUARDS: Record<GuardKind, Record<string, readonly string[]>> = {
   session: { auth: [CLERK], currentUser: [CLERK] },
-  // Predicates over the Clerk session claims. An inline `role === 'admin'`
-  // comparison also counts, but only when the role is read from the session
-  // claims AND Clerk's auth()/currentUser() is called (see baseKinds()).
-  admin: { isAdminClaims: ['lib/admin-auth'], hasAdminPortalAccess: ['lib/admin-auth'] },
+  // Predicates over the Clerk session claims. The lib/admin-auth ones (isAdminClaims,
+  // hasAdminPortalAccess) were deleted at S5 C25 batch 4 (21 Nov 2026). An inline
+  // `role === 'admin'` comparison still counts, but only when the role is read from the
+  // session claims AND Clerk's auth()/currentUser() is called (see baseKinds()).
+  admin: {},
   // The lib/authz primitives. The platform check also gives `admin`, and both give
   // `session` (see withImplied()). A legacy admin check never gives `tenant` or
   // `platform`. A lib/authz call counts only when its answer is used (enforcedFacts()).
@@ -91,10 +92,8 @@ export const DELEGATE_GUARDS: Record<string, { file: string; kinds: GuardKind[];
   handleSave: { file: 'lib/survey/handlers.ts', kinds: ['session', 'rate_limit'] },
   handleSubmit: { file: 'lib/survey/handlers.ts', kinds: ['session', 'rate_limit'] },
   // admin
-  requireAdminPage: { file: 'lib/admin-auth.ts', kinds: ['admin'] },
-  currentUserIsAdmin: { file: 'lib/admin-auth.ts', kinds: ['admin'] },
-  currentUserHasScope: { file: 'lib/admin-auth.ts', kinds: ['admin'] },
-  requireEventAccess: { file: 'lib/event-access.ts', kinds: ['admin'] },
+  // requireAdminPage, currentUserIsAdmin, currentUserHasScope (lib/admin-auth) and
+  // requireEventAccess (lib/event-access) were deleted at S5 C25 batch 4: every guard is lib/authz.
   requireScholarshipAdmin: { file: 'lib/scholarship-admin.ts', kinds: ['admin'] },
   requireSurveyAdmin: { file: 'lib/survey/admin-auth.ts', kinds: ['admin'] },
   canManageStoreCatalog: { file: 'lib/store/auth.ts', kinds: ['admin'] },
@@ -114,7 +113,7 @@ export const DELEGATE_GUARDS: Record<string, { file: string; kinds: GuardKind[];
   hasCapability: { file: 'lib/authz.ts', kinds: ['admin'] },
   'requireCapability@page': { file: 'lib/authz.ts', kinds: ['admin'], call: 'requireCapability', export: 'page.requireCapability' },
   requireTenantCrew: { file: 'lib/authz.ts', kinds: ['tenant'] },
-  // Same name as the lib/event-access helper above, which C25 deletes. Codemod T5
+  // Same name as the deleted lib/event-access helper (S5 C25 batch 4). Codemod T5
   // re-points routes that stay stellr_only, so it is an admin check like the legacy
   // one. It is a `tenant` check only when it names the event: only then does the
   // answer hold in the event's own tenant and confine an event manager. Without a

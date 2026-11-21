@@ -151,9 +151,26 @@ describe('checkInsVisibleTo / canSeeCheckIn', () => {
     expect(canSeeCheckIn(viewer, 'nevada')).toBe(true)
   })
 
-  it('anything short of isAdmin: true sees nothing extra', () => {
+  it('without a tenant, anything short of isAdmin: true sees nothing extra', () => {
     expect(checkInsVisibleTo(all, { isAdmin: false, assignedSlugs: null })).toEqual([])
     expect(checkInsVisibleTo(all, { isAdmin: false, assignedSlugs: [] })).toEqual([])
     expect(checkInsVisibleTo(all, {} as unknown as { isAdmin: boolean; assignedSlugs: null })).toEqual([])
+  })
+
+  it('Staff, an answer in the Stellr tenant with no assignment list, sees every event (21 Nov 2026)', () => {
+    expect(checkInsVisibleTo(all, { isAdmin: false, assignedSlugs: null, tenantId: STELLR_TENANT_ID })).toEqual(all)
+  })
+
+  it('an event manager in the Stellr tenant still sees only their assigned events', () => {
+    const viewer = { isAdmin: false, assignedSlugs: ['nevada'], tenantId: STELLR_TENANT_ID }
+    expect(checkInsVisibleTo(all, viewer).map((e) => e.slug)).toEqual(['nevada'])
+    expect(checkInsVisibleTo(all, { isAdmin: false, assignedSlugs: [], tenantId: STELLR_TENANT_ID })).toEqual([])
+  })
+
+  it('an answer held in another tenant sees none of Stellr’s check-ins, admin or not', () => {
+    const other = '00000000-0000-4000-8000-0000000000c2'
+    expect(checkInsVisibleTo(all, { isAdmin: true, assignedSlugs: null, tenantId: other })).toEqual([])
+    expect(checkInsVisibleTo(all, { isAdmin: false, assignedSlugs: null, tenantId: other })).toEqual([])
+    expect(checkInsVisibleTo(all, { isAdmin: false, assignedSlugs: ['nevada'], tenantId: other })).toEqual([])
   })
 })
