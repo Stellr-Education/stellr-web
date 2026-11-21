@@ -21,9 +21,10 @@ export const SIGN_OFF_HTML = `<p style="margin:0">All the best,</p>
 export const SIGN_OFF_TEXT = ['All the best,', '', SIGNER.name, SIGNER.title, SIGNER.org].join('\n')
 
 // Absolute URL to the Stellr logo (email clients can't load relative/inlined SVG
-// reliably, so we point at the hosted PNG on the public site).
+// reliably, so we point at the hosted PNG on the public site). The file is
+// public/images/stellr-logo.png; /stellr-logo.png never existed and 404s.
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://www.stellreducation.org'
-const EMAIL_LOGO_URL = `${SITE_URL}/stellr-logo.png`
+const EMAIL_LOGO_URL = `${SITE_URL}/images/stellr-logo.png`
 
 // CAN-SPAM requires a valid physical postal address on marketing email. Shown
 // only when an unsubscribe link is present (i.e. marketing, not transactional).
