@@ -4,7 +4,7 @@ import Link from 'next/link'
 import { DeleteEntityButton } from '@/components/admin/DeleteEntityButton'
 import { SchoolEditForm } from '@/components/admin/SchoolEditForm'
 import { Collapsible, CollapsibleGroup, CollapseAllControls } from '@stellr/web-ui'
-import { requireAdminPage } from '@/lib/admin-auth'
+import { authz } from '@/lib/authz'
 
 export const metadata = { title: 'Admin — School Detail' }
 
@@ -23,7 +23,7 @@ export default async function AdminSchoolDetailPage({
 }: {
   params: Promise<{ id: string }>
 }) {
-  await requireAdminPage()
+  await authz.page.requireCapability('portal:read', { route: '/admin/schools/[id]' })
   const { id } = await params
   const db = supabaseServer()
 

@@ -1,12 +1,12 @@
 import { supabaseServer } from '@/lib/supabase'
 import { ActivityLogReview } from '@/components/admin/ActivityLogReview'
 import { DeletionRequestsReview, type DeletionRequest } from '@/components/admin/DeletionRequestsReview'
-import { requireAdminPage } from '@/lib/admin-auth'
+import { authz } from '@/lib/authz'
 
 export const metadata = { title: 'Admin — Activity Log Review' }
 
 export default async function ActivityLogPage() {
-  await requireAdminPage()
+  await authz.page.requireCapability('portal:read', { route: '/admin/activity-log' })
   const db = supabaseServer()
 
   const [{ data: participations }, { data: deletionRequests }] = await Promise.all([

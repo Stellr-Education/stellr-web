@@ -1,6 +1,6 @@
 import { supabaseServer } from '@/lib/supabase'
 import Link from 'next/link'
-import { requireAdminPage } from '@/lib/admin-auth'
+import { authz } from '@/lib/authz'
 
 export const metadata = { title: 'Admin — Schools' }
 
@@ -13,7 +13,7 @@ const TD = 'border-b border-line-light px-4 py-3 group-last:border-b-0'
 const STICKY = 'sticky left-0 z-10 border-r border-line-light'
 
 export default async function AdminSchoolsPage() {
-  await requireAdminPage()
+  await authz.page.requireCapability('portal:read', { route: '/admin/schools' })
   const db = supabaseServer()
 
   const { data: schools } = await db

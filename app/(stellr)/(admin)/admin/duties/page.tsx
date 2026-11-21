@@ -1,12 +1,13 @@
 import { supabaseServer } from '@/lib/supabase'
-import { DUTY_SCOPES, requireAdminPage } from '@/lib/admin-auth'
+import { DUTY_SCOPES } from '@/lib/admin-auth'
+import { authz } from '@/lib/authz'
 import DutiesManager, { type DutyRow } from '@/components/admin/DutiesManager'
 
 export const metadata = { title: 'Admin — Duties' }
 
 // Duties: who gets which admin alerts and digests (was Staff roles until 13 Nov 2026).
 export default async function AdminDutiesPage() {
-  await requireAdminPage()
+  await authz.page.requireStellrAdmin({ route: '/admin/duties' })
   const db = supabaseServer()
   const { data } = await db
     .from('admin_duties')

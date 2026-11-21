@@ -20,8 +20,8 @@
     "roleTableRead"
   ],
   "totals": {
-    "files": 40,
-    "sites": 55,
+    "files": 23,
+    "sites": 38,
     "byIdiom": {
       "CREW_CLERK_ROLES": 1,
       "clerkRoleRead": 8,
@@ -31,16 +31,12 @@
       "isAdminClaims": 5,
       "isCrewRole": 1,
       "isEventManagerClaims": 2,
-      "pageRequireAdmin": 1,
-      "requireAdminPage": 17,
+      "requireAdminPage": 1,
       "requireEventAccess": 10,
       "roleTableRead": 2
     }
   },
   "files": {
-    "app/(stellr)/(admin)/admin/activity-log/page.tsx": {
-      "requireAdminPage": 1
-    },
     "app/(stellr)/(admin)/admin/campaigns/[slug]/page.tsx": {
       "requireEventAccess": 1
     },
@@ -62,9 +58,6 @@
     "app/(stellr)/(admin)/admin/competitions/page.tsx": {
       "requireEventAccess": 1
     },
-    "app/(stellr)/(admin)/admin/compliance/page.tsx": {
-      "requireAdminPage": 1
-    },
     "app/(stellr)/(admin)/admin/docusigns/page.tsx": {
       "clerkRoleRead": 1
     },
@@ -74,53 +67,8 @@
     "app/(stellr)/(admin)/admin/docusigns/templates/page.tsx": {
       "clerkRoleRead": 1
     },
-    "app/(stellr)/(admin)/admin/duties/page.tsx": {
-      "requireAdminPage": 1
-    },
-    "app/(stellr)/(admin)/admin/email/page.tsx": {
-      "requireAdminPage": 1
-    },
-    "app/(stellr)/(admin)/admin/members/[id]/page.tsx": {
-      "requireAdminPage": 1
-    },
-    "app/(stellr)/(admin)/admin/members/[id]/view-as/page.tsx": {
-      "pageRequireAdmin": 1
-    },
-    "app/(stellr)/(admin)/admin/members/access/page.tsx": {
-      "requireAdminPage": 1
-    },
-    "app/(stellr)/(admin)/admin/members/new/page.tsx": {
-      "requireAdminPage": 1
-    },
-    "app/(stellr)/(admin)/admin/members/page.tsx": {
-      "requireAdminPage": 1
-    },
-    "app/(stellr)/(admin)/admin/members/volunteers/page.tsx": {
-      "requireAdminPage": 1
-    },
-    "app/(stellr)/(admin)/admin/page.tsx": {
-      "requireAdminPage": 1
-    },
     "app/(stellr)/(admin)/admin/privacy-requests/page.tsx": {
       "clerkRoleRead": 1
-    },
-    "app/(stellr)/(admin)/admin/schools/[id]/page.tsx": {
-      "requireAdminPage": 1
-    },
-    "app/(stellr)/(admin)/admin/schools/page.tsx": {
-      "requireAdminPage": 1
-    },
-    "app/(stellr)/(admin)/admin/store/[id]/page.tsx": {
-      "requireAdminPage": 1
-    },
-    "app/(stellr)/(admin)/admin/store/discounts/page.tsx": {
-      "requireAdminPage": 1
-    },
-    "app/(stellr)/(admin)/admin/store/new/page.tsx": {
-      "requireAdminPage": 1
-    },
-    "app/(stellr)/(admin)/admin/store/page.tsx": {
-      "requireAdminPage": 1
     },
     "app/(stellr)/(member)/layout.tsx": {
       "isAdminClaims": 1
