@@ -20,155 +20,15 @@
     "roleTableRead"
   ],
   "totals": {
-    "files": 40,
-    "sites": 55,
+    "files": 1,
+    "sites": 1,
     "byIdiom": {
-      "CREW_CLERK_ROLES": 1,
-      "clerkRoleRead": 8,
-      "currentUserHasScope": 3,
-      "currentUserIsAdmin": 4,
-      "hasAdminPortalAccess": 1,
-      "isAdminClaims": 5,
-      "isCrewRole": 1,
-      "isEventManagerClaims": 2,
-      "pageRequireAdmin": 1,
-      "requireAdminPage": 17,
-      "requireEventAccess": 10,
-      "roleTableRead": 2
+      "clerkRoleRead": 1
     }
   },
   "files": {
-    "app/(stellr)/(admin)/admin/activity-log/page.tsx": {
-      "requireAdminPage": 1
-    },
-    "app/(stellr)/(admin)/admin/campaigns/[slug]/page.tsx": {
-      "requireEventAccess": 1
-    },
-    "app/(stellr)/(admin)/admin/competitions/[slug]/check-in/page.tsx": {
-      "requireEventAccess": 1
-    },
-    "app/(stellr)/(admin)/admin/competitions/[slug]/check-in/poster/page.tsx": {
-      "requireEventAccess": 1
-    },
-    "app/(stellr)/(admin)/admin/competitions/[slug]/page.tsx": {
-      "requireEventAccess": 1
-    },
-    "app/(stellr)/(admin)/admin/competitions/artwork/page.tsx": {
-      "requireEventAccess": 1
-    },
-    "app/(stellr)/(admin)/admin/competitions/check-in-banner/page.tsx": {
-      "requireEventAccess": 1
-    },
-    "app/(stellr)/(admin)/admin/competitions/page.tsx": {
-      "requireEventAccess": 1
-    },
-    "app/(stellr)/(admin)/admin/compliance/page.tsx": {
-      "requireAdminPage": 1
-    },
-    "app/(stellr)/(admin)/admin/docusigns/page.tsx": {
-      "clerkRoleRead": 1
-    },
-    "app/(stellr)/(admin)/admin/docusigns/templates/edit/page.tsx": {
-      "clerkRoleRead": 1
-    },
-    "app/(stellr)/(admin)/admin/docusigns/templates/page.tsx": {
-      "clerkRoleRead": 1
-    },
-    "app/(stellr)/(admin)/admin/duties/page.tsx": {
-      "requireAdminPage": 1
-    },
-    "app/(stellr)/(admin)/admin/email/page.tsx": {
-      "requireAdminPage": 1
-    },
-    "app/(stellr)/(admin)/admin/members/[id]/page.tsx": {
-      "requireAdminPage": 1
-    },
-    "app/(stellr)/(admin)/admin/members/[id]/view-as/page.tsx": {
-      "pageRequireAdmin": 1
-    },
-    "app/(stellr)/(admin)/admin/members/access/page.tsx": {
-      "requireAdminPage": 1
-    },
-    "app/(stellr)/(admin)/admin/members/new/page.tsx": {
-      "requireAdminPage": 1
-    },
-    "app/(stellr)/(admin)/admin/members/page.tsx": {
-      "requireAdminPage": 1
-    },
-    "app/(stellr)/(admin)/admin/members/volunteers/page.tsx": {
-      "requireAdminPage": 1
-    },
-    "app/(stellr)/(admin)/admin/page.tsx": {
-      "requireAdminPage": 1
-    },
-    "app/(stellr)/(admin)/admin/privacy-requests/page.tsx": {
-      "clerkRoleRead": 1
-    },
-    "app/(stellr)/(admin)/admin/schools/[id]/page.tsx": {
-      "requireAdminPage": 1
-    },
-    "app/(stellr)/(admin)/admin/schools/page.tsx": {
-      "requireAdminPage": 1
-    },
-    "app/(stellr)/(admin)/admin/store/[id]/page.tsx": {
-      "requireAdminPage": 1
-    },
-    "app/(stellr)/(admin)/admin/store/discounts/page.tsx": {
-      "requireAdminPage": 1
-    },
-    "app/(stellr)/(admin)/admin/store/new/page.tsx": {
-      "requireAdminPage": 1
-    },
-    "app/(stellr)/(admin)/admin/store/page.tsx": {
-      "requireAdminPage": 1
-    },
-    "app/(stellr)/(member)/layout.tsx": {
-      "isAdminClaims": 1
-    },
-    "app/api/admin/digest/send/route.ts": {
-      "currentUserIsAdmin": 1
-    },
-    "app/api/admin/duties/route.ts": {
-      "clerkRoleRead": 1
-    },
-    "app/api/admin/events/slug-guard/route.ts": {
-      "currentUserHasScope": 1
-    },
-    "app/api/admin/health/integrations/route.ts": {
-      "clerkRoleRead": 1
-    },
-    "app/api/admin/members/merge/route.ts": {
-      "currentUserIsAdmin": 2
-    },
     "components/layout/NavUserButton.tsx": {
       "clerkRoleRead": 1
-    },
-    "lib/admin-auth.ts": {
-      "CREW_CLERK_ROLES": 1,
-      "currentUserHasScope": 1,
-      "currentUserIsAdmin": 1,
-      "hasAdminPortalAccess": 1,
-      "isAdminClaims": 2,
-      "isCrewRole": 1,
-      "isEventManagerClaims": 1,
-      "requireAdminPage": 1,
-      "roleTableRead": 1
-    },
-    "lib/event-access.ts": {
-      "isAdminClaims": 1,
-      "isEventManagerClaims": 1,
-      "requireEventAccess": 1,
-      "roleTableRead": 1
-    },
-    "lib/member-session.ts": {
-      "isAdminClaims": 1
-    },
-    "lib/training.ts": {
-      "currentUserHasScope": 1
-    },
-    "lib/uploads.ts": {
-      "clerkRoleRead": 1,
-      "requireEventAccess": 2
     }
   }
 }

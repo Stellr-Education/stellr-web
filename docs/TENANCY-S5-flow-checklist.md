@@ -4,6 +4,8 @@ The gate for M1: Stellr runs as tenant #1 with no visible change. For 30 days on
 
 **The sign-off is the owner's.** An agent may gather evidence and fill in the evidence column. It does not fill in a sign-off.
 
+**This list: Owner sign-off 21 Nov 2026 (in chat).** The owner reviewed and approved the checklist as the D7 list (recorded under "Closing it"). That approves the flows, crons and steps listed; it is not evidence for any row. Every row below with no window, evidence or sign-off still has none, and M1's sign-off still comes after the 30 days.
+
 ## How to use it
 
 **When the clock starts.** On the first day production runs the code the gate is about: the conversion slices promoted, and each flag set to the value it will keep. A change to a flag or a promotion that touches a flow restarts that flow's row, and the owner decides whether it restarts the rest. Not started: S5 is still merging to `dev`.
@@ -137,6 +139,7 @@ Sign-off steps the waves named (`docs/TENANCY-S5.md`, "Docs owed after wave 4", 
 
 | | |
 |---|---|
+| Owner sign-off of this list (D7) | Owner sign-off 21 Nov 2026 (in chat). Covers the list, not any row's evidence |
 | Clock started (date, deployment SHA) | |
 | Flags in force (`AUTHZ_SOURCE`, `LOADSCOPED_MODE`, `TENANT_DB_ENABLED`, `PLATFORM_AUDIT_ENABLED`, `RATE_LIMIT_STORE`, `TENANT_ROUTING_ENABLED`) | |
 | Restarts, with the reason | |

@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { client } from '@/lib/sanity'
 import { supabaseServer } from '@/lib/supabase'
-import { currentUserHasScope } from '@/lib/admin-auth'
+import { hasScope } from '@/lib/authz'
 
 // Guard behind the Sanity Studio's slug field.
 //
@@ -20,7 +20,7 @@ import { currentUserHasScope } from '@/lib/admin-auth'
 export const dynamic = 'force-dynamic'
 
 export async function GET(req: Request) {
-  if (!(await currentUserHasScope('events'))) {
+  if (!(await hasScope('events', { route: '/api/admin/events/slug-guard' }))) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
 

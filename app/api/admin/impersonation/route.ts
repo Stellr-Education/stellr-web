@@ -1,7 +1,7 @@
 import { auth } from '@clerk/nextjs/server'
 import { cookies } from 'next/headers'
 import { NextResponse } from 'next/server'
-import { isStellrAdmin, isViewAsTargetCrew } from '@/lib/authz'
+import { assertPlatformAdmin, isViewAsTargetCrew } from '@/lib/authz'
 import { supabaseServer } from '@/lib/supabase'
 import { logActivityOrThrow, actorFromAuth, type Actor } from '@/lib/activity-log'
 import {
@@ -136,7 +136,7 @@ async function callerClerkId(): Promise<string | null> {
 
 export async function POST(req: Request) {
   const { userId } = await auth()
-  if (!userId || !(await isStellrAdmin({ route: '/api/admin/impersonation' }))) return refuse(403, 'Forbidden')
+  if (!userId || !(await assertPlatformAdmin({ route: '/api/admin/impersonation' })).ok) return refuse(403, 'Forbidden')
 
   // No dedicated signing secret means no unforgeable ticket. Say so plainly
   // rather than falling back to some other key.

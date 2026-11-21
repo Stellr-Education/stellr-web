@@ -4,6 +4,7 @@ import { SpacesAdminList, type AdminSpaceRow } from '@/components/admin/communit
 import { resolveSpaceMemberCounts } from '@/lib/spaces'
 import type { SpaceAccessType, SpaceTheme } from '@/lib/spaces'
 import { authz } from '@/lib/authz'
+import { stellrRows } from '@/lib/tenancy/stellr-scope'
 
 export const metadata = { title: 'Admin — Manage Spaces' }
 export const dynamic = 'force-dynamic'
@@ -12,9 +13,9 @@ export default async function AdminSpacesPage() {
   await authz.page.requireCapability('portal:read', { route: '/admin/community/spaces' })
   const db = supabaseServer()
   const [{ data: spaces }, { data: tierRows }, memberCounts, tierMap] = await Promise.all([
-    db
+    stellrRows(db
       .from('community_spaces')
-      .select('id, slug, name, access_type, theme, posting_policy, is_archived')
+      .select('id, slug, name, access_type, theme, posting_policy, is_archived'))
       .eq('is_archived', false)
       .order('display_order', { ascending: true }),
     db.from('community_space_tiers').select('space_id, tier_id'),

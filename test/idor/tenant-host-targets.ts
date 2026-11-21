@@ -17,7 +17,7 @@ import { ROUTE_MANIFEST } from '@/lib/security/route-manifest'
 import { HONEYTOKENS } from '@/lib/testing/honeytokens'
 import { allowedTenantFiles } from '@/lib/tenancy/tenant-surface'
 import { capRegressions, isFailingEntry, isUnprovenEntry } from '../../scripts/tenant-host-cap.mjs'
-import { CASE_FIXTURES, HELD_BACK_FIXTURES, type CaseFixture } from './case-fixtures'
+import { CASE_FIXTURES, HELD_BACK_FIXTURES, REGISTRANT, REGISTRANT_EMAIL, type CaseFixture } from './case-fixtures'
 import { TENANT_A_PARTICIPANT, type CaseResult } from './harness'
 import { printReportedOracles, sealReportedOracles } from './reported-oracles'
 
@@ -101,18 +101,9 @@ const linkFixture: CaseFixture = {
 
 // A person's details that pass the form's checks, on an address nobody else holds, so what
 // the case tests is the event: the honey row answers an email of its own as "already there".
-const PERSON_EMAIL = 'registrant@tenant-a.invalid'
-const PERSON = {
-  first_name: 'Tenant',
-  last_name: 'Registrant',
-  date_of_birth: '2000-01-01',
-  phone: '0000000000',
-  gender: 'prefer_not_to_say',
-  t_shirt_size: 'M',
-  age_bracket: 'adult',
-  event_role: 'teacher',
-  school_name: 'Tenant A School',
-}
+// Shared with the generated suite (test/idor/case-fixtures.ts), which sends the same body.
+const PERSON_EMAIL = REGISTRANT_EMAIL
+const PERSON = REGISTRANT
 
 /** Host B's event, by slug. An offer or school of host B's would be a second record under test. */
 const individualFixture: CaseFixture = {
@@ -131,25 +122,6 @@ const individualOfferFixture: CaseFixture = {
   omitInputs: ['school_id'],
   honeyTokens: [OFFER_TOKEN],
   honey: { status: 'offered', percent_off: 100 },
-}
-
-const groupFixture: CaseFixture = {
-  reason: 'a group needs an organiser object, a student count and the school terms before the event is looked up',
-  body: {
-    teacher: { ...PERSON, email: PERSON_EMAIL },
-    teacher_poc: null,
-    registrant_role: 'teacher',
-    adult_count: 1,
-    student_count: 2,
-    total_participants: 3,
-    details_method: 'email_link',
-    // The event has no Stripe price, and card or invoice would stop on that, not on whose event it is.
-    payment_method: 'none',
-    member_pays_individually: false,
-    additional_adults: [],
-    students: [],
-    school_dpa_agreed: true,
-  },
 }
 
 /** The participant holds the role this route asks for. Only the event is another tenant's. */
@@ -234,10 +206,12 @@ function signSessionFixture(): CaseFixture {
  * a live link differently from a missing one, because that is what they do for Stellr.
  * With it on they refuse the other tenant's event, link and registration as unknown (A7).
  *
- * Not the scholarship offer variant. On a tenant's host the individual route refuses any
- * offer link before it reads one (offers are Stellr's), so with routing on that case uses
- * no Canary value and proves nothing, which the unproven cap does not allow to rise. It
- * stays as it was until the owner decides how that case is counted.
+ * The scholarship offer variant too (owner decision, 21 Nov 2026). On a tenant's host the
+ * individual route refuses any offer link before it reads one (offers are Stellr's, A7), so
+ * with routing on its canary_to_stellr cases use no Canary value and prove nothing. The
+ * owner accepted them as unproven (TENANT_HOST_UNPROVEN names them by full case key): the
+ * suite cannot yet model a scholarship offer, and they are not a leak. With routing off
+ * they had counted as failing (Stellr's own offer on Stellr's host, #828).
  */
 const ROUTING_ON = { TENANT_ROUTING_ENABLED: 'true' }
 const HOST_READ = 'tenant routing on, so the route reads the host the case is on'
@@ -262,7 +236,8 @@ const FIXTURES: Record<string, () => CaseFixture> = {
   'app/api/credentials/[number]/visibility/route.ts': () => hostChecked({ reason: 'the consent check past the owner check reads a grade as text', honey: { grade: '10' } }),
   'app/api/register/individual/route.ts': () => hostChecked(individualFixture),
   'app/api/register/group-join/route.ts': () => hostChecked(),
-  'app/api/register/group/route.ts': () => hostChecked(groupFixture),
+  // The generated suite's fixture (test/idor/case-fixtures.ts) carries the group body.
+  'app/api/register/group/route.ts': () => hostChecked(),
   'app/api/volunteer/interest/route.ts': () => hostChecked(volunteerFixture),
   'app/api/survey/event/[slug]/link/route.ts': () => hostChecked(surveyLinkFixture),
   'app/api/email/unsubscribe/route.ts': () => hostChecked(),
@@ -271,7 +246,7 @@ const FIXTURES: Record<string, () => CaseFixture> = {
 
 /** Routes that take a second kind of record: each runs as a case of its own. */
 const EXTRA_VARIANTS: Record<string, Record<string, () => CaseFixture>> = {
-  'app/api/register/individual/route.ts': { scholarship_offer: () => individualOfferFixture },
+  'app/api/register/individual/route.ts': { scholarship_offer: () => hostChecked(individualOfferFixture) },
 }
 
 function withBase(file: string, own: CaseFixture | undefined): CaseFixture {
@@ -371,10 +346,11 @@ export function printHostCases(cases: HostCases, env: Record<string, string | un
 }
 
 /**
- * The reason named for an unproven case, by `<route file> <METHOD> <persona>` or, for
- * both people, `<route file> <METHOD>`. A key is what a case's baseline key starts with.
+ * The reason named for an unproven case: by its full key `<route file> <METHOD> <persona>
+ * <direction>[ <variant>]`, by `<route file> <METHOD> <persona>` or, for both people,
+ * `<route file> <METHOD>`. A shorter key is what a case's baseline key starts with.
  */
 export function unprovenReasonKey(file: string, caseKey: string, reasons: Record<string, string>): string | undefined {
   const [method, persona] = caseKey.split(' ')
-  return [`${file} ${method} ${persona}`, `${file} ${method}`].find((k) => reasons[k])
+  return [`${file} ${caseKey}`, `${file} ${method} ${persona}`, `${file} ${method}`].find((k) => reasons[k])
 }

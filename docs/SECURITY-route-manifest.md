@@ -21,7 +21,7 @@ The earlier regex sweeps (`test/route-guards.test.ts`, `test/admin-page-guards.t
 | Class | Who calls it | What every handler must reach |
 |---|---|---|
 | `platform_admin` | Stellr platform staff, across tenants | `lib/authz`'s platform check (`assertPlatformAdmin`). A legacy admin guard does not count |
-| `platform_destined` | a platform function by nature, waiting on the owner's choice (C15) | an admin check, the same as `stellr_only` |
+| `platform_destined` | a platform function by nature, waiting on the owner's choice (C15); two left after BF-15 | an admin check, the same as `stellr_only` |
 | `tenant_crew` | a tenant's own staff, inside that tenant | a `lib/authz` tenant check: `assertTenantRole`, `requireTenantCrew`, `requireEventCrew`, `requireEventRoute`, `requireEventAccess` naming the event, or the `requireTenantAdmin` page adapter. A legacy admin guard does not count |
 | `stellr_only` | Stellr's own admin portal and the `/api/admin` routes behind it | an admin check |
 | `participant` | a signed-in member, on their own records | a session check (an admin check also counts) |
@@ -35,12 +35,12 @@ A capability token in the URL or a cookie (register, sign, survey, team profile,
 
 ### The rule for the admin surface
 
-Every `/admin` page is **`stellr_only`**. Every `/api/admin` route is `stellr_only`, `platform_destined` or `tenant_crew`, which `test/route-manifest.test.ts` asserts. The one exception is `app/api/admin/sanity/event-sync`, which Sanity calls with a shared secret and no admin session: it is a `webhook`.
+Every `/admin` page is **`stellr_only`**. Every `/api/admin` route is `stellr_only`, `platform_destined`, `platform_admin` or `tenant_crew`, which `test/route-manifest.test.ts` asserts. The one exception is `app/api/admin/sanity/event-sync`, which Sanity calls with a shared secret and no admin session: it is a `webhook`.
 
 - **`stellr_only`** routes read and write Stellr's data by global id. As S5 converts one to `loadScoped` or `tenantDb`, it moves to `tenant_crew` (it acts inside one tenant) or a platform class (it acts across tenants). `test/idor/stellr-only-dispositions.test.ts` holds the routes destined for a tenant that are still here to a cap that only falls (`MAX_TENANT_DESTINED_STELLR_ONLY`, 21 after wave 5's payment-method follow-up, 18 after C18, #624).
 - **`tenant_crew`** routes have moved there (C16, C17, wave 5's admin group payment-method route, and C18's `companies`, `offerings` and `merch/commit` under `app/api/admin/events/[slug]`, #624) or arrived there new (the bounced-signer email change and the saved event email templates, 9 Nov 2026). Their handlers reach a `lib/authz` tenant check, and a static rule stops a `tenant_crew` file calling `.from()` directly on a table with a tenant column: it reaches those rows through `loadScoped`. A tenant's own staff still get a 503 from `refuseOutsideStellr` on actions whose helpers are not tenant-aware yet.
-- **`platform_destined`** holds the 9 routes C15 moved out of `stellr_only`: staff roles, impersonation, deletion and its preflight, deletion and privacy requests, member merge, schools and the event slug guard. **They are not `platform_admin`,** because that class's check answers from the `platform_admins` table alone once `AUTHZ_SOURCE=postgres`, so putting a route there would decide by default, at the flip, that only the platform owner keeps it. The class keeps `stellr_only`'s guard, so the move changed nobody's access. Which of the 9 become owner-only is the owner's choice, route by route; `lib/security/stellr-only-dispositions.ts` lists them.
-- **`platform_admin`** is still empty. The earlier assertion that it and `tenant_crew` stay empty is gone (C6): the first moves were deliberate diffs to the tests, as planned.
+- **`platform_destined`** holds the 9 routes C15 moved out of `stellr_only`: staff roles, impersonation, deletion and its preflight, deletion and privacy requests, member merge, schools and the event slug guard. **They are not `platform_admin`,** because that class's check answers from the `platform_admins` table alone once `AUTHZ_SOURCE=postgres`, so putting a route there would decide by default, at the flip, that only the platform owner keeps it. The class keeps `stellr_only`'s guard, so the move changed nobody's access. Which of the 9 become owner-only was the owner's choice, route by route. **BF-15, settled 21 Nov 2026 (a):** seven moved to `platform_admin`; `events/slug-guard` (the events duty scope) and `schools/[id]` (`schools:write`, held by Staff) stay here, listed in `lib/security/stellr-only-dispositions.ts`.
+- **`platform_admin`** holds 7 routes since 21 Nov 2026 (BF-15 (a)): deletion, deletion preflight, deletion requests, Duties, impersonation, member merge and privacy requests, each on `assertPlatformAdmin`. Under `AUTHZ_SOURCE=clerk` that is the Clerk admin claim, so nobody's access changed; under `postgres` they are owner-only.
 
 Community routes are `participant`. That they must never be reachable on a tenant host is a separate rule (the S5 host allow-list), not an access class.
 
@@ -107,9 +107,9 @@ The route manifest says *who* may call a route. The IDOR suite checks *which rec
 | `honey_write` | a write touched or referenced a Canary row, or an `rpc()` got a Canary value (its SQL is not modelled) | fails, unless the snapshot records a reviewed reason |
 | `oracle` | a 2xx whose status or body changes when the Canary row is removed (a second, differential run): an existence oracle such as `{ exists: !!row }` | fails, unless the snapshot records a reviewed reason |
 | `refused` | 4xx, a redirect, `notFound()` | passes |
-| `unexercised` | 400, 405, 413, 415 or 422 and no Canary value ever reached the database: validation refused before the id was used, so the case proved nothing | pinned in the snapshot and capped (`MAX_UNEXERCISED`, 5 since wave 1, #528; lower it, never raise it) |
+| `unexercised` | 400, 405, 413, 415 or 422 and no Canary value ever reached the database: validation refused before the id was used, so the case proved nothing | pinned in the snapshot and capped (`MAX_UNEXERCISED`, 5 since wave 1, #528; 0 since S5 wave 9; never raise it) |
 | `ok` | 2xx with none of tenant B's data, no honey write, and the same response without the Canary row | passes |
-| `error` | 5xx, a throw, or no answer in 5 s (the harness could not model the path) | pinned in the snapshot and capped (`MAX_ERROR`, 3) |
+| `error` | 5xx, a throw, or no answer in 5 s (the harness could not model the path) | pinned in the snapshot and capped (`MAX_ERROR`, 1 since S5 wave 9: `store/checkout`, held back as `C4-F5`) |
 
 On top of that, the **participant-refusal rule**, by class:
 

@@ -93,12 +93,18 @@ describe('who reaches the page', () => {
     await expect(page('teams')).rejects.toThrow('notFound')
   })
 
-  // proxy.ts is what keeps an event manager out of /admin/members. This page guard has
-  // always let them through, and moving it on is a decision about who may see the page.
-  it.each(['admin', 'event_manager'])('a %s passes the page guard', async (role) => {
-    h.viewer = { userId: 'clerk-staff', role }
+  it('an admin passes the page guard', async () => {
+    h.viewer = { userId: 'clerk-staff', role: 'admin' }
     render(await page('teams'))
     expect(screen.getByTestId('start')).toBeInTheDocument()
+  })
+
+  // proxy.ts sends an event manager (not an Events route) and Staff (a Staff-hidden
+  // path) away before the page renders. Since C25 batch 2 the page guard is
+  // page.requireStellrAdmin, so the second line refuses them too, as the proxy does.
+  it.each(['event_manager', 'staff'])('a %s gets a 404 from the page guard', async (role) => {
+    h.viewer = { userId: 'clerk-staff', role }
+    await expect(page('teams')).rejects.toThrow('notFound')
   })
 })
 

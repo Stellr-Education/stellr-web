@@ -186,7 +186,7 @@ It decrypts each archive into a temp directory (deleted on exit), starts a throw
 | (to do) | Install (§2) | Owner | |
 | (to do) | Skip alarm proven (§2.6 step 5) | Owner | |
 | (to do) | First restore drill | Owner | |
-| 20 Nov 2026 | E-sign Drive folder: service account found to be Content manager; permanent delete refused (404), exports never pruned | Agent | Fix: make it Manager (owner) |
+| 20 Nov 2026 | E-sign Drive folder: service account found to be Content manager; permanent delete refused (404), exports never pruned | Agent | Fixed: job moves files to trash instead (Content manager is enough); §8 |
 | (to do) | `overlay-critical.sh --dry-run` against a scratch Supabase project (is `session_replication_role` allowed?) | Owner | |
 
 ## 8. Opening the e-sign Drive copies
@@ -238,4 +238,6 @@ Or name one: `--export export-2026-11-20.json.enc`.
 
 Decrypted files hold personal data, including minors'. Write them to an encrypted disk, never to Drive, email or a chat, and delete them when the job is done.
 
-**Deletion needs the Manager role.** The job deletes old exports and, at the end of retention, a record's copies, with Drive's permanent delete. On a shared drive only a Manager can do that; a Content manager gets `404 File not found`. On 20 Nov 2026 the service account (`stellr-sheets@…`) was found to be a Content manager, so no export had ever been pruned (45 present). Make it a Manager in the shared drive's **Manage members** (the role is set per shared drive, not per folder), and keep it one. The job now reports this refusal by name instead of as a missing file.
+**Deletion moves files to trash.** The job removes old exports (keeping 30) and, at the end of retention, a record's copies, by moving them to the shared drive's trash. Drive empties that trash after 30 days, so a removed copy is gone for good within 30 days; until then an owner can restore it from the trash. The copies stay encrypted throughout.
+
+It does not delete permanently: on a shared drive only a Manager can, and a Content manager gets `404 File not found`. On 20 Nov 2026 that refusal had stopped every export prune (45 present) and raised a daily `esign-maintenance` server error. Drive will not hold Manager on a single folder, only on a whole shared drive, so permanent delete would mean giving the app's account Manager on the main Stellr drive. Trashing needs only **Content manager on the E-Sign Backups folder**. Keep the service account (`stellr-sheets@…`) at that, on that folder only, not as a member of the whole shared drive.

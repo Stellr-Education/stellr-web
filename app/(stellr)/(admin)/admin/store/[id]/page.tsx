@@ -4,13 +4,13 @@ import { ArrowLeft } from 'lucide-react'
 import { getProduct } from '@/lib/store/products'
 import { printfulEnabled } from '@/lib/store/printful'
 import { ProductForm } from '@/components/admin/store/ProductForm'
-import { requireAdminPage } from '@/lib/admin-auth'
+import { authz } from '@/lib/authz'
 
 export const metadata = { title: 'Admin — Edit product' }
 export const dynamic = 'force-dynamic'
 
 export default async function EditProductPage({ params }: { params: Promise<{ id: string }> }) {
-  await requireAdminPage()
+  await authz.page.requireCapability('portal:read', { route: '/admin/store/[id]' })
   const { id } = await params
   const product = await getProduct(id)
   if (!product) notFound()

@@ -175,13 +175,14 @@ describe('route manifest: 100% classification', () => {
       if (f.startsWith('app/(stellr)/(admin)/')) expect(cls, f).toBe('stellr_only')
       // Every admin API is stellr_only until S5 converts it, except the one Sanity
       // calls with a shared secret and the platform-destined ones (C15), which keep
-      // stellr_only's guard, and those a slice has converted to tenant_crew (C16 on),
-      // which the tenant_crew table rule below and the staff personas then hold.
+      // stellr_only's guard, those a slice has converted to tenant_crew (C16 on),
+      // which the tenant_crew table rule below and the staff personas then hold, and
+      // the seven platform_admin ones (BF-15 (a), 21 Nov 2026), on assertPlatformAdmin.
       // test/idor/stellr-only-dispositions.test.ts pins the first list.
       if (f.startsWith('app/api/admin/') && f !== 'app/api/admin/sanity/event-sync/route.ts') {
-        expect(['stellr_only', 'platform_destined', 'tenant_crew'], f).toContain(cls)
+        expect(['stellr_only', 'platform_destined', 'platform_admin', 'tenant_crew'], f).toContain(cls)
       }
-      if (cls === 'platform_destined') expect(f.startsWith('app/api/admin/'), f).toBe(true)
+      if (cls === 'platform_destined' || cls === 'platform_admin') expect(f.startsWith('app/api/admin/'), f).toBe(true)
       if (cls === 'cron') expect(f.startsWith('app/api/cron/'), f).toBe(true)
       // Crawlers and unfurlers fetch metadata routes with no session.
       if (isMetadataFile(f)) expect(cls, f).toBe('public')
@@ -389,11 +390,9 @@ describe('guard list: lib/authz', () => {
     `import { ${imports} } from '@/lib/authz'\nexport async function GET(req, { params }) { ${body}; return new Response() }`
 
   it('a tenant_crew or platform_admin handler with only a legacy admin check fails', () => {
+    // The lib/admin-auth and lib/event-access helpers were deleted at S5 C25 batch 4; the
+    // inline claim compare is the one legacy shape the guard list still knows.
     const legacy = [
-      calling('@/lib/admin-auth', 'isAdminClaims'),
-      calling('@/lib/admin-auth', 'currentUserIsAdmin'),
-      calling('@/lib/admin-auth', 'requireAdminPage'),
-      calling('@/lib/event-access', 'requireEventAccess'),
       `import { auth } from '@clerk/nextjs/server'
        export async function GET() {
          const { sessionClaims } = await auth()
@@ -495,9 +494,9 @@ describe('guard list: lib/authz', () => {
       for (const code of admin) expect(satisfies(handler(code)).has('admin'), code).toBe(true)
     })
 
-    it('leaves a legacy check as it was: that blind spot goes when the check does', () => {
+    it('a deleted legacy helper proves nothing now (S5 C25 batch 4): the guard list no longer names it', () => {
       expect([...satisfies(handler(`import { currentUserIsAdmin } from '@/lib/admin-auth'
-        export async function GET() { await currentUserIsAdmin(); return 1 }`))].sort()).toEqual(['admin', 'session'])
+        export async function GET() { await currentUserIsAdmin(); return 1 }`))].sort()).toEqual([])
     })
   })
 
@@ -829,8 +828,8 @@ describe('route-ast analyser (fixtures)', () => {
   })
 
   it('does not count a guard inside a closure that never runs', () => {
-    expect(kinds(`import { requireAdminPage } from '@/lib/admin-auth'
-      export async function GET() { const never = () => requireAdminPage(); return members() }`)).toEqual([])
+    expect(kinds(`import { authz } from '@/lib/authz'
+      export async function GET() { const never = () => authz.page.requireStellrAdmin(); return members() }`)).toEqual([])
     expect(kinds(`import { auth } from '@clerk/nextjs/server'
       export async function GET() { return { later: async () => auth() } }`)).toEqual([])
   })
@@ -908,8 +907,8 @@ describe('route-ast analyser (fixtures)', () => {
   it('follows a local component rendered by a page', () => {
     const facts = analyzeDefaultExport(
       'app/fixture/page.tsx',
-      `import { requireAdminPage } from '@/lib/admin-auth'
-       async function Data() { await requireAdminPage(); return null }
+      `import { authz } from '@/lib/authz'
+       async function Data() { await authz.page.requireStellrAdmin(); return null }
        export default function Page() { return <main><Data /></main> }`,
     )!
     expect(satisfies(facts).has('admin')).toBe(true)

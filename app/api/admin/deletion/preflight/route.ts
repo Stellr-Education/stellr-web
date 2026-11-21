@@ -1,11 +1,11 @@
-import { isStellrAdmin } from '@/lib/authz'
+import { assertPlatformAdmin } from '@/lib/authz'
 import { NextResponse } from 'next/server'
 import { deletionPreflight } from '@/lib/deletion/preflight'
 
 // GET /api/admin/deletion/preflight?entity=&id=
 // Returns the blocking dependents that must be deleted before this item can go.
 export async function GET(req: Request) {
-  if (!(await isStellrAdmin({ route: '/api/admin/deletion/preflight' }))) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  if (!(await assertPlatformAdmin({ route: '/api/admin/deletion/preflight' })).ok) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
   const { searchParams } = new URL(req.url)
   const entity = searchParams.get('entity')

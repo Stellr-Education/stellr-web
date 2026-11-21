@@ -1,7 +1,6 @@
 import { cache } from 'react'
 import { auth } from '@clerk/nextjs/server'
 import { supabaseServer } from '@/lib/supabase'
-import { isAdminClaims } from '@/lib/admin-auth'
 import { isUnder13On, isValidDob } from '@/lib/age'
 
 // Who is signed in, as a member row. Split from lib/community.ts (multi-tenancy
@@ -71,10 +70,17 @@ export async function getSignedInMember(): Promise<CommunityMember | null> {
   return resolveMemberOnce(false)
 }
 
+// lib/authz loads on first use, not at the top: operator scripts reach this module
+// through lib/community, and its server-only import throws under plain tsx
+// (test/authz-load-closure.test.ts). One import, shared by concurrent callers.
+let authzModule: Promise<typeof import('@/lib/authz')> | undefined
+const loadAuthz = () => (authzModule ??= import('@/lib/authz'))
+
 async function resolveMember(allowImpersonation: boolean): Promise<CommunityMember | null> {
-  const { userId, sessionClaims } = await auth()
+  const { userId } = await auth()
   if (!userId) return null
-  let isAdmin = isAdminClaims(sessionClaims)
+  const { isStellrAdmin } = await loadAuthz()
+  let isAdmin = await isStellrAdmin({ route: 'lib/member-session' })
 
   // Admin "view as member": this ONE branch turns the whole member portal into
   // that member's view, because every member-facing page and API route resolves

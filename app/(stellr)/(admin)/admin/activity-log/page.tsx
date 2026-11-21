@@ -1,21 +1,22 @@
 import { supabaseServer } from '@/lib/supabase'
 import { ActivityLogReview } from '@/components/admin/ActivityLogReview'
 import { DeletionRequestsReview, type DeletionRequest } from '@/components/admin/DeletionRequestsReview'
-import { requireAdminPage } from '@/lib/admin-auth'
+import { authz } from '@/lib/authz'
+import { stellrRows } from '@/lib/tenancy/stellr-scope'
 
 export const metadata = { title: 'Admin — Activity Log Review' }
 
 export default async function ActivityLogPage() {
-  await requireAdminPage()
+  await authz.page.requireCapability('portal:read', { route: '/admin/activity-log' })
   const db = supabaseServer()
 
   const [{ data: participations }, { data: deletionRequests }] = await Promise.all([
-    db
+    stellrRows(db
       .from('event_participations')
       .select(`
         id, event_year, event_location, team_name, award, status, created_at,
         members(id, first_name, last_name, email)
-      `)
+      `))
       .eq('status', 'pending')
       .order('created_at', { ascending: true }),
     db

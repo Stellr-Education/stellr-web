@@ -64,7 +64,7 @@ export const DISPOSITIONS: Record<string, { transform: TransformId | null; why: 
   requireEventAccess: { transform: 'T5', why: 'not `const x = await requireEventAccess(…)` read field by field, or a section-level answer whose isAdmin or assignedSlugs is trusted' },
   requireScholarshipAdmin: { transform: 'T6', why: 'converted in its definition' },
   requireSurveyAdmin: { transform: 'T6', why: 'converted in its definition' },
-  canManageStoreCatalog: { transform: 'T6', why: 'converted in its definition, once HELD_WRAPPERS lets it' },
+  canManageStoreCatalog: { transform: 'T6', why: 'converted in its definition' },
   adminName: { transform: 'T6', why: 'converted in its definition' },
   hasAdminPortalAccess: { transform: 'T1', why: 'not called on the session claims of an `await auth()` in the same async function' },
   isEventManagerClaims: { transform: null, why: 'lib/authz has no claim-only form. requireEventAccess also reads assignments, and can throw' },
@@ -76,21 +76,21 @@ export const DISPOSITIONS: Record<string, { transform: TransformId | null; why: 
 }
 
 /**
- * Where a conversion is allowed. docs/AUTHZ.md: decide on sampling before a call site that
- * serves ordinary members moves to lib/authz, because shadow reads are not sampled. The
- * rest of the app (proxy.ts must stay database-free, a client component cannot import
- * lib/authz, and lib/ helpers can serve members) is left for a person.
+ * Where a conversion is allowed. The rest of the app (proxy.ts must stay database-free, a
+ * client component cannot import lib/authz, and lib/ helpers can serve members) is left for
+ * a person, who checks who else the code serves. Shadow reads are sampled since the owner's
+ * decision of 21 Nov 2026 (docs/AUTHZ.md), so code serving ordinary members may move; a
+ * person still moves it.
  */
 const IDIOMS = LEGACY_IDIOMS as { id: string; kind: string; file?: string }[]
 const WRAPPER_FILES = IDIOMS.filter((i) => i.kind === 'wrapper').map((i) => i.file)
 
 /**
- * Wrappers that also serve people who are not crew, so the surface rule above applies to
- * them too. Take an entry off only once the sampling decision is recorded.
+ * Wrappers held off the surface until a decision. Empty: lib/store/auth.ts waited here for
+ * the sampling decision (app/api/store/returns/route.ts calls it for any signed-in member),
+ * which the owner made on 21 Nov 2026, so C25 batch 3B released it.
  */
-export const HELD_WRAPPERS: Readonly<Record<string, string>> = {
-  'lib/store/auth.ts': 'app/api/store/returns/route.ts calls this for any signed-in member, and docs/AUTHZ.md asks for a sampling decision before a call site serving members moves (shadow reads)',
-}
+export const HELD_WRAPPERS: Readonly<Record<string, string>> = {}
 
 export function isAdminSurface(file: string): boolean {
   if (file in HELD_WRAPPERS) return false
@@ -100,7 +100,7 @@ export function isAdminSurface(file: string): boolean {
 /** What to do after --write. A conversion moves both counts. */
 export const AFTER_WRITE = 'Now regenerate the baselines: npx tsx scripts/authz-idioms.mjs --write, then npx tsx scripts/s5-inventory.mjs --write'
 
-const OUTSIDE_SURFACE = 'outside the admin surface: this code can serve people who are not crew, so a person moves it (docs/AUTHZ.md, shadow reads)'
+const OUTSIDE_SURFACE = 'outside the admin surface: this code can serve people who are not crew, so a person moves it and checks who it serves (docs/AUTHZ.md)'
 const CLIENT_FILE = 'a client component: lib/authz is server-only'
 
 export interface Conversion {

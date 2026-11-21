@@ -48,7 +48,8 @@ describe('operator scripts can still load under plain tsx', () => {
 
   it('walks through to the modules that used to bring it in', () => {
     const closure = importClosure('scripts/seed-welcome-drips.ts', (rel) => (rel === AUTHZ ? null : readRepoFile(rel)))
-    expect(closure.has('lib/admin-auth.ts')).toBe(true)
+    // lib/member-session loads lib/authz on first use (C25 batch 3B); before, lib/admin-auth was the way in.
+    expect(closure.has('lib/member-session.ts')).toBe(true)
   })
 
   it('the check can fail: a static import through a reached module is caught', () => {

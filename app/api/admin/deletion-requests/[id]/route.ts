@@ -1,5 +1,5 @@
 import { auth } from '@clerk/nextjs/server'
-import { isStellrAdmin } from '@/lib/authz'
+import { assertPlatformAdmin } from '@/lib/authz'
 import { NextResponse } from 'next/server'
 import { supabaseServer } from '@/lib/supabase'
 import { executeDeletion, DeletionBlockedError } from '@/lib/deletion/execute'
@@ -57,7 +57,7 @@ export const PATCH = withAudit(
 // admin clears the blockers first (the request stays pending).
 async function reviewDeletionRequest(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { userId } = await auth()
-  if (!(await isStellrAdmin({ route: '/api/admin/deletion-requests/[id]' }))) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  if (!(await assertPlatformAdmin({ route: '/api/admin/deletion-requests/[id]' })).ok) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
   const { id } = await params
   const body = await req.json().catch(() => null)

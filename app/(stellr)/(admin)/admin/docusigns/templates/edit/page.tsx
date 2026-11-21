@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import { auth } from '@clerk/nextjs/server'
+import { isStellrAdmin } from '@/lib/authz'
 import { redirect } from 'next/navigation'
 import { supabaseServer } from '@/lib/supabase'
 import { parseFieldMap } from '@/lib/esign/native/template'
@@ -14,9 +14,7 @@ export const metadata = { title: 'Admin — Edit agreement document' }
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 
 export default async function EditTemplatePage({ searchParams }: { searchParams: Promise<{ from?: string; key?: string }> }) {
-  const { sessionClaims } = await auth()
-  const role = (sessionClaims?.metadata as { role?: string } | undefined)?.role
-  if (role !== 'admin') redirect('/account')
+  if (!(await isStellrAdmin({ route: '/admin/docusigns/templates/edit' }))) redirect('/account')
 
   const { from, key } = await searchParams
   let initial = { documentKey: TEMPLATE_KEYS.includes(key as never) ? (key as string) : 'minor', title: '', pdfPath: null as string | null, fields: [] as ReturnType<typeof parseFieldMap>['fields'], roles: [] as ReturnType<typeof parseFieldMap>['roles'], fromVersion: null as string | null }

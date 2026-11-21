@@ -1425,10 +1425,6 @@
       "class": "convert",
       "reason": "event add-ons catalogue: the public reader is cached across visitors (no session), and admin writes arrive with stellrOnlyDb; Stellr's events only until tenant add-ons"
     },
-    "lib/admin-auth.ts": {
-      "class": "stellr_only",
-      "reason": "auto: no tenant or event-scoped table, classed by its stellr_only tables; tables: admin_duties, members"
-    },
     "lib/admin-digest.ts": {
       "class": "convert",
       "reason": "auto: touches tenant or event-scoped tables; tables: agreements, chat_messages, coaching_requests, cohort_members, community_comments, community_posts (+13)"
@@ -1512,10 +1508,6 @@
     "lib/entitlements.ts": {
       "class": "convert",
       "reason": "auto: touches tenant or event-scoped tables; tables: entitlements.bookings, entitlements.discounts, entitlements.entitlements, entitlements.offerings, entitlements.tier_benefits, entitlements.tiers (+2)"
-    },
-    "lib/event-access.ts": {
-      "class": "convert",
-      "reason": "auto: touches tenant or event-scoped tables; tables: event_manager_assignments"
     },
     "lib/event-admin.ts": {
       "class": "convert",

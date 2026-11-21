@@ -34,7 +34,7 @@ export default async function ViewAsMemberPage({
   params: Promise<{ id: string }>
   searchParams: Promise<{ tab?: string }>
 }) {
-  await authz.page.requireAdmin({ route: '/admin/members/[id]/view-as' })
+  await authz.page.requireStellrAdmin({ route: '/admin/members/[id]/view-as' })
   const { id } = await params
   const db = supabaseServer()
 

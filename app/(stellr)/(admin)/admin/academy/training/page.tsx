@@ -13,6 +13,7 @@ import type { AdminTier } from '@/components/admin/training/ObjectAssignments'
 import { authz } from '@/lib/authz'
 import { Can } from '@/components/admin/CapabilitiesContext'
 import { recordingView, type OffloadRow, type RecordingPhase } from '@/lib/recording-view'
+import { stellrRows } from '@/lib/tenancy/stellr-scope'
 
 export const metadata = { title: 'Admin — Training' }
 
@@ -26,14 +27,14 @@ const TITLES: Record<AdminTab, string> = {
 async function builderContent(initialCourseId?: string) {
   const db = supabaseServer()
   const [{ data: modules }, { data: tierRows }, objects, { data: offloads }] = await Promise.all([
-    db
+    stellrRows(db
       .from('training_modules')
       .select(
         'id, title, description, material_kind, course_type, theme, cert_template_path, credential_title, credential_description, credential_criteria, credential_skills, start_date, event_ref, min_tier_rank, is_published, ' +
           'training_sections(id, title, display_order, drip_days), ' +
           'training_items(id, title, content_kind, status, section_id, display_order, estimated_minutes, body, external_url, interactive_key, recording_status), ' +
           'course_object_assignments(id, object_type, object_ref, object_label, default_requirement, tier_requirements, due_at, audience)'
-      )
+      ))
       .order('display_order', { ascending: true }),
     db.from('membership_tiers').select('id, name, age_bracket, sort_order').order('sort_order'),
     listTrainableObjects('all'),
@@ -62,9 +63,9 @@ async function builderContent(initialCourseId?: string) {
 
 async function reminderCourses(): Promise<ReminderCourse[]> {
   const db = supabaseServer()
-  const { data } = await db
+  const { data } = await stellrRows(db
     .from('training_modules')
-    .select('id, title, remind_inapp, remind_email, remind_sms, remind_2wk, remind_1wk, remind_2d, remind_1d, escalate_supervisor')
+    .select('id, title, remind_inapp, remind_email, remind_sms, remind_2wk, remind_1wk, remind_2d, remind_1d, escalate_supervisor'))
     .order('display_order', { ascending: true })
   return (data ?? []).map((m) => ({
     id: m.id as string,
@@ -88,7 +89,7 @@ async function reminderCourses(): Promise<ReminderCourse[]> {
 async function prerequisitesContent() {
   const db = supabaseServer()
   const [{ data: modules }, { data: prereqs }, { data: persistence }] = await Promise.all([
-    db.from('training_modules').select('id, title').order('display_order'),
+    stellrRows(db.from('training_modules').select('id, title')).order('display_order'),
     db
       .from('content_prerequisites')
       .select('id, target_ref, requires_target_ref')

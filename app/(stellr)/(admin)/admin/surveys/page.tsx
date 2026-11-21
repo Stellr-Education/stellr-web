@@ -11,6 +11,7 @@ import { WithdrawQuoteForm } from '@/components/admin/surveys/WithdrawQuoteForm'
 import { Collapsible, CollapsibleGroup, CollapseAllControls } from '@stellr/web-ui'
 import { usableDefinition } from '@/lib/survey/distributions'
 import { normaliseDefinition, questionsFor, ROLES, versionName } from '@/lib/survey/definition'
+import { stellrRows } from '@/lib/tenancy/stellr-scope'
 
 // /admin/surveys — every event's post-event survey, the fundraising headline
 // numbers (handover §8) filterable by event and year, the exports (A3) and
@@ -37,9 +38,9 @@ export default async function AdminSurveysPage({ searchParams }: { searchParams:
   const year = Number(sp.year) > 2000 ? Number(sp.year) : null
 
   const db = supabaseServer()
-  const { data: dists } = await db
+  const { data: dists } = await stellrRows(db
     .from('survey_distributions')
-    .select('id, definition_id, event_slug, event_title, event_date, event_time_zone, status, opens_at, closes_at, survey_definitions(key, version, version_label:definition->>version_label)')
+    .select('id, definition_id, event_slug, event_title, event_date, event_time_zone, status, opens_at, closes_at, survey_definitions(key, version, version_label:definition->>version_label)'))
     .order('event_date', { ascending: false })
   const distributions = (dists ?? []) as unknown as {
     id: string
@@ -55,7 +56,7 @@ export default async function AdminSurveysPage({ searchParams }: { searchParams:
   }[]
 
   // Invitation counts by event and role (response rates).
-  const { data: invs } = await db.from('survey_invitations').select('distribution_id, respondent_role, status')
+  const { data: invs } = await stellrRows(db.from('survey_invitations').select('distribution_id, respondent_role, status'))
   const slugOf = new Map(distributions.map((d) => [d.id, d]))
   const counts = new Map<string, InvitationCount>()
   for (const i of invs ?? []) {

@@ -3,7 +3,7 @@ import { Plus } from 'lucide-react'
 import { listProducts } from '@/lib/store/products'
 import { ProductTable } from '@/components/admin/store/ProductTable'
 import { StoreNav } from './StoreNav'
-import { requireAdminPage } from '@/lib/admin-auth'
+import { authz } from '@/lib/authz'
 import { Can } from '@/components/admin/CapabilitiesContext'
 
 export const metadata = { title: 'Admin — Store' }
@@ -12,7 +12,7 @@ export const dynamic = 'force-dynamic'
 // Store · Products. The merchandise catalog — one SKU set reused by the public
 // storefront and event registration (PRD §12).
 export default async function StoreProductsPage() {
-  await requireAdminPage()
+  await authz.page.requireCapability('portal:read', { route: '/admin/store' })
   const products = await listProducts()
 
   return (

@@ -17,10 +17,16 @@
 //   cron            Vercel Cron. guardCron must be the first statement.
 //   stellr_only     Stellr's own admin portal and the admin APIs behind it,
 //                   which read and write Stellr data by global id. Admin guard.
+//   platform_admin  Acts across tenants: owner-only once AUTHZ_SOURCE=postgres
+//                   (platform_admins). Must reach assertPlatformAdmin, which under the
+//                   default AUTHZ_SOURCE=clerk is the Clerk admin claim from Stellr, the
+//                   same answer as isStellrAdmin. Seven routes since 21 Nov 2026 (BF-15 (a)).
 //   platform_destined  A platform function by nature, waiting on the owner's choice
 //                   between platform_admin (owner-only once AUTHZ_SOURCE=postgres) and
 //                   staying with Stellr staff. Admin guard, the same one as stellr_only:
-//                   moving a route here moves nobody's access (C15).
+//                   moving a route here moves nobody's access (C15). Two left after BF-15:
+//                   events/slug-guard (the events duty scope, Studio editors) and
+//                   schools/[id] (schools:write, which Staff hold).
 //
 // The rule for today's admin surface (decided in S2): every /admin page and
 // every /api/admin route is stellr_only, because none of them is tenant-scoped
@@ -33,7 +39,9 @@
 // Why platform_destined is not platform_admin: that class's check answers from the
 // platform_admins table alone under postgres, so putting a route there decides who
 // loses it at the flip. lib/security/stellr-only-dispositions.ts lists these routes,
-// and the owner's choice for each is what moves it on.
+// and the owner's choice for each is what moves it on. The owner chose BF-15 (a) on
+// 21 Nov 2026: owner-only for the routes only Stellr admins use today. The two whose
+// door is wider than the admin claim stay here, so nobody loses one under clerk.
 //
 // Keep the entries sorted within each section; the test does not depend on it.
 
@@ -92,10 +100,10 @@ export const ROUTE_MANIFEST: Record<string, RouteClass> = {
   'app/api/admin/containers/[id]/contents/route.ts': 'stellr_only',
   'app/api/admin/credentials/[id]/resend/route.ts': 'tenant_crew',
   'app/api/admin/credentials/[id]/revoke/route.ts': 'tenant_crew',
-  'app/api/admin/deletion-requests/[id]/route.ts': 'platform_destined',
+  'app/api/admin/deletion-requests/[id]/route.ts': 'platform_admin',
   'app/api/admin/deletion-requests/route.ts': 'stellr_only',
-  'app/api/admin/deletion/preflight/route.ts': 'platform_destined',
-  'app/api/admin/deletion/route.ts': 'platform_destined',
+  'app/api/admin/deletion/preflight/route.ts': 'platform_admin',
+  'app/api/admin/deletion/route.ts': 'platform_admin',
   'app/api/admin/digest/send/route.ts': 'stellr_only',
   'app/api/admin/docusigns/[id]/credential-sharing/route.ts': 'tenant_crew',
   'app/api/admin/docusigns/[id]/download/route.ts': 'tenant_crew',
@@ -159,7 +167,7 @@ export const ROUTE_MANIFEST: Record<string, RouteClass> = {
   'app/api/admin/events/[slug]/volunteers/route.ts': 'tenant_crew',
   'app/api/admin/events/slug-guard/route.ts': 'platform_destined',
   'app/api/admin/health/integrations/route.ts': 'stellr_only',
-  'app/api/admin/impersonation/route.ts': 'platform_destined',
+  'app/api/admin/impersonation/route.ts': 'platform_admin',
   'app/api/admin/media/do-not-use/route.ts': 'tenant_crew',
   'app/api/admin/members/[id]/access/route.ts': 'stellr_only',
   'app/api/admin/members/[id]/activity/route.ts': 'stellr_only',
@@ -182,12 +190,12 @@ export const ROUTE_MANIFEST: Record<string, RouteClass> = {
   'app/api/admin/members/[id]/volunteer/route.ts': 'stellr_only',
   'app/api/admin/members/export/route.ts': 'stellr_only',
   'app/api/admin/members/route.ts': 'stellr_only',
-  'app/api/admin/members/merge/route.ts': 'platform_destined',
+  'app/api/admin/members/merge/route.ts': 'platform_admin',
   'app/api/admin/members/search/route.ts': 'stellr_only',
   'app/api/admin/membership/rules/route.ts': 'stellr_only',
   'app/api/admin/pd-certificate/preview/route.ts': 'stellr_only',
   'app/api/admin/pd-certificate/route.ts': 'stellr_only',
-  'app/api/admin/privacy-requests/[id]/route.ts': 'platform_destined',
+  'app/api/admin/privacy-requests/[id]/route.ts': 'platform_admin',
   'app/api/admin/refunds/preview/route.ts': 'tenant_crew',
   'app/api/admin/registrations/[id]/finish-setup/route.ts': 'tenant_crew',
   'app/api/admin/registrations/[id]/participants/route.ts': 'tenant_crew',
@@ -204,7 +212,7 @@ export const ROUTE_MANIFEST: Record<string, RouteClass> = {
   'app/api/admin/scholarships/[id]/resend/route.ts': 'tenant_crew',
   'app/api/admin/scholarships/[id]/route.ts': 'tenant_crew',
   'app/api/admin/schools/[id]/route.ts': 'platform_destined',
-  'app/api/admin/duties/route.ts': 'platform_destined',
+  'app/api/admin/duties/route.ts': 'platform_admin',
   'app/api/admin/store/discounts/route.ts': 'stellr_only',
   'app/api/admin/store/printful/route.ts': 'stellr_only',
   'app/api/admin/store/products/[id]/route.ts': 'stellr_only',

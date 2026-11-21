@@ -1,4 +1,4 @@
-import { auth } from '@clerk/nextjs/server'
+import { isStellrAdmin } from '@/lib/authz'
 import { redirect } from 'next/navigation'
 import { supabaseServer } from '@/lib/supabase'
 import { formatDateShort } from '@/lib/utils'
@@ -15,9 +15,7 @@ export const metadata = { title: 'Admin — Privacy requests' }
 const DUE_DAYS = 30
 
 export default async function PrivacyRequestsPage() {
-  const { sessionClaims } = await auth()
-  const role = (sessionClaims?.metadata as { role?: string } | undefined)?.role
-  if (role !== 'admin') redirect('/account')
+  if (!(await isStellrAdmin({ route: '/admin/privacy-requests' }))) redirect('/account')
 
   const db = supabaseServer()
   const { data } = await db

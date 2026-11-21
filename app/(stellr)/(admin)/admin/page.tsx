@@ -1,8 +1,7 @@
 import Link from 'next/link'
 import { vercelTarget } from '@/lib/env'
 import { integrationEnvironments, isRealProductionApp, type IntegrationEnvironment } from '@/lib/env-guards'
-import { requireAdminPage } from '@/lib/admin-auth'
-import { assertPlatformAdmin } from '@/lib/authz'
+import { assertPlatformAdmin, authz } from '@/lib/authz'
 import { DIGEST_PERIODS, loadMemberDigest, outstandingCount, roleLabel, type Metric, type PersonRef } from '@/lib/admin-digest'
 import { localDate } from '@/lib/survey/timezone'
 import { formatDateShort } from '@/lib/utils'
@@ -150,7 +149,7 @@ const withPrefix = (prefix: string, people: PersonRef[]): PersonRef[] =>
 const byNewest = (a: PersonRef, b: PersonRef) => b.at.localeCompare(a.at)
 
 export default async function AdminDashboardPage({ searchParams }: { searchParams: Promise<{ days?: string }> }) {
-  await requireAdminPage()
+  await authz.page.requireCapability('portal:read', { route: '/admin' })
   const { days: rawDays } = await searchParams
   const days = (DIGEST_PERIODS as readonly number[]).includes(Number(rawDays)) ? Number(rawDays) : 7
   const [digest, platformAdmin] = await Promise.all([

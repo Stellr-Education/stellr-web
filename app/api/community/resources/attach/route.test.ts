@@ -23,7 +23,6 @@ vi.mock('@/lib/impersonation', () => ({ assertNotImpersonating: async () => null
 vi.mock('@/lib/spaces', () => ({ getSpaceForMember }))
 vi.mock('@/lib/campaign-registrations', () => ({ getMemberCampaignRegistration: vi.fn() }))
 vi.mock('@/lib/resource-upload', () => ({ memberManagesContainer: vi.fn() }))
-vi.mock('@/lib/event-access', () => ({ requireEventAccess: vi.fn() }))
 vi.mock('@/lib/container-sync', () => ({ attachSpaceResource: vi.fn() }))
 vi.mock('@/lib/resource-finalise', () => ({ watermarkIfPdf: async (_b: string, _p: string, bytes: Uint8Array) => bytes }))
 vi.mock('@/lib/supabase', () => ({

@@ -25,7 +25,6 @@ vi.mock('@/lib/community', () => ({ RESOURCES_BUCKET: 'community-resources', get
 vi.mock('@/lib/impersonation', () => ({ assertNotImpersonating: async () => null }))
 vi.mock('@/lib/spaces', () => ({ getSpaceForMember: vi.fn() }))
 vi.mock('@/lib/campaign-registrations', () => ({ getMemberCampaignRegistration: vi.fn() }))
-vi.mock('@/lib/event-access', () => ({ requireEventAccess: vi.fn() }))
 vi.mock('@/lib/mentoring', () => ({ searchAttachableResources: vi.fn() }))
 vi.mock('@/lib/resource-upload', () => ({
   attachBinary,

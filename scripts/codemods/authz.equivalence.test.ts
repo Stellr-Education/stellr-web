@@ -1,9 +1,10 @@
 /**
  * The codemod's equivalence proof. Each fixture is a real handler in a legacy idiom, one
  * for each deny shape the app uses. It is compiled and run before and after the rewrite,
- * against the frozen pre-C14 lib/admin-auth (test/fixtures/authz-legacy.ts: the live one is
- * a shim over lib/authz now, so it could not tell the two runs apart), the real
- * lib/event-access and lib/authz, over every Stellr role scenario in the truth table. The
+ * against the frozen pre-C14 lib/admin-auth and pre-C25 lib/event-access
+ * (test/fixtures/authz-legacy.ts: both were deleted at C25 batch 4, and before that the live
+ * ones were shims over lib/authz, so they could not tell the two runs apart) and the real
+ * lib/authz, over every Stellr role scenario in the truth table. The
  * two runs must answer the same: same status, same body, same redirect, same 404, same reads
  * of the role tables under clerk.
  *
@@ -20,7 +21,6 @@ vi.mock('@clerk/nextjs/server', () => ({
   auth: vi.fn(),
   currentUser: vi.fn(async () => ({ firstName: 'Test', lastName: 'Person' })),
 }))
-vi.mock('@/lib/admin-auth', () => import('@/test/fixtures/authz-legacy'))
 vi.mock('@/lib/supabase', () => ({ supabaseServer: vi.fn() }))
 vi.mock('next/navigation', () => ({
   redirect: vi.fn((to: string) => {
@@ -36,10 +36,9 @@ vi.mock('@/lib/esign/native/template-admin', () => ({ TemplateAdminError: class 
 import * as clerk from '@clerk/nextjs/server'
 import * as navigation from 'next/navigation'
 import { supabaseServer } from '@/lib/supabase'
-import * as adminAuth from '@/lib/admin-auth'
+import * as legacy from '@/test/fixtures/authz-legacy'
 import * as authz from '@/lib/authz'
 import * as community from '@/lib/community'
-import * as eventAccess from '@/lib/event-access'
 import * as templateAdmin from '@/lib/esign/native/template-admin'
 import { transformSource } from './authz'
 
@@ -47,10 +46,11 @@ const MODULES: Record<string, unknown> = {
   '@clerk/nextjs/server': clerk,
   'next/navigation': navigation,
   'next/server': { NextResponse },
-  '@/lib/admin-auth': adminAuth,
+  // The legacy modules a fixture imports, frozen: C25 batch 4 deleted the live ones.
+  '@/lib/admin-auth': legacy,
   '@/lib/authz': authz,
   '@/lib/community': community,
-  '@/lib/event-access': eventAccess,
+  '@/lib/event-access': legacy,
   '@/lib/esign/native/template-admin': templateAdmin,
   '@/lib/supabase': { supabaseServer },
 }
@@ -377,8 +377,7 @@ describe('T6: the real wrappers, from a snapshot of their legacy source, rewritt
   const FIXTURES_DIR = 'scripts/codemods/fixtures/authz'
   const wrappers: [string, string, string, (r: unknown) => unknown][] = [
     ['requireScholarshipAdmin', 'lib/scholarship-admin.ts', 'scholarship-admin', (r) => r],
-    // HELD_WRAPPERS holds this one, so it is rewritten under a path on the surface.
-    ['canManageStoreCatalog', 'app/api/admin/held/auth.ts', 'store-auth', (r) => r],
+    ['canManageStoreCatalog', 'lib/store/auth.ts', 'store-auth', (r) => r],
     ['requireSurveyAdmin', 'lib/survey/admin-auth.ts', 'survey-admin-auth', (r) => (r as { ok: boolean; userId?: string; response?: Response }).ok ? r : (r as { response: Response }).response],
     ['adminName', 'app/api/admin/esign/templates/guard.ts', 'esign-templates-guard', (r) => r],
   ]
@@ -406,7 +405,7 @@ describe('one difference, pinned', () => {
   it('claims with no user id: legacy says admin and lib/authz refuses. Clerk never sends this, and refusing is the safe side', async () => {
     vi.mocked(clerk.auth).mockResolvedValue({ userId: null, sessionClaims: { metadata: { role: 'admin' } } } as never)
     vi.mocked(supabaseServer).mockReturnValue(fakeDb({}).client)
-    expect(adminAuth.isAdminClaims({ metadata: { role: 'admin' } })).toBe(true)
+    expect(legacy.isAdminClaims({ metadata: { role: 'admin' } })).toBe(true)
     expect(await authz.isStellrAdmin()).toBe(false)
   })
 })

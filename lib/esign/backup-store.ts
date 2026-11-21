@@ -64,17 +64,19 @@ export function driveBackupStore(folderId = process.env.ESIGN_BACKUP_DRIVE_FOLDE
     async remove(name) {
       const id = await find(name)
       if (!id) return false
+      // Move to trash, not a permanent delete. A shared drive lets only a
+      // Manager delete permanently (a Content manager gets 404 "File not
+      // found"), and the backup service account is deliberately a Content
+      // manager on the backup folder only. Shared-drive trash empties itself
+      // after 30 days, so a removed copy is gone for good within 30 days.
+      // find() skips trashed files, so pruning and retention see it as gone.
       try {
-        await drive.files.delete({ fileId: id, supportsAllDrives: true })
+        await drive.files.update({ fileId: id, supportsAllDrives: true, requestBody: { trashed: true }, fields: 'id' })
       } catch (err) {
-        // A shared drive lets only a Manager delete permanently. With the
-        // Content manager role Drive answers 404 "File not found" (or 403)
-        // for a file the same account has just found, which reads like a
-        // missing file rather than a missing permission.
         const code = (err as { code?: number }).code
         if (code === 403 || code === 404) {
           throw new Error(
-            `Drive refused to delete ${name} (${code}): the backup service account needs the Manager role on the shared drive; Content manager cannot delete permanently`,
+            `Drive refused to trash ${name} (${code}): the backup service account needs at least the Content manager role on the backup folder`,
           )
         }
         throw err

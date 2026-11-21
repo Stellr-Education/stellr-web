@@ -3,7 +3,7 @@ import type { Metadata } from 'next'
 import { redirect, notFound } from 'next/navigation'
 import { getEventBySlug } from '@/lib/events/repo'
 import { type StellarEvent } from '@/lib/sanity'
-import { requireEventAccess } from '@/lib/event-access'
+import { requireEventAccess } from '@/lib/authz'
 import { supabaseServer } from '@/lib/supabase'
 import CheckInLive from '@/components/admin/CheckInLive'
 
@@ -25,7 +25,7 @@ export async function generateMetadata({ params }: Params): Promise<Metadata> {
 export default async function EventCheckInPage({ params }: Params) {
   const { slug } = await params
 
-  const access = await requireEventAccess(slug)
+  const access = await requireEventAccess(slug, { route: '/admin/competitions/[slug]/check-in' })
   if (!access.ok) redirect(access.status === 401 ? '/sign-in' : '/admin/competitions')
 
   // An event with registrations but no Sanity page (an archived or test event)

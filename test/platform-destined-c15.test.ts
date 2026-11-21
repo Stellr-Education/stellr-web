@@ -12,43 +12,46 @@ import { STELLR_TENANT_ID } from '@/lib/tenancy/constants'
 
 // C15 (docs/TENANCY-S5.md): the platform-destined routes change class and nobody's access.
 //
-// Which of them become owner-only is the owner's choice, and platform_admin's check answers
-// from the platform_admins table alone under AUTHZ_SOURCE=postgres, so a route in that class
-// has already had the choice made for it. These stay on the guard they had, which the table
-// below pins. Moving one to the platform check has to come with the owner's answer for that
-// route. C25 still has to take the claim reads to lib/authz for its ratchet: moving one to
-// isStellrAdmin is not that choice, and it shows here as a diff in GUARDS and CLAIM_ONLY.
+// Which of them become owner-only was the owner's choice: platform_admin's check answers
+// from the platform_admins table alone under AUTHZ_SOURCE=postgres. BF-15 settled it on
+// 21 Nov 2026, option (a): the seven routes only Stellr admins use today moved to
+// platform_admin and assertPlatformAdmin, which under the default AUTHZ_SOURCE=clerk is the
+// Clerk admin claim from Stellr, the same answer as isStellrAdmin, so nobody loses one under
+// clerk. The two with a wider door stay platform_destined on their guard: the slug guard
+// (the events duty scope, Studio editors) and schools/[id] (schools:write, which Staff hold).
 //
 // The refusal and access tables pass on the code from before this slice too. That is the
 // proof they pin an answer rather than a mock. Only the audit events are new, and they are
 // behind PLATFORM_AUDIT_ENABLED.
 
-const ADMIN_AUTH = 'lib/admin-auth'
 const AUTHZ = 'lib/authz'
 
 /**
- * Each handler, and the guard it had before the class moved. C25 batch 1 (S5 wave 9) took
- * the deletion and privacy-request claim reads to isStellrAdmin, the converged answer for a
- * Stellr admin, not the platform check: still the owner's choice.
+ * Each handler, and its guard. C25 batch 1 (S5 wave 9) took the deletion and privacy-request
+ * claim reads to isStellrAdmin; C25 batch 3A took the slug guard to hasScope, the merge routes
+ * and duties to isStellrAdmin. BF-15 (a), 21 Nov 2026, took the seven isStellrAdmin routes to
+ * assertPlatformAdmin (class platform_admin).
  */
 const GUARDS: [file: string, method: string, guard: string, from: string][] = [
-  ['app/api/admin/deletion/route.ts', 'DELETE', 'isStellrAdmin', AUTHZ],
-  ['app/api/admin/deletion/preflight/route.ts', 'GET', 'isStellrAdmin', AUTHZ],
-  ['app/api/admin/deletion-requests/[id]/route.ts', 'PATCH', 'isStellrAdmin', AUTHZ],
-  ['app/api/admin/events/slug-guard/route.ts', 'GET', 'currentUserHasScope', ADMIN_AUTH],
-  ['app/api/admin/impersonation/route.ts', 'POST', 'isStellrAdmin', AUTHZ],
-  ['app/api/admin/members/merge/route.ts', 'GET', 'currentUserIsAdmin', ADMIN_AUTH],
-  ['app/api/admin/members/merge/route.ts', 'POST', 'currentUserIsAdmin', ADMIN_AUTH],
-  ['app/api/admin/privacy-requests/[id]/route.ts', 'PATCH', 'isStellrAdmin', AUTHZ],
+  ['app/api/admin/deletion/route.ts', 'DELETE', 'assertPlatformAdmin', AUTHZ],
+  ['app/api/admin/deletion/preflight/route.ts', 'GET', 'assertPlatformAdmin', AUTHZ],
+  ['app/api/admin/deletion-requests/[id]/route.ts', 'PATCH', 'assertPlatformAdmin', AUTHZ],
+  ['app/api/admin/duties/route.ts', 'POST', 'assertPlatformAdmin', AUTHZ],
+  ['app/api/admin/duties/route.ts', 'DELETE', 'assertPlatformAdmin', AUTHZ],
+  ['app/api/admin/events/slug-guard/route.ts', 'GET', 'hasScope', AUTHZ],
+  ['app/api/admin/impersonation/route.ts', 'POST', 'assertPlatformAdmin', AUTHZ],
+  ['app/api/admin/members/merge/route.ts', 'GET', 'assertPlatformAdmin', AUTHZ],
+  ['app/api/admin/members/merge/route.ts', 'POST', 'assertPlatformAdmin', AUTHZ],
+  ['app/api/admin/privacy-requests/[id]/route.ts', 'PATCH', 'assertPlatformAdmin', AUTHZ],
   // Staff role phase 3 (13 Nov 2026): schools moved to its capability, schools:write.
   ['app/api/admin/schools/[id]/route.ts', 'PATCH', 'hasCapability', AUTHZ],
 ]
-/** duties compares the session claim itself. */
-const INLINE_CLAIM_CHECK: [file: string, method: string][] = [
-  ['app/api/admin/duties/route.ts', 'POST'],
-  ['app/api/admin/duties/route.ts', 'DELETE'],
-]
-const FILES = [...new Set([...GUARDS.map(([f]) => f), ...INLINE_CLAIM_CHECK.map(([f]) => f)])].sort()
+const FILES = [...new Set(GUARDS.map(([f]) => f))].sort()
+/** Stay platform_destined: each admits more than a Stellr admin today. */
+const STAYS = ['app/api/admin/events/slug-guard/route.ts', 'app/api/admin/schools/[id]/route.ts']
+/** Moved to platform_admin under BF-15 (a). */
+const MOVED = FILES.filter((f) => !STAYS.includes(f))
+const isMoved = (file: string) => MOVED.includes(file)
 
 const factsOf = (file: string, method: string) => {
   const h = analyzeRoute(file, readFileSync(file, 'utf8')).handlers.find((x) => x.name === method)
@@ -209,10 +212,12 @@ afterEach(async () => {
 // ── The class moved ──────────────────────────────────────────────────────────
 
 describe('the class', () => {
-  it('holds the nine routes and no others', () => {
+  it('holds the two routes that stay, and the seven moved are platform_admin', () => {
     expect(FILES).toHaveLength(9)
+    expect(MOVED).toHaveLength(7)
     const inClass = Object.entries(ROUTE_MANIFEST).filter(([, c]) => c === 'platform_destined').map(([f]) => f).sort()
-    expect(inClass).toEqual(FILES)
+    expect(inClass).toEqual(STAYS)
+    for (const f of MOVED) expect(ROUTE_MANIFEST[f], f).toBe('platform_admin')
   })
 
   it('asks for what stellr_only asks for, and platform_admin still asks for its own check', () => {
@@ -220,30 +225,25 @@ describe('the class', () => {
     expect(CLASS_REQUIREMENTS.platform_admin.kinds).toEqual(['platform'])
   })
 
-  it('no route has moved to platform_admin: that answer is the owner\'s', () => {
-    expect(Object.values(ROUTE_MANIFEST).filter((c) => c === 'platform_admin')).toEqual([])
+  it('platform_admin holds exactly the seven BF-15 moved', () => {
+    expect(Object.entries(ROUTE_MANIFEST).filter(([, c]) => c === 'platform_admin').map(([f]) => f).sort()).toEqual(MOVED)
   })
 })
 
 // ── The guard did not ────────────────────────────────────────────────────────
 
-describe('the guard each handler had', () => {
-  it.each(GUARDS)('%s %s still calls %s', (file, method, guard, from) => {
+describe('the guard each handler has', () => {
+  it.each(GUARDS)('%s %s calls %s', (file, method, guard, from) => {
     const facts = factsOf(file, method)
     expect(calledFrom(facts, guard, [from])).toBe(true)
     const kinds = satisfies(facts)
     expect(kinds.has('admin')).toBe(true)
-    expect(kinds.has('platform')).toBe(false)
+    expect(kinds.has('platform')).toBe(isMoved(file))
   })
 
-  it.each(INLINE_CLAIM_CHECK)('%s %s still checks the session claim itself', (file, method) => {
-    const facts = factsOf(file, method)
-    expect(facts.comparesRoleToAdmin).toBe(true)
-    expect(satisfies(facts).has('platform')).toBe(false)
-  })
-
-  it('no file reaches the platform check', () => {
-    for (const f of FILES) expect(readFileSync(f, 'utf8'), f).not.toContain('assertPlatformAdmin')
+  it('the routes that stay do not reach the platform check, and the moved ones no longer call isStellrAdmin', () => {
+    for (const f of STAYS) expect(readFileSync(f, 'utf8'), f).not.toContain('assertPlatformAdmin')
+    for (const f of MOVED) expect(readFileSync(f, 'utf8'), f).not.toContain('isStellrAdmin')
   })
 })
 
@@ -279,11 +279,11 @@ describe('who gets in', () => {
     })
   })
 
-  // Under each source, because this slice must not settle what the flip takes away. The person
-  // the owner's choice is about: a Stellr admin, mapped as Stellr's tenant_admin, with no
-  // platform_admins row. Each of these guards answers from the Clerk claim or from
-  // isStellrAdmin, and platform_admin's check would refuse this person under postgres.
-  describe.each(['clerk', 'shadow', 'postgres'])('a Stellr admin under AUTHZ_SOURCE=%s, on no platform_admins list', (source) => {
+  // The person the owner's choice is about: a Stellr admin, mapped as Stellr's tenant_admin,
+  // with no platform_admins row. Under clerk (the default) and shadow (which answers clerk)
+  // they keep every route. Under postgres the seven moved routes are owner-only (BF-15 (a)),
+  // and the two that stay still let them in.
+  describe.each(['clerk', 'shadow'])('a Stellr admin under AUTHZ_SOURCE=%s, on no platform_admins list', (source) => {
     it.each(PAST_GUARD)('gets past the guard of %s %s', async (file, method, opts, expected) => {
       vi.stubEnv('AUTHZ_SOURCE', source)
       rows = STELLR_ADMIN_ROWS
@@ -292,27 +292,69 @@ describe('who gets in', () => {
     })
   })
 
+  describe('a Stellr admin under AUTHZ_SOURCE=postgres, on no platform_admins list', () => {
+    it.each(PAST_GUARD.filter(([file]) => !isMoved(file)))('still gets past the guard of %s %s', async (file, method, opts, expected) => {
+      vi.stubEnv('AUTHZ_SOURCE', 'postgres')
+      rows = STELLR_ADMIN_ROWS
+      authMock.mockResolvedValue(ADMIN)
+      expect((await call(file, method, opts)).status).toBe(expected)
+    })
+
+    it.each(PAST_GUARD.filter(([file]) => isMoved(file)))('is refused by %s %s, in the same bytes (owner-only, BF-15 (a))', async (file, method, opts) => {
+      vi.stubEnv('AUTHZ_SOURCE', 'postgres')
+      rows = STELLR_ADMIN_ROWS
+      authMock.mockResolvedValue(ADMIN)
+      const res = await call(file, method, opts)
+      expect(res.status).toBe(403)
+      expect(await res.json()).toEqual({ error: 'Forbidden' })
+    })
+  })
+
+  describe('a platform admin under AUTHZ_SOURCE=postgres (on the platform_admins list)', () => {
+    it.each(PAST_GUARD.filter(([file]) => isMoved(file)))('gets past the guard of %s %s', async (file, method, opts, expected) => {
+      vi.stubEnv('AUTHZ_SOURCE', 'postgres')
+      rows = { ...STELLR_ADMIN_ROWS, platform_admins: { clerk_user_id: ADMIN.userId } }
+      authMock.mockResolvedValue(ADMIN)
+      expect((await call(file, method, opts)).status).toBe(expected)
+    })
+  })
+
+  // Staff (with a second factor) under clerk: refused by every moved route, as before; schools
+  // lets them in (schools:write), which is why it stays.
+  describe('Staff under AUTHZ_SOURCE=clerk', () => {
+    const STAFF = { userId: 'user_staff1', sessionClaims: { metadata: { role: 'staff' } }, factorVerificationAge: [0, 0] }
+    it.each(PAST_GUARD.filter(([file]) => isMoved(file)))('is refused by %s %s', async (file, method, opts) => {
+      authMock.mockResolvedValue(STAFF)
+      const res = await call(file, method, opts)
+      expect(res.status).toBe(403)
+      expect(await res.json()).toEqual({ error: 'Forbidden' })
+    })
+
+    it('gets past the schools guard (schools:write), so schools/[id] stays platform_destined', async () => {
+      authMock.mockResolvedValue(STAFF)
+      expect((await call('app/api/admin/schools/[id]/route.ts', 'PATCH', { body: {} })).status).toBe(400)
+    })
+  })
+
   // Today's answer for someone the flip is meant to change: the Clerk admin claim still there,
-  // no Stellr membership. Only the handlers that reach isStellrAdmin notice, so these routes
-  // ignore the postgres source until C25 converts them, whatever class they end in.
+  // no Stellr membership. Since C25 batch 3A every handler here reaches lib/authz, so each
+  // refuses this person under postgres (not flipped) and still lets them in under clerk.
   describe('the Clerk admin claim with no Stellr membership', () => {
     const REACHES_AUTHZ = [
       'app/api/admin/deletion/route.ts',
       'app/api/admin/deletion/preflight/route.ts',
       'app/api/admin/deletion-requests/[id]/route.ts',
+      'app/api/admin/duties/route.ts',
+      'app/api/admin/events/slug-guard/route.ts',
       'app/api/admin/impersonation/route.ts',
       'app/api/admin/members/merge/route.ts',
       'app/api/admin/privacy-requests/[id]/route.ts',
       'app/api/admin/schools/[id]/route.ts',
     ]
-    const CLAIM_ONLY = PAST_GUARD.filter(([file]) => !REACHES_AUTHZ.includes(file))
     const NO_MEMBERSHIP = { members: { id: MEMBER }, tenant_memberships: [] }
 
-    it.each(CLAIM_ONLY)('postgres: still gets past %s %s, from the claim', async (file, method, opts, expected) => {
-      vi.stubEnv('AUTHZ_SOURCE', 'postgres')
-      rows = NO_MEMBERSHIP
-      authMock.mockResolvedValue(ADMIN)
-      expect((await call(file, method, opts)).status).toBe(expected)
+    it('every handler here reaches lib/authz', () => {
+      expect(PAST_GUARD.filter(([file]) => !REACHES_AUTHZ.includes(file))).toEqual([])
     })
 
     it.each(PAST_GUARD.filter(([file]) => REACHES_AUTHZ.includes(file)))('postgres: is refused by %s %s', async (file, method, opts) => {

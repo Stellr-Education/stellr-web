@@ -22,7 +22,7 @@ vi.mock('@clerk/nextjs/server', () => ({
     return { userId: state.userId, sessionClaims: {} }
   },
 }))
-vi.mock('@/lib/admin-auth', () => ({ isAdminClaims: () => state.admin }))
+vi.mock('@/lib/authz', () => ({ isStellrAdmin: async () => state.admin }))
 vi.mock('@/lib/impersonation', () => ({ impersonatedMemberId: async () => state.viewAs }))
 vi.mock('@/lib/supabase', () => ({ supabaseServer: () => state.db!.client }))
 

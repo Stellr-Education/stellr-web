@@ -21,6 +21,7 @@ import { auth } from '@clerk/nextjs/server'
 import { supabaseServer } from '@/lib/supabase'
 import { resetErrorCaptureState } from '@/lib/app-errors'
 import * as authz from '@/lib/authz'
+import { DEFAULT_SHADOW_DENY_SAMPLE, isGrant, isUnrecognisedShadowDenySample, setShadowRandom, shadowDenySample, shouldShadow } from '@/lib/authz/shadow-sample'
 
 let db: FakeDb
 
@@ -746,6 +747,143 @@ describe('page adapters', () => {
     db.fail.add('tenant_memberships')
     await expect(authz.page.requireAdmin()).rejects.toThrow('NOT_FOUND')
     await expect(authz.page.requireStellrAdmin()).rejects.toThrow('NOT_FOUND')
+  })
+})
+
+describe('shadow sampling (owner decision 21 Nov 2026)', () => {
+  // vitest.setup.ts draws 0 for every test; these inject their own draws.
+  const draw = (n: number) => {
+    const fn = vi.fn(() => n)
+    setShadowRandom(fn)
+    return fn
+  }
+  const share = (v: string) => vi.stubEnv('AUTHZ_SHADOW_DENY_SAMPLE', v)
+  /** A Clerk denial that postgres would allow: compared, it leaves a row. */
+  const drifted = () => setup('student', { tenant_memberships: [mem('tenant_admin')] })
+  const DENY_ROW = `authz_mismatch stellr_admin member=${MEMBER} clerk=deny_403 postgres=allow`
+
+  it('a Clerk grant is always compared, whatever the draw and the share', async () => {
+    for (const s of ['0', '0.05', 'nonsense']) {
+      resetErrorCaptureState()
+      setup('admin', {})
+      source('shadow')
+      share(s)
+      draw(0.999)
+      expect(await authz.isStellrAdmin()).toBe(true)
+      expect(mismatches()).toEqual([`authz_mismatch stellr_admin member=${MEMBER} clerk=allow postgres=deny_403`])
+    }
+  })
+  it('a grant of any kind is compared: capability, portal, event access, staff target', async () => {
+    setup('admin', {})
+    source('shadow')
+    share('0')
+    draw(0.999)
+    await authz.hasCapability('store:write', { route: '/a' })
+    await authz.hasPortalAccess({ route: '/b' })
+    await authz.requireEventAccess(undefined, { route: '/c' })
+    expect(mismatches().map((m) => m.split(' ')[1])).toEqual(['capability:store:write', 'portal', 'event_access'])
+    // A staff target (true) is a role held, so its postgres side runs too.
+    db.reads.length = 0
+    expect(await authz.isCrewTarget({ clerkUserId: USER, clerkRole: 'admin', memberId: MEMBER }, { route: '/d' })).toBe(true)
+    expect(db.reads).toContain('platform_admins')
+  })
+  it('a Clerk denial is compared when the draw falls under the default share of 5%', async () => {
+    drifted()
+    source('shadow')
+    draw(0.049)
+    expect(await authz.isStellrAdmin()).toBe(false)
+    expect(mismatches()).toEqual([DENY_ROW])
+  })
+  it('a Clerk denial outside the share is not compared: no postgres read, no row, same answer', async () => {
+    drifted()
+    source('shadow')
+    draw(0.05)
+    expect(await authz.isStellrAdmin()).toBe(false)
+    expect(await authz.requireEventAccess('ev-a')).toEqual({ ok: false, status: 403 })
+    expect(await authz.hasScope('events')).toBe(false)
+    expect(mismatches()).toEqual([])
+    // hasScope's Clerk side reads members and admin_duties itself; nothing else is read.
+    expect([...new Set(db.reads)].sort()).toEqual(['admin_duties', 'members'])
+  })
+  it('AUTHZ_SHADOW_DENY_SAMPLE sets the share', async () => {
+    for (const [s, d, compared] of [
+      ['0.5', 0.49, true],
+      ['0.5', 0.5, false],
+      ['1', 0.999, true],
+      ['0', 0, false],
+    ] as const) {
+      resetErrorCaptureState()
+      drifted()
+      source('shadow')
+      share(s)
+      draw(d)
+      expect(await authz.isStellrAdmin()).toBe(false)
+      expect(mismatches(), `share ${s}, draw ${d}`).toEqual(compared ? [DENY_ROW] : [])
+    }
+  })
+  it('an invalid or blank share is the default', async () => {
+    for (const s of ['abc', '1.5', '-0.1', '', ' ', '5%', 'NaN', 'Infinity']) {
+      for (const [d, compared] of [[0.049, true], [0.05, false]] as const) {
+        resetErrorCaptureState()
+        drifted()
+        source('shadow')
+        share(s)
+        draw(d)
+        await authz.isStellrAdmin()
+        expect(mismatches(), `share ${JSON.stringify(s)}, draw ${d}`).toEqual(compared ? [DENY_ROW] : [])
+      }
+    }
+  })
+  it('clerk takes no draw and makes no postgres read, whatever the share', async () => {
+    drifted()
+    source('clerk')
+    share('1')
+    const fn = draw(0)
+    expect(await authz.isStellrAdmin()).toBe(false)
+    expect(fn).not.toHaveBeenCalled()
+    expect(db.reads).toEqual([])
+    expect(mismatches()).toEqual([])
+  })
+  it('postgres takes no draw: the tables decide every time, whatever the share', async () => {
+    drifted()
+    source('postgres')
+    share('0')
+    const fn = draw(0.999)
+    expect(await authz.isStellrAdmin()).toBe(true)
+    setup('admin', {})
+    expect(await authz.isStellrAdmin()).toBe(false)
+    expect(fn).not.toHaveBeenCalled()
+    expect(mismatches()).toEqual([])
+  })
+  it('the mismatch row is unchanged by sampling: fixed labels and a members.id only', async () => {
+    drifted()
+    source('shadow')
+    draw(0)
+    await authz.isStellrAdmin({ route: '/api/store/returns' })
+    expect(mismatches()).toEqual([DENY_ROW])
+    expect(db.rpcs[0].args.p_route).toBe('AUTHZ /api/store/returns')
+  })
+  it('the pure helpers', () => {
+    expect(DEFAULT_SHADOW_DENY_SAMPLE).toBe(0.05)
+    expect(shadowDenySample(undefined)).toBe(0.05)
+    expect(shadowDenySample('')).toBe(0.05)
+    expect(shadowDenySample(' 0.25 ')).toBe(0.25)
+    expect(shadowDenySample('0')).toBe(0)
+    expect(shadowDenySample('1')).toBe(1)
+    expect(shadowDenySample('2')).toBe(0.05)
+    expect(isUnrecognisedShadowDenySample(undefined)).toBe(false)
+    expect(isUnrecognisedShadowDenySample(' ')).toBe(false)
+    expect(isUnrecognisedShadowDenySample('0.1')).toBe(false)
+    expect(isUnrecognisedShadowDenySample('ten')).toBe(true)
+    expect(isGrant(true)).toBe(true)
+    expect(isGrant(false)).toBe(false)
+    expect(isGrant({ ok: true })).toBe(true)
+    expect(isGrant({ ok: false, status: 403 })).toBe(false)
+    expect(isGrant(null)).toBe(false)
+    expect(shouldShadow({ ok: true }, 0.99, 0)).toBe(true)
+    expect(shouldShadow(false, 0.04, 0.05)).toBe(true)
+    expect(shouldShadow(false, 0.05, 0.05)).toBe(false)
+    expect(shouldShadow({ ok: false, status: 401 }, 0, 0)).toBe(false)
   })
 })
 

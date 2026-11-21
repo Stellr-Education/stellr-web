@@ -1,5 +1,4 @@
 import { ClerkProvider } from '@clerk/nextjs'
-import { auth } from '@clerk/nextjs/server'
 import { clerkAppearance } from '@/lib/clerk-appearance'
 import { requestNonce } from '@/lib/request-nonce'
 import { AppSidebar } from '@/components/layout/AppSidebar'
@@ -9,15 +8,15 @@ import { ImpersonationBanner } from '@/components/admin/ImpersonationBanner'
 import { getCurrentMember } from '@/lib/community'
 import { viewAsBannerProps } from '@/lib/impersonation'
 import { getHostCaps } from '@/lib/sessions'
-import { isAdminClaims } from '@/lib/admin-auth'
+import { isStellrAdmin } from '@/lib/authz'
 import { isStudentForAds } from '@/lib/no-ads'
 import { NoAdsStudentMarker } from '@/components/analytics/NoAdsStudentMarker'
 import { OutstandingBanner } from '@/components/member/OutstandingBanner'
 import { getOutstandingItems } from '@/lib/member-outstanding'
 
 export default async function MemberLayout({ children }: { children: React.ReactNode }) {
-  const [{ sessionClaims }, member] = await Promise.all([auth(), getCurrentMember()])
-  const isAdmin = isAdminClaims(sessionClaims)
+  // Only shows the top bar's admin link; every admin page guards itself.
+  const [isAdmin, member] = await Promise.all([isStellrAdmin({ route: '(member)/layout' }), getCurrentMember()])
 
   // Admin view-as. getCurrentMember() has already resolved to the impersonated
   // member above, so `member` is who the portal is rendering — the banner just

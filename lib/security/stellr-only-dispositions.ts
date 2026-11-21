@@ -9,7 +9,8 @@
 //   - whether training/assignments and training/tracking are release-1 tenant features.
 //     They are listed permanent;
 //   - for each platform_destined route, whether it becomes owner-only or stays usable
-//     by Stellr staff. C15 moved the class and not the guard, so that choice is still open.
+//     by Stellr staff. C15 moved the class and not the guard. BF-15 settled it on 21 Nov
+//     2026 (a): seven went to platform_admin; events/slug-guard and schools/[id] stay.
 //     So is the audit chain that goes with it: these routes write to Stellr's chain until
 //     the owner has answered, and a row on the wrong chain cannot be corrected, so the
 //     answer comes before PLATFORM_AUDIT_ENABLED is on with a second tenant.
@@ -68,8 +69,11 @@ const GROUPS: readonly DispositionGroup[] = [
     disposition: 'platform_destined',
     reason: 'acts across tenants by nature: the owner decides, route by route, owner-only or Stellr crew',
     routes: [
-      'deletion', 'deletion-requests/[id]', 'deletion/preflight', 'events/slug-guard', 'impersonation', 'members/merge',
-      'privacy-requests/[id]', 'schools/[id]', 'duties',
+      // BF-15 (a), 21 Nov 2026: deletion, deletion-requests/[id], deletion/preflight, impersonation,
+      // members/merge, privacy-requests/[id] and duties went to platform_admin and left this list.
+      // These two stay: each admits more than a Stellr admin today (the events duty scope;
+      // schools:write, which Staff hold), so platform_admin would take them from someone.
+      'events/slug-guard', 'schools/[id]',
     ],
   },
   {

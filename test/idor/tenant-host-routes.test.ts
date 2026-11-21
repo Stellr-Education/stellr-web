@@ -24,7 +24,7 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { describe, expect, it, vi } from 'vitest'
 import { HONEYTOKENS, HONEYTOKEN_MARKER } from '@/lib/testing/honeytokens'
 import { applyEnv, HELD_BACK_FIXTURES } from './case-fixtures'
-import { harness, installNetworkGuard, recordOutboundEmail, runIdorCase, targetInput, type CaseResult, type Direction } from './harness'
+import { harness, honeyEventFor, installNetworkGuard, recordOutboundEmail, runIdorCase, targetInput, type CaseResult, type Direction } from './harness'
 import { isCi, printReportedOracles } from './reported-oracles'
 import { TENANT_HOST_ACCEPTED, TENANT_HOST_UNPROVEN } from './tenant-host-accepted'
 import { capRegressions, entryOf, hostTotals, isFailingEntry, isUnprovenEntry, printHostCases, sealHostCases, tenantHostFixture, tenantHostTargets, tenantHostVariants, unprovenReasonKey, type HostBaseline, type HostCases } from './tenant-host-targets'
@@ -37,26 +37,13 @@ delete process.env.NEXT_PUBLIC_SANITY_PROJECT_ID
 
 const eventLookups = vi.hoisted(() => ({ byRoute: new Map<string, number>(), route: '' }))
 
-// The generated suite models no Sanity event, so a route that looks one up stops there.
-// Here host B's slug names a real, open event of host B, gone in the differential's run.
+// The generated suite models no Sanity event unless a case's fixture sets `event`, so a
+// route that looks one up stops there. Here host B's slug names a real, open event of host B, gone in the differential's run.
 vi.mock('@/lib/sanity', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   getEventBySlug: async (slug: string) => {
     if (String(slug).toUpperCase().includes(HONEYTOKEN_MARKER)) eventLookups.byRoute.set(eventLookups.route, (eventLookups.byRoute.get(eventLookups.route) ?? 0) + 1)
-    if (harness.db.honeyAbsent || !String(slug).toUpperCase().includes(HONEYTOKEN_MARKER)) return null
-    return {
-      _id: HONEYTOKENS.sanityId,
-      title: HONEYTOKENS.personName,
-      slug: { current: slug },
-      type: 'competition',
-      date: '2099-06-01',
-      endDate: '2099-06-02',
-      setting: 'in_person',
-      registrationOpen: true,
-      gradeMin: 7,
-      gradeMax: 12,
-      capacity: 100,
-    }
+    return honeyEventFor(slug)
   },
 }))
 
@@ -194,8 +181,10 @@ describe('tenant-host routes: anonymous and participant, on host A naming a vali
       expect(cases.length, file).toBeGreaterThan(0)
       for (const direction of DIRECTIONS) expect(cases.some(([k, entry]) => k.includes(direction) && !isUnprovenEntry(entry)), `${file} ${direction}`).toBe(true)
     }
+    // Only a case named by its full key (the owner-accepted scholarship offer cases, 21 Nov 2026) may prove nothing here.
     for (const file of ['app/api/register/individual/route.ts', 'app/api/register/group/route.ts']) {
-      expect(Object.values(observed[file]).filter(isUnprovenEntry).length, `${file}: cases that proved nothing`).toBe(0)
+      const unnamed = Object.entries(observed[file]).filter(([k, entry]) => isUnprovenEntry(entry) && !TENANT_HOST_UNPROVEN[`${file} ${k}`])
+      expect(unnamed.map(([k]) => k), `${file}: cases that proved nothing`).toEqual([])
     }
   })
 
