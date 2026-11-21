@@ -901,7 +901,7 @@ Batch 4 in S5, in order (`s5-programme.53`): A13a, then A8b; C20b, C19a and C8-P
 
 ## Wave 8 status
 
-Wave 8 follows `docs/PLAN-S5-wave8-DRAFT.md`. Every open WD and BF decision there has a safe default, and slices build to it. **Merged** means squashed into `dev`. **Nothing in wave 8 is on production** yet: the last promotion that carried S5 work is #747 (16 Nov 2026). M7's two migrations are on the **dev database only** and must reach production through the Action before B24's code does. Checked against `dev` at `fed58c96` on 19 Nov 2026; the table rechecked on 20 Nov 2026.
+Wave 8 follows `docs/PLAN-S5-wave8-DRAFT.md`. Every open WD and BF decision there has a safe default, and slices build to it. **Merged** means squashed into `dev`. **Nothing in wave 8 is on production** yet: the last promotion that carried S5 work is #747 (16 Nov 2026). M7's two migrations are on the **dev database only** and must reach production through the Action before B24's code does. Checked against `dev` at `ccae8a2a` on 21 Nov 2026 (UTC).
 
 | Slice | PR | State, and what it does |
 |---|---|---|
@@ -911,27 +911,25 @@ Wave 8 follows `docs/PLAN-S5-wave8-DRAFT.md`. Every open WD and BF decision ther
 | C20b | #756 (`8b05b7fe`) | Merged. Scholarships admin onto `loadScoped`, Stellr-only for other tenants |
 | CONSENT | #757 (`343c881e`) | Merged. The consent sweep runs regardless of the flag, a not-ready `app_errors` row, and staff can resend a guardian's consent form (`s5-programme.23`) |
 | A8b | #768 (`6990b9de`) | Merged. Explicit `tenant_id` on the remaining Lane A writers. It found the optional-event table list holds 7 of 15 tables; Lane C's writers come next |
-| K11 | #759 | Open, owner review (`ci.yml`). A report-only CI job running the canary flow on the local stack. Its first run found that `/api/register/individual` returned a 500 on a body missing phone, gender, T-shirt size or age bracket; it now answers 400 |
-| B24 | #764 | Open, owner review (`lib/esign/completion.ts`). The email outbox sends per tenant by `email_outbox.tenant_id`. M7 must reach production first |
-| P4 owner check | #766 | Open, owner review. Stellr's `/register/[slug]` no longer serves another tenant's event (K11 probe P4) |
-| C19a | #767 | Open, owner review. Events credentials, badge and certificate templates, badges and certificates onto `lib/authz`, Stellr-only for other tenants (`W7-9` holds). Merged with `dev` on 19 Nov 2026 after teacher badges (#796) |
-| A11, A12 door | #804 | Open, owner review (`lib/esign/native/flow.ts`, `test/idor/**`). Signing sessions, links and download links refuse another tenant's envelope; agreement reuse and the media lists stay inside one tenant (`WD-7` default: never across tenants); `/api/check-in` answers another tenant's event as an expired code. Tenant-host failing cases fall from 48 to 12 |
+| K11 | #759 (`073ff85b`) | Merged. A report-only CI job running the canary flow on the local stack. Its first run found that `/api/register/individual` returned a 500 on a body missing phone, gender, T-shirt size or age bracket; it now answers 400 |
+| B24 | #764 (`d87d6ad1`) | Merged. The email outbox sends per tenant by `email_outbox.tenant_id`. M7 must reach production first |
+| P4 owner check | #766 (`b0cdb3e1`) | Merged. Stellr's `/register/[slug]` no longer serves another tenant's event (K11 probe P4) |
+| C19a | #767 (`30ebb6db`) | Merged. Events credentials, badge and certificate templates, badges and certificates onto `lib/authz`, Stellr-only for other tenants (`W7-9` holds). Merged with `dev` on 19 Nov 2026 after teacher badges (#796) |
+| A11, A12 door | #804 (`83c9cb4d`) | Merged. Signing sessions, links and download links refuse another tenant's envelope; agreement reuse and the media lists stay inside one tenant (`WD-7` default: never across tenants); `/api/check-in` answers another tenant's event as an expired code. Tenant-host failing cases fall from 48 to 12 |
 | deepmerge ignore | #803 (`1c575261`) | Merged. Drops the withdrawn GHSA-gcqx-w48m-w2h4 ignore. The rest of #760 (closed) shipped as #762 |
-| C19b | #808 | Open, owner review, **stacked on #767**. Awards and awards/issue onto `lib/authz`, Stellr-only for other tenants (`W7-9`): awards become Stellr-issued credentials. The admin check-in desk, C19's last part, is a tenant feature and needs a design call |
-| Lane C writers | #810 | Open, owner review (`scripts/s5-inventory.mjs`, its test). Optional-event tables 7 to 15 (each checked nullable on the dev schema); every writer to them sets `tenant_id`, none missing. Needed before ENF-dev |
-| C8-PG callers and cron loops | #812 | Open, owner review (`ci.yml`, `lib/tenancy/**`). `lib/events/tenant-facade.ts`, the facade with an explicit tenant, behind the new `events-read` area (Sanity unless `TENANT_DB_AREAS` turns it on); event emails, team profiles, the admin digest, training reminders, compliance notices and the two per-tenant crons read through it. Two-tenant integration test in the tenant-db job |
+| C19b | #808 (`f02749a2`) | Merged. Awards and awards/issue onto `lib/authz`, Stellr-only for other tenants (`W7-9`): awards become Stellr-issued credentials. The admin check-in desk followed in C19c |
+| Lane C writers | #810 (`96e7c9bd`) | Merged. Optional-event tables 7 to 15 (each checked nullable on the dev schema); every writer to them sets `tenant_id`, none missing. Needed before ENF-dev |
+| C8-PG callers and cron loops | #812 (`ac9c483e`) | Merged. `lib/events/tenant-facade.ts`, the facade with an explicit tenant, behind the new `events-read` area (Sanity unless `TENANT_DB_AREAS` turns it on); event emails, team profiles, the admin digest, training reminders, compliance notices and the two per-tenant crons read through it. Two-tenant integration test in the tenant-db job |
+| C19c | #819 (`9075ed35`) | Merged. The admin check-in desk onto `lib/authz`, Stellr-only for other tenants (`WD-C19-DESK`). The register has no `events/[slug]` route left, so REQ-EVT is complete |
+| B25 | #820 (`71b38ade`) | Merged. Migration `20261120185125_tenant_host_map_public` (dev database only): `tenant_host_map()` returns the slug, and anon may call it (`WD-1`); the proxy reads its host map with the publishable key. Production refused it on 20 Nov 2026: the Action's `supabase/tests/security_checks.sql` lacked the WD-1 exception its pgTAP twin had. The fix is #826 (check file only; the migration is unchanged), and promotion #818 waits on it |
+| A12, BOUNCE | #821 (`ccae8a2a`) | Merged. Check-in links and QR codes, and the bounce-notice link, open on the event's own host (`lib/tenancy/event-origin.ts`); Stellr's check-in pages refuse another tenant's event (P6); the tenant tree has `/sign/email`. Tenant-host unproven cap 18 to 22 with a named reason, under the `tenant-host-cap-grow` label |
+| ENF prep | #822 (`e0963720`), #823 (`a02d72eb`) | Merged. Agreement rows carry their event's tenant; e2e fixtures mirror their events as Stellr's and stamp direct inserts. The dev seed events were mirrored on the dev database |
 
-**Still to build in wave 8:**
-- REQ-EVT's last step, once C19a lands. The batch 3 guard (#738) lists the 10 routes as pending C19a.
-- The admin check-in desk (C19's last part), which needs a design call.
-- BOUNCE, which needs tenant-host links (B25).
-
-**Waiting on the owner:**
-- B25: `WD-1`, plus the missing slug.
-- Tenant-host links for check-in QR codes and for signing, which depend on B25: today both build from `SITE_URL`.
-- ENF-dev, the derivation enforce flip.
-- A10c and F10, which need P9 clean.
-- K9's dev flips.
+**Wave 8 is built.** Everything above is on `dev`; none of it is on production. What remains:
+- **Promotion #818** (another session): waits on #826, then B25's migration through the Action, with the owner's approval of each run.
+- **ENF-dev:** the 7 clean days started at 2026-11-20 22:53Z, when #822 and #823 merged. If `public.tenancy_derivation_log` has no new row by 2026-11-27 22:53Z, `derivation_mode` goes to `enforce` on `dev` only. Then K9's dev flips (`WD-K9`).
+- **A10c and F10:** need P9 clean, which needs the `tenant_app_login` on `dev` (the owner creates it).
+- **Wave 9 (S5's remaining code gates):** the 8 tenant-destined Stellr-only routes (C20 scholarships, C21 event managers), the 10 Stellr-host register cases that still fail in the tenant-host suite, the 99 legacy authorisation sites (C25), the unaudited mutations, and the Stellr-only list reads.
 
 ## PR amendments
 
