@@ -1,8 +1,7 @@
-import { auth } from '@clerk/nextjs/server'
+import { isStellrAdmin } from '@/lib/authz'
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import { supabaseServer } from '@/lib/supabase'
-import { isAdminClaims } from '@/lib/admin-auth'
 import { storableId, withAudit } from '@/lib/audit/route'
 import { adminAuditSubject, noteAuditSubject } from '@/lib/audit/route-subject'
 import { sendEmail, MARKETING_FROM } from '@/lib/email'
@@ -25,8 +24,7 @@ export const POST = withAudit(
 )
 
 async function sendTest(req: Request, { params }: Ctx) {
-  const { sessionClaims } = await auth()
-  if (!isAdminClaims(sessionClaims)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  if (!(await isStellrAdmin({ route: '/api/admin/email/campaigns/[id]/test' }))) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   const { id } = await params
 
   const parsed = schema.safeParse(await req.json().catch(() => null))

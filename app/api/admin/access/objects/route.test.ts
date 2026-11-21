@@ -27,7 +27,7 @@ function from(table: string) {
 }
 
 vi.mock('@clerk/nextjs/server', () => ({ auth: async () => ({ sessionClaims: h.claims }) }))
-vi.mock('@/lib/admin-auth', () => ({ isAdminClaims: (c: { metadata?: { role?: string } } | null) => c?.metadata?.role === 'admin' }))
+vi.mock('@/lib/authz', () => ({ isStellrAdmin: async () => (h.claims as { metadata?: { role?: string } } | null)?.metadata?.role === 'admin' }))
 vi.mock('@/lib/supabase', () => ({ supabaseServer: () => ({ from }) }))
 vi.mock('@/lib/object-created-rules', () => ({ fireObjectCreatedRules: h.fireObjectCreatedRules }))
 vi.mock('@/lib/events/repo', () => ({ getAllEvents: async () => [], getAllCampaigns: async () => [] }))

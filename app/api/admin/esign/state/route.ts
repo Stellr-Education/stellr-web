@@ -1,8 +1,7 @@
 import { auth } from '@clerk/nextjs/server'
-import { hasCapability } from '@/lib/authz'
+import { hasCapability, isStellrAdmin } from '@/lib/authz'
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseServer } from '@/lib/supabase'
-import { isAdminClaims } from '@/lib/admin-auth'
 import { applyStateUpdate, loadEngineSummary, stateUpdateSchema } from '@/lib/esign/state'
 import { withAudit } from '@/lib/audit/route'
 import { adminAuditSubject, noteAuditSubject } from '@/lib/audit/route-subject'
@@ -29,8 +28,8 @@ export const PATCH = withAudit(
 )
 
 async function updateState(req: NextRequest) {
-  const { userId, sessionClaims } = await auth()
-  if (!userId || !isAdminClaims(sessionClaims)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  const { userId } = await auth()
+  if (!userId || !(await isStellrAdmin({ route: '/api/admin/esign/state' }))) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
   const parsed = stateUpdateSchema.safeParse(await req.json().catch(() => null))
   if (!parsed.success) {

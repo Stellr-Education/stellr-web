@@ -11,7 +11,7 @@ const addGlobalRole = vi.fn()
 vi.mock('@clerk/nextjs/server', () => ({
   auth: async () => ({ sessionClaims: { metadata: { role: 'admin' } } }),
 }))
-vi.mock('@/lib/admin-auth', () => ({ isAdminClaims: () => true }))
+vi.mock('@/lib/authz', () => ({ isStellrAdmin: async () => true }))
 vi.mock('@/lib/member-roles', () => ({
   addGlobalRole: (...a: unknown[]) => addGlobalRole(...a),
   getGlobalRoleNames: async () => [],

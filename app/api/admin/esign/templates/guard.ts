@@ -1,6 +1,6 @@
 import { auth, currentUser } from '@clerk/nextjs/server'
+import { isStellrAdmin } from '@/lib/authz'
 import { NextResponse } from 'next/server'
-import { isAdminClaims } from '@/lib/admin-auth'
 import { TemplateAdminError } from '@/lib/esign/native/template-admin'
 
 // Shared by the agreement-document editor routes: admins only, and errors
@@ -10,8 +10,8 @@ export const noStore = { 'Cache-Control': 'private, no-store' }
 
 /** The signed-in admin's name for the record, or null when the caller is not an admin. */
 export async function adminName(): Promise<string | null> {
-  const { userId, sessionClaims } = await auth()
-  if (!userId || !isAdminClaims(sessionClaims)) return null
+  const { userId } = await auth()
+  if (!userId || !(await isStellrAdmin({ route: '/api/admin/esign/templates' }))) return null
   const user = await currentUser().catch(() => null)
   const name = [user?.firstName, user?.lastName].filter(Boolean).join(' ')
   return name ? `${name} (${userId})` : userId
