@@ -12,7 +12,7 @@ import { supabaseServer } from '@/lib/supabase'
 import { auth } from '@clerk/nextjs/server'
 import { idorTargets } from '@/lib/security/idor-targets'
 import { requestIdInputs } from '@/lib/security/route-ast'
-import { installNetworkGuard, runIdorCase, type CaseInput } from './harness'
+import { installNetworkGuard, runIdorCase, type CaseInput, type Outcome } from './harness'
 import { caughtFor } from '../../scripts/idor-canary.mjs'
 
 process.env.NEXT_PUBLIC_SUPABASE_URL = 'http://supabase.idor.invalid'
@@ -222,11 +222,16 @@ describe('finding 6: a validation refusal before the id is used is unexercised, 
     expect(r.outcome).toBe('refused')
     expect(r.status).toBe(403)
   })
-  it('the snapshot pins unexercised cases rather than calling them refused', () => {
+  // 21 Nov 2026: no case is unexercised any more (MAX_UNEXERCISED is 0), so the snapshot
+  // no longer holds one to point at. What stays true: every pinned outcome is one the
+  // classifier above produces, and idor-routes.test.ts compares each case to its pin, so
+  // an unexercised case cannot come back pinned as `refused`.
+  it('the snapshot pins only outcomes the harness classifies', () => {
     const snap = JSON.parse(readFileSync('test/idor/idor-snapshot.json', 'utf8')) as {
       targets: Record<string, { methods: Record<string, string | { outcome: string }> }>
     }
     const outcomes = Object.values(snap.targets).flatMap((t) => Object.values(t.methods).map((e) => (typeof e === 'string' ? e : e.outcome)))
-    expect(outcomes).toContain('unexercised')
+    const known: readonly Outcome[] = ['leak', 'honey_write', 'oracle', 'oracle_4xx', 'refused', 'unexercised', 'ok', 'error']
+    expect(outcomes.filter((o) => !(known as readonly string[]).includes(o))).toEqual([])
   })
 })
