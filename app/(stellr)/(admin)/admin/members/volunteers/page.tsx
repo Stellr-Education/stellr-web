@@ -8,6 +8,7 @@ import {
 } from '@/lib/volunteer'
 import { VolunteersConsole, type VolunteerConsoleRow, type AssignableEvent } from '@/components/admin/VolunteersConsole'
 import { authz } from '@/lib/authz'
+import { stellrRows } from '@/lib/tenancy/stellr-scope'
 
 export const metadata = { title: 'Admin — Volunteers' }
 export const dynamic = 'force-dynamic'
@@ -61,14 +62,14 @@ export default async function VolunteersAdminPage() {
 
     const [statuses, { data: participations }, { data: interests }] = await Promise.all([
       getVolunteerStatuses(db, memberRows),
-      db
+      stellrRows(db
         .from('event_participations')
-        .select('member_id, event_title, event_slug')
+        .select('member_id, event_title, event_slug'))
         .in('member_id', memberIds)
         .eq('role', 'volunteer'),
-      db
+      stellrRows(db
         .from('volunteer_event_interest')
-        .select('member_id')
+        .select('member_id'))
         .in('member_id', memberIds)
         .eq('status', 'interested'),
     ])

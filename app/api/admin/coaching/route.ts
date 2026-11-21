@@ -4,6 +4,7 @@ import { ensureCoachingContainer } from '@/lib/container-sync'
 import { getCoachingChannel } from '@/lib/sessions'
 import { isStellrAdmin, hasCapability } from '@/lib/authz'
 import { withAudit } from '@/lib/audit/route'
+import { stellrRows } from '@/lib/tenancy/stellr-scope'
 
 // What this request acted on, which withAudit's spec cannot read for itself: the body has gone.
 const auditedId = new WeakMap<Request, string>()
@@ -18,11 +19,11 @@ export async function GET() {
   if (!(await hasCapability('portal:read', { route: '/api/admin/coaching' }))) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
   const db = supabaseServer()
-  const { data } = await db
+  const { data } = await stellrRows(db
     .from('mentoring_cohorts')
     .select(
       'id, name, coach:members!mentoring_cohorts_mentor_member_id_fkey(first_name, last_name), cohort_members(members(first_name, last_name))',
-    )
+    ))
     .eq('container_type', 'coaching')
     .eq('lifecycle', 'active')
     .order('created_at', { ascending: false })

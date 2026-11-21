@@ -6,6 +6,7 @@ import { createLinkBinary, normaliseUrl } from '@/lib/resource-upload'
 import { finaliseStoredUpload } from '@/lib/resource-finalise'
 import { isStellrAdmin, hasCapability } from '@/lib/authz'
 import { withAudit } from '@/lib/audit/route'
+import { stellrRows } from '@/lib/tenancy/stellr-scope'
 
 // What this request acted on, which withAudit's spec cannot read for itself: the body has gone.
 const auditedId = new WeakMap<Request, string>()
@@ -96,9 +97,9 @@ export async function GET() {
   if (!(await hasCapability('portal:read', { route: '/api/admin/community/resources' }))) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
   const db = supabaseServer()
-  const { data } = await db
+  const { data } = await stellrRows(db
     .from('community_resources')
-    .select('id, title, description, file_type, file_size_bytes, created_at, community_spaces(name)')
+    .select('id, title, description, file_type, file_size_bytes, created_at, community_spaces(name)'))
     .order('created_at', { ascending: false })
 
   return NextResponse.json({ resources: data ?? [] })
