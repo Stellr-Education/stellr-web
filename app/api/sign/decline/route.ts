@@ -3,17 +3,20 @@ import { declineAgreement } from '@/lib/esign/native/flow'
 import { notifyCommunityAdmins } from '@/lib/notify'
 import { isTenantRow } from '@/lib/event-emails/tenant-mail'
 import { actingSession, clearSessionCookie, invalidLink, json, readJson, requestMeta, sameOrigin, signRef, throttle } from '@/lib/esign/native/http'
+import { withAudit } from '@/lib/audit/route'
+import { noteSigner, signerEvent } from '../audit'
 
 // POST /api/sign/decline — the signer chooses not to sign. Nobody is chased
 // after a decline; admins are told so a person can follow up.
 
-export async function POST(req: Request) {
+export const POST = withAudit(({ args: [req] }: { args: [Request] }) => ({ action: 'esign.signer.decline' as const, ...signerEvent(req) }), async (req: Request) => {
   const limited = await throttle(req, 'decline', 10)
   if (limited) return limited
   if (!sameOrigin(req)) return json({ error: 'Forbidden' }, 403)
   const db = supabaseServer()
   const ctx = await actingSession(db, req, 'act')
   if (!ctx) return invalidLink()
+  noteSigner(req, ctx)
 
   const body = await readJson<{ reason?: unknown }>(req)
   const reason = typeof body?.reason === 'string' ? body.reason : ''
@@ -33,4 +36,4 @@ export async function POST(req: Request) {
   }).catch(() => {})
 
   return clearSessionCookie(json({ ok: true }), signRef(req))
-}
+})

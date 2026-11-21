@@ -1,22 +1,25 @@
 import { supabaseServer } from '@/lib/supabase'
 import { recordConsent } from '@/lib/esign/native/flow'
 import { actingSession, invalidLink, json, readJson, requestMeta, sameOrigin, throttle } from '@/lib/esign/native/http'
+import { withAudit } from '@/lib/audit/route'
+import { noteSigner, signerEvent } from '../audit'
 
 // POST /api/sign/consent — the signer agrees to sign electronically, having
 // read the disclosure (and, for a parent, confirms they are the child's parent
 // or legal guardian). Recorded with the disclosure version they saw.
 
-export async function POST(req: Request) {
+export const POST = withAudit(({ args: [req] }: { args: [Request] }) => ({ action: 'esign.signer.consent' as const, ...signerEvent(req) }), async (req: Request) => {
   const limited = await throttle(req, 'consent', 20)
   if (limited) return limited
   if (!sameOrigin(req)) return json({ error: 'Forbidden' }, 403)
   const db = supabaseServer()
   const ctx = await actingSession(db, req, 'act')
   if (!ctx) return invalidLink()
+  noteSigner(req, ctx)
 
   const body = await readJson<{ disclosureVersion?: unknown; attest?: unknown }>(req)
   if (!body || typeof body.disclosureVersion !== 'string') return json({ error: 'Invalid request' }, 400)
 
   const result = await recordConsent(db, ctx, { disclosureVersion: body.disclosureVersion, attest: body.attest === true }, requestMeta(req))
   return result.ok ? json({ ok: true }) : json({ error: result.error }, 409)
-}
+})

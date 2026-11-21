@@ -9,6 +9,7 @@ import { teamViewerRole, type TeamViewerRegistration } from '@/lib/team-access'
 import { assertNotImpersonating, resolveRequestMember } from '@/lib/impersonation'
 import { actorFromAuth, logActivity } from '@/lib/activity-log'
 import { withAudit } from '@/lib/audit/route'
+import { auditSubject, noteAuditSubject } from '@/lib/audit/route-subject'
 import { STELLR_TENANT_ID } from '@/lib/tenancy/constants'
 import { rowTenant, tenantPaymentsUnavailable } from '@/lib/registration/event-context'
 import {
@@ -65,7 +66,15 @@ async function loadGroup(db: Db, id: string): Promise<Group | null> {
   return group
 }
 
-export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+// The view can write: reading the invoice fills in a ledger row for an invoice sent
+// before the ledger existed (lib/group-billing currentSeatsInvoice). withAudit records
+// every answer but a 4xx, on the group's own chain, noted once the caller passed.
+const readAuditSpec = ({ args: [req] }: { args: [Request, unknown] }) => {
+  const { tenant, target, metadata } = auditSubject(req, 'registrations')
+  return { action: 'registration.invoice_discount.read' as const, actor: { session: true } as const, tenant, target, metadata }
+}
+
+export const GET = withAudit(readAuditSpec, async (req: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
   const { id } = await params
   const db = supabaseServer()
 
@@ -78,6 +87,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
   const role = teamViewerRole(member, registration)
   // Same answer as no such group: this caller learns nothing about whether it exists.
   if (!role) return NextResponse.json({ error: 'Team not found' }, { status: 404 })
+  noteAuditSubject(req, { tenantId: rowTenant(registration.tenant_id), id: registration.id })
 
   if (!registration.invoice_requested) return NextResponse.json({ applies: false })
   try {
@@ -99,7 +109,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     console.error('[teams/discount] view failed:', e)
     return NextResponse.json({ error: 'We couldn’t load your invoice. Try again shortly.' }, { status: 502 })
   }
-}
+})
 
 // withAudit records every answer but a 4xx. A group's fee is Stripe-billed through Stellr.
 const auditSpec = ({ args: [req] }: { args: [Request, unknown] }) => ({

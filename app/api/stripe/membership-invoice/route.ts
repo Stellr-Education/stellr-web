@@ -6,6 +6,8 @@ import { ensureStripeCustomer } from '@/lib/stripe-customer'
 import { assertNotImpersonating } from '@/lib/impersonation'
 import { assertLiveCredentials } from '@/lib/env-guards'
 import { requireStripe } from '@/lib/stripe'
+import { withAudit, type AuditMutation } from '@/lib/audit/route'
+import { auditSubject, noteAuditSubject } from '@/lib/audit/route-subject'
 import { GUARANTEE_RECEIPT_LINE } from '@/lib/guarantee'
 
 // Pay-by-invoice is offered only on the educator / school-district tiers, where
@@ -16,7 +18,15 @@ const INVOICE_TIER_NAMES = new Set(['Catalyst', 'Innovator', 'Trailblazer'])
 // and emails it to the member. The tier is NOT granted here — the webhook grants a
 // one-time 12-month membership when invoice.paid fires. Mirrors the event-group
 // invoice pattern in lib/registration/group/respond.ts.
-export async function POST(req: Request) {
+// Platform audit (docs/TENANCY-S5.md, C7): withAudit records every answer but a 4xx, a
+// 500 after a partial invoice included. Memberships are Stellr's, so Stellr's chain; the
+// member is the target, the tier and the invoice the detail. A reused open invoice says so.
+const auditSpec = ({ args: [req] }: { args: [Request] }): AuditMutation => {
+  const { actor, target, metadata } = auditSubject(req, 'members')
+  return { action: 'membership.invoice.send', actor, tenant: { stellr: true }, target, metadata }
+}
+
+export const POST = withAudit(auditSpec, async (req: Request) => {
   // Read-only while an admin is viewing as this member. Impersonation is a lens,
   // not a login — see lib/impersonation.
   const impersonationBlock = await assertNotImpersonating()
@@ -56,6 +66,7 @@ export async function POST(req: Request) {
   if (!member || !member.email) {
     return NextResponse.json({ error: 'Member not found' }, { status: 404 })
   }
+  noteAuditSubject(req, { userId, id: member.id, detail: { tier_id: tier.id } })
 
   const stripe = requireStripe()
 
@@ -108,6 +119,7 @@ export async function POST(req: Request) {
       })
       const open = existing.data[0]
       if (open) {
+        noteAuditSubject(req, { detail: { invoice_id: open.id ?? null, deduped: true } })
         return NextResponse.json({
           ok: true,
           email: member.email,
@@ -166,6 +178,7 @@ export async function POST(req: Request) {
       description: `Stellr ${tier.name} membership — 12 months`,
     })
 
+    noteAuditSubject(req, { detail: { invoice_id: invoice.id ?? null } })
     const finalized = await stripe.invoices.finalizeInvoice(invoice.id)
     await stripe.invoices.sendInvoice(finalized.id)
 
@@ -178,4 +191,4 @@ export async function POST(req: Request) {
     console.error('[membership-invoice] failed:', err)
     return NextResponse.json({ error: 'Could not create invoice' }, { status: 500 })
   }
-}
+})

@@ -3,38 +3,22 @@
   "measuredBy": 2,
   "totals": {
     "mutatingHandlers": 302,
-    "unauditedMutations": 19,
+    "unauditedMutations": 8,
     "cronHandlers": 24,
     "unauditedCrons": 0,
     "getMutations": 21,
-    "unauditedGetMutations": 4
+    "unauditedGetMutations": 0
   },
   "mutations": [
     "app/api/asset-request/route.ts#POST",
     "app/api/contact/route.ts#POST",
-    "app/api/cq-lead/route.ts#POST",
     "app/api/csp-report/route.ts#POST",
     "app/api/host-event/route.ts#POST",
     "app/api/join-network/route.ts#POST",
     "app/api/lp-lead/route.ts#POST",
-    "app/api/sign/consent/route.ts#POST",
-    "app/api/sign/copy/route.ts#POST",
-    "app/api/sign/decline/route.ts#POST",
-    "app/api/sign/session/route.ts#POST",
-    "app/api/sign/submit/route.ts#POST",
-    "app/api/sign/viewed/route.ts#POST",
-    "app/api/store/returns/route.ts#PATCH",
-    "app/api/store/returns/route.ts#POST",
-    "app/api/stripe/membership-checkout/route.ts#POST",
-    "app/api/stripe/membership-invoice/route.ts#POST",
     "app/api/subscribe/route.ts#POST",
     "app/api/white-paper/route.ts#POST"
   ],
   "crons": [],
-  "getMutations": [
-    "app/api/members/teams/[id]/discount/route.ts#GET",
-    "app/api/members/teams/[id]/payment-method/route.ts#GET",
-    "app/api/members/teams/[id]/route.ts#GET",
-    "app/api/registrations/[id]/spreadsheet/route.ts#GET"
-  ]
+  "getMutations": []
 }

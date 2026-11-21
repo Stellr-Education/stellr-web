@@ -5,6 +5,8 @@ import { currentStoreMember } from '@/lib/store/auth'
 import { canManageStoreCatalog } from '@/lib/store/auth'
 import { assertLiveCredentials } from '@/lib/env-guards'
 import { stripeClient } from '@/lib/stripe'
+import { withAudit, type AuditMutation } from '@/lib/audit/route'
+import { auditSubject, noteAuditSubject } from '@/lib/audit/route-subject'
 
 export const dynamic = 'force-dynamic'
 
@@ -13,7 +15,17 @@ export const dynamic = 'force-dynamic'
 // admins approve + refund.
 //   POST  { orderId, reason }            — member requests a return on a DTC order
 //   PATCH { returnId, action }           — admin approves (Stripe refund) or denies
-export async function POST(req: Request) {
+//
+// Platform audit (docs/TENANCY-S5.md, C7): withAudit records every answer but a 4xx, a
+// 502 after a failed refund included. The store is Stellr's, so both go on Stellr's chain,
+// with the signed-in user as the actor. A request names the order (its new return row's
+// id is not read back); a decision names the return, which way it went, and the refund.
+function storeReturnEvent(req: Request, table: string): Omit<AuditMutation, 'action'> {
+  const { target, metadata } = auditSubject(req, table)
+  return { actor: { session: true }, tenant: { stellr: true }, target, metadata }
+}
+
+export const POST = withAudit(({ args: [req] }: { args: [Request] }) => ({ action: 'store.return.request' as const, ...storeReturnEvent(req, 'store_orders') }), async (req: Request) => {
   const member = await currentStoreMember()
   if (!member) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
   const body = await req.json().catch(() => ({}))
@@ -32,6 +44,7 @@ export async function POST(req: Request) {
   if (o.channel !== 'storefront') {
     return NextResponse.json({ error: 'Event merchandise is not returnable.' }, { status: 400 })
   }
+  noteAuditSubject(req, { id: o.id })
 
   const { error } = await db.from('store_returns').insert({
     order_id: orderId,
@@ -41,9 +54,9 @@ export async function POST(req: Request) {
   })
   if (error) return NextResponse.json({ error: 'Could not submit return' }, { status: 500 })
   return NextResponse.json({ ok: true })
-}
+})
 
-export async function PATCH(req: Request) {
+export const PATCH = withAudit(({ args: [req] }: { args: [Request] }) => ({ action: 'store.return.decide' as const, ...storeReturnEvent(req, 'store_returns') }), async (req: Request) => {
   if (!(await canManageStoreCatalog())) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   const body = await req.json().catch(() => ({}))
   const { returnId, action } = body
@@ -55,6 +68,7 @@ export async function PATCH(req: Request) {
   const { data: ret } = await db.from('store_returns').select('id, order_id, status').eq('id', returnId).maybeSingle()
   const r = ret as { id: string; order_id: string; status: string } | null
   if (!r) return NextResponse.json({ error: 'Return not found' }, { status: 404 })
+  noteAuditSubject(req, { id: r.id, detail: { decision: action, order_id: r.order_id } })
 
   if (action === 'deny') {
     await db.from('store_returns').update({ status: 'denied' }).eq('id', returnId)
@@ -73,6 +87,7 @@ export async function PATCH(req: Request) {
       assertLiveCredentials('stripe')
       const refund = await stripe.refunds.create({ payment_intent: pi })
       refundId = refund.id
+      noteAuditSubject(req, { detail: { refund_id: refund.id } })
     } catch (err) {
       return NextResponse.json({ error: `Refund failed: ${(err as Error).message}` }, { status: 502 })
     }
@@ -80,4 +95,4 @@ export async function PATCH(req: Request) {
   await db.from('store_returns').update({ status: 'refunded', stripe_refund_id: refundId }).eq('id', returnId)
   await db.from('store_orders').update({ status: 'refunded' }).eq('id', r.order_id)
   return NextResponse.json({ ok: true, refundId })
-}
+})
