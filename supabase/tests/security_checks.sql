@@ -8,7 +8,11 @@
 --
 --   definer_public_execute: a SECURITY DEFINER function in a public-facing
 --     schema that a public role can still EXECUTE (S0-1):
---       • anon may execute NO definer function at all;
+--       • anon may execute NO definer function, with ONE named exception:
+--         public.tenant_host_map(), accepted by the owner on 20 Nov 2026
+--         (decision WD-1, migration 20261120185125_tenant_host_map_public): it
+--         returns host, tenant id and slug for active tenants only, so the
+--         proxy can load its host map with the publishable key;
 --       • authenticated may execute only the RLS helpers named below, which
 --         authenticated SELECT policies call (they fail closed without the
 --         grant).
@@ -58,7 +62,12 @@ JOIN pg_namespace n ON n.oid = p.pronamespace
 WHERE p.prosecdef
   AND n.nspname IN ('public', 'entitlements')
   AND (
-    has_function_privilege('anon', p.oid, 'EXECUTE')
+    (
+      has_function_privilege('anon', p.oid, 'EXECUTE')
+      -- WD-1: the one anon-callable definer function (see the header).
+      AND NOT (n.nspname = 'public' AND p.proname = 'tenant_host_map'
+               AND pg_get_function_identity_arguments(p.oid) = '')
+    )
     OR (
       has_function_privilege('authenticated', p.oid, 'EXECUTE')
       AND p.proname NOT IN (
