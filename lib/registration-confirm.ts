@@ -2,6 +2,7 @@ import { supabaseServer } from '@/lib/supabase'
 import { sendEmail, individualConfirmationEmail, groupPaymentConfirmedEmail } from '@/lib/email'
 import { finalizeRegistrationMerch } from '@/lib/store/event-merch'
 import { checkInCodeLink } from '@/lib/check-in-codes'
+import { eventSiteOrigin } from '@/lib/tenancy/event-origin'
 
 // Marks a registration confirmed and sends the confirmation email. Moved out of
 // the Stripe webhook (unchanged) so a 100% scholarship, which never reaches
@@ -60,11 +61,13 @@ export async function confirmRegistration(
     if (participant && reg) {
       const p = participant as { id: string; first_name: string; last_name: string; email: string; membership_id: string }
       const r = reg as { event_title: string; event_slug: string }
+      // S5 wave 8, A12: the check-in link opens on the event's own host.
+      const origin = await eventSiteOrigin(r.event_slug)
       const emailContent = individualConfirmationEmail({
         firstName: p.first_name, lastName: p.last_name,
         membershipId: p.membership_id, eventTitle: r.event_title,
         registrationId,
-        checkInCodeUrl: checkInCodeLink(r.event_slug, 'p', p.id) ?? undefined,
+        checkInCodeUrl: checkInCodeLink(r.event_slug, 'p', p.id, origin) ?? undefined,
       })
       await sendEmail({ to: p.email, ...emailContent })
     }

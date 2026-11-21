@@ -88,12 +88,22 @@ export const AUDIT_WRAPPERS: Record<string, readonly string[]> = {
  * test fails on an entry with no real reason, one for a handler that no longer exists,
  * and one for a handler that audits anyway.
  *
- * Empty on purpose. Exempting a write is the owner's decision (docs/TENANCY-S5.md,
- * Owner gates: "audit exemptions for anonymous writes"). Proposed, not granted:
- * `contact`, `subscribe`, `lp-lead`, `white-paper`, `join-network`, `host-event`,
- * `asset-request` and `csp-report`.
+ * Owner-approved 21 Nov 2026 (docs/TENANCY-S5.md, Owner gates: "audit exemptions for
+ * anonymous writes"). Each is a public form or browser report with no signed-in actor and
+ * no tenant record changed: it sends mail, forwards a lead to HubSpot or writes a log line,
+ * behind a per-IP rate limit. `cq-lead` was not on the list and audits.
  */
-export const AUDIT_EXEMPTIONS: Readonly<Record<string, string>> = {}
+const ANON = 'an anonymous public form, rate-limited per IP, with no signed-in actor to record'
+export const AUDIT_EXEMPTIONS: Readonly<Record<string, string>> = {
+  'app/api/contact/route.ts#POST': `${ANON}: emails the contact inbox and changes no record`,
+  'app/api/subscribe/route.ts#POST': `${ANON}: forwards a newsletter sign-up to HubSpot and changes no record here`,
+  'app/api/lp-lead/route.ts#POST': `${ANON}: forwards a landing-page lead to HubSpot and changes no record here`,
+  'app/api/white-paper/route.ts#POST': `${ANON}: forwards a lead to HubSpot and emails the download link`,
+  'app/api/join-network/route.ts#POST': `${ANON}: emails the contact inbox and changes no record`,
+  'app/api/host-event/route.ts#POST': `${ANON}: forwards a lead to HubSpot and emails the contact inbox`,
+  'app/api/asset-request/route.ts#POST': `${ANON}: forwards a lead to HubSpot and emails the requested asset`,
+  'app/api/csp-report/route.ts#POST': "the browser's own CSP violation report: scrubbed to the function log, no actor and no record",
+}
 
 /**
  * Helpers whose only write is the application's own bookkeeping, not a change anyone

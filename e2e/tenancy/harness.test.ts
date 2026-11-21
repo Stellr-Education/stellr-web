@@ -166,6 +166,8 @@ describe('the stub', () => {
     url = `http://127.0.0.1:${(server.address() as AddressInfo).port}`
     vi.stubEnv('NEXT_PUBLIC_SUPABASE_URL', url)
     vi.stubEnv('SUPABASE_SECRET_KEY', 'harness-secret-key')
+    // B25: the host map is read with the publishable key (tenant_host_map()).
+    vi.stubEnv('NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY', 'harness-publishable-key')
   })
 
   afterAll(async () => {

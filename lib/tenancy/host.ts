@@ -42,13 +42,15 @@
 // zone, stellr.localhost is outside it and takes the Stellr path with zero
 // fetches, like plain localhost.
 //
-// Edge-safe: no supabase-js. The map is read with a raw PostgREST fetch, the
-// same key pattern as lib/crawlers.ts (supabaseSecretKey/supabaseApiHeaders).
+// Edge-safe: no supabase-js. The map is read with a raw PostgREST fetch of
+// tenant_host_map() with the PUBLISHABLE key (S5 wave 8, B25; decision WD-1,
+// 20 Nov 2026): the function returns host, tenant id and slug for active tenants
+// only, and anon may call it, so the proxy holds no secret key for this read.
 //
 // Server only in practice. Client code imports the pure rules from ./host-pure.
 
 import { isRealProductionApp } from '../env-guards'
-import { supabaseApiHeaders, supabaseSecretKey } from '../supabase-keys'
+import { supabaseApiHeaders, supabasePublicKey } from '../supabase-keys'
 import { STELLR_TENANT_ID } from './constants'
 import {
   classifyHost,
@@ -182,19 +184,18 @@ export class TenantHostMapError extends Error {
 type FetchLike = (input: string, init?: RequestInit) => Promise<Response>
 
 /**
- * PostgREST path for the whole active host map: tenant_domains with an inner
- * join to tenants, filtered to status 'active'. Suspended, archived and
- * provisioning tenants drop out, so their hosts are not-found.
+ * PostgREST path for the whole active host map: tenant_host_map()
+ * (20261120185125_tenant_host_map_public), host, tenant id and slug for active
+ * tenants only. Suspended, archived and provisioning tenants drop out, so their
+ * hosts are not-found. A stable function, so a GET.
  */
-export const HOST_MAP_QUERY =
-  '/rest/v1/tenant_domains?select=host,tenant_id,tenants!inner(slug,status)&tenants.status=eq.active'
+export const HOST_MAP_QUERY = '/rest/v1/rpc/tenant_host_map'
 
 /**
- * Loads the whole active host map with one raw PostgREST fetch. Throws
- * TenantHostMapError on missing config, a non-2xx answer, a timeout or an
- * unexpected body; the resolver turns that into 'unavailable'. Rows that do not
- * parse, or whose tenant is not active, are skipped (defence in depth on top of
- * the query filter).
+ * Loads the whole active host map with one raw PostgREST fetch of
+ * tenant_host_map(), with the publishable key. Throws TenantHostMapError on
+ * missing config, a non-2xx answer, a timeout or an unexpected body; the
+ * resolver turns that into 'unavailable'. Rows that do not parse are skipped.
  */
 export async function loadTenantHostMap(
   opts: { fetch?: FetchLike; timeoutMs?: number } = {},
@@ -203,11 +204,11 @@ export async function loadTenantHostMap(
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL
   let key: string | undefined
   try {
-    key = supabaseSecretKey()
+    key = supabasePublicKey()
   } catch {
-    throw new TenantHostMapError('Supabase secret key slot is misconfigured.')
+    throw new TenantHostMapError('Supabase publishable key slot is misconfigured.')
   }
-  if (!url || !key) throw new TenantHostMapError('Supabase URL or secret key is not set.')
+  if (!url || !key) throw new TenantHostMapError('Supabase URL or publishable key is not set.')
 
   const timeoutMs = opts.timeoutMs ?? HOST_MAP_FETCH_TIMEOUT_MS
   let res: Response
@@ -240,18 +241,15 @@ export async function loadTenantHostMap(
   return map
 }
 
+/** One tenant_host_map() row ({ host, tenant_id, tenant_slug }), or null if it does not parse. Active-only is the function's filter. */
 function parseRow(row: unknown): { host: string; tenantId: string; tenantSlug: string } | null {
   if (!row || typeof row !== 'object') return null
   const r = row as Record<string, unknown>
-  const tenant = Array.isArray(r.tenants) ? r.tenants[0] : r.tenants
-  if (!tenant || typeof tenant !== 'object') return null
-  const t = tenant as Record<string, unknown>
-  if (t.status !== 'active') return null
   if (typeof r.tenant_id !== 'string' || !r.tenant_id) return null
-  if (typeof t.slug !== 'string' || !t.slug) return null
+  if (typeof r.tenant_slug !== 'string' || !r.tenant_slug) return null
   const host = normaliseHost(typeof r.host === 'string' ? r.host : null)
   if (!host || host !== r.host) return null // the table stores canonical hosts only
-  return { host, tenantId: r.tenant_id, tenantSlug: t.slug }
+  return { host, tenantId: r.tenant_id, tenantSlug: r.tenant_slug }
 }
 
 // ── Resolver ─────────────────────────────────────────────────────────────────

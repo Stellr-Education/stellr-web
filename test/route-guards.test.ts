@@ -40,7 +40,9 @@ const ALLOW_UNGUARDED: Record<string, string> = {
 
 // requireEventCrew's scope is tenant-wide, so a scoped read made with it reaches the whole
 // tenant. This is what an event manager's confinement rests on.
-const EVENT_CHECK = /\bloadEventRecord\s*[<(]|\.covers\s*\(/
+// loadStellrScholarship (lib/scholarship-admin.ts, C20) is loadEventRecord for an application,
+// with the Stellr-only option after it: the scholarship routes make their event check through it.
+const EVENT_CHECK = /\bloadEventRecord\s*[<(]|\.covers\s*\(|\bloadStellrScholarship\s*[<(]/
 const SCOPED_READ = /\b(?:loadScopedRows|loadScoped|scopedQuery|scopedRowWrite|enforcedTenantFilter)\s*[<(]/
 const WHOLE_TENANT_LOAD = /\bloadRecord\s*(?:<[^(]*>)?\s*\(/
 

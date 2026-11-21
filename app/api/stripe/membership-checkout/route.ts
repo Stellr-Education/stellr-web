@@ -6,9 +6,20 @@ import { ensureStripeCustomer } from '@/lib/stripe-customer'
 import { assertNotImpersonating } from '@/lib/impersonation'
 import { assertLiveCredentials } from '@/lib/env-guards'
 import { requireStripe } from '@/lib/stripe'
+import { withAudit, type AuditMutation } from '@/lib/audit/route'
+import { auditSubject, noteAuditSubject } from '@/lib/audit/route-subject'
 import { GUARANTEE_CHECKOUT_TEXT } from '@/lib/guarantee'
 
-export async function POST(req: Request) {
+// Platform audit (docs/TENANCY-S5.md, C7): withAudit records every answer but a 4xx, a
+// 500 after the customer was touched included. Memberships are Stellr's, so Stellr's chain;
+// the member is the target, the tier and interval the detail. The Checkout Session itself
+// grants nothing: the Stripe webhook grants the membership.
+const auditSpec = ({ args: [req] }: { args: [Request] }): AuditMutation => {
+  const { actor, target, metadata } = auditSubject(req, 'members')
+  return { action: 'membership.checkout.start', actor, tenant: { stellr: true }, target, metadata }
+}
+
+export const POST = withAudit(auditSpec, async (req: Request) => {
   // Read-only while an admin is viewing as this member. Impersonation is a lens,
   // not a login — see lib/impersonation.
   const impersonationBlock = await assertNotImpersonating()
@@ -59,6 +70,7 @@ export async function POST(req: Request) {
   if (!member) {
     return NextResponse.json({ error: 'Member not found' }, { status: 404 })
   }
+  noteAuditSubject(req, { userId, id: member.id, detail: { tier_id: tier.id, billing_interval: billingInterval === 'monthly' ? 'monthly' : 'annual' } })
 
   const stripe = requireStripe()
   const baseUrl = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://www.stellreducation.org'
@@ -115,4 +127,4 @@ export async function POST(req: Request) {
     console.error('[membership-checkout] failed:', err)
     return NextResponse.json({ error: 'Could not start checkout. Please try again.' }, { status: 500 })
   }
-}
+})

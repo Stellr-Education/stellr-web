@@ -1,9 +1,8 @@
 import { auth } from '@clerk/nextjs/server'
-import { hasCapability } from '@/lib/authz'
+import { hasCapability, isStellrAdmin } from '@/lib/authz'
 import { NextResponse } from 'next/server'
 import { supabaseServer } from '@/lib/supabase'
 import { actorFromAuth, logActivity } from '@/lib/activity-log'
-import { isAdminClaims } from '@/lib/admin-auth'
 import { startRetentionClock } from '@/lib/esign/retention'
 import { resolveEmailPair } from '@/lib/member-email'
 import { shadowSyncFields } from '@/lib/field-crypto-shadow'
@@ -241,8 +240,7 @@ async function updateMember(req: Request, { params }: Ctx) {
 
 // Soft-delete
 async function deactivateMember(req: Request, { params }: Ctx) {
-  const { sessionClaims } = await auth()
-  if (!isAdminClaims(sessionClaims)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  if (!(await isStellrAdmin({ route: '/api/admin/members/[id]' }))) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
   const { id } = await params
   noteAuditSubject(req, { id: storableId(id) })

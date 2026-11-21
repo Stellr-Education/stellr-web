@@ -150,13 +150,31 @@ describe('POST /api/admin/event-managers', () => {
     expect(logActivity).not.toHaveBeenCalled()
   })
 
-  it("writes no membership for another tenant's event, and makes the refusal visible (C9)", async () => {
+  // C9 wrote the assignment and refused only the membership. Since C21 (S5 wave 9) the route
+  // is Stellr-only for other tenants: another tenant's event answers 404 before anything is
+  // written, for a Stellr admin too, and the C9 refusal below it is a second line.
+  it("refuses another tenant's event before any assignment or membership is written (C21)", async () => {
     h.db = fakeSupabase(withMember({ events: [{ slug: "canary", tenant_id: OTHER_TENANT }] }))
     const res = await assign('canary')
-    expect(res.status).toBe(201)
+    expect(res.status).toBe(404)
+    expect(h.db.table('event_manager_assignments')).toHaveLength(0)
     expect(h.db.table('tenant_memberships')).toHaveLength(0)
-    expect((captureRequestError.mock.calls[0][0] as Error).message).toContain('step=cross_tenant')
-    expect(logActivity.mock.calls[0][0].metadata).toMatchObject({ membership_sync: 'failed' })
+    expect(updateUserMetadata).not.toHaveBeenCalled()
+    expect(logActivity).not.toHaveBeenCalled()
+  })
+
+  it("refuses removing an assignment on another tenant's event (C21)", async () => {
+    h.db = fakeSupabase(withMember({
+      events: [{ slug: 'canary', tenant_id: OTHER_TENANT }],
+      event_manager_assignments: [{ id: 'a1', clerk_user_id: 'user_em', event_slug: 'canary', expires_at: null }],
+    }))
+    const res = await DELETE(new Request('https://app.test/api/admin/event-managers', {
+      method: 'DELETE',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ clerk_user_id: 'user_em', event_slug: 'canary' }),
+    }))
+    expect(res.status).toBe(404)
+    expect(h.db.table('event_manager_assignments')).toHaveLength(1)
   })
 })
 

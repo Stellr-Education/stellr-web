@@ -8,6 +8,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { EventEmailRow } from '@/lib/event-emails/types'
 import { isStellrScope, type ScopeContext } from '@/lib/tenancy/scope-context'
+import { STELLR_TENANT_ID } from '@/lib/tenancy/constants'
 
 declare const STELLR_ONLY: unique symbol
 /** A client for queries that hold no tenant filter, handed out only in Stellr's scope. */
@@ -135,6 +136,8 @@ export async function assignEventVolunteer(
     .maybeSingle()
   if (!existing) {
     await db.from('event_participations').insert({
+      // S5 wave 8: a StellrOnlyDb is handed out only in Stellr's scope, so this history row is Stellr's.
+      tenant_id: STELLR_TENANT_ID,
       member_id: a.memberId,
       event_slug: a.slug,
       event_title: a.title,

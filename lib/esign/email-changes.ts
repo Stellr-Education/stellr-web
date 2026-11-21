@@ -509,7 +509,7 @@ interface LinkRow extends ChangeRow {
   requested_by_role: string | null
 }
 
-async function liveLink(db: SupabaseClient, token: unknown, now: Date): Promise<{ row: LinkRow; agreement: { minor_name: string | null; signer_name: string | null; event_title: string | null } } | null> {
+async function liveLink(db: SupabaseClient, token: unknown, now: Date, hostTenantId?: string): Promise<{ row: LinkRow; agreement: { minor_name: string | null; signer_name: string | null; event_title: string | null } } | null> {
   if (!isWellFormedToken(token)) return null
   const { data } = await db
     .from('agreement_email_changes')
@@ -520,14 +520,18 @@ async function liveLink(db: SupabaseClient, token: unknown, now: Date): Promise<
   if (!row || row.status !== 'link_sent' || row.used_at || (row.kind !== 'direct' && row.kind !== 'suggestion')) return null
   if (!row.token_expires_at || new Date(row.token_expires_at).getTime() <= now.getTime()) return null
   if (!(await stillApplies(db, row))) return null
-  const { data: a } = await db.from('agreements').select('minor_name, signer_name, event_title').eq('id', row.agreement_id).maybeSingle()
+  const { data: a } = await db.from('agreements').select('minor_name, signer_name, event_title, tenant_id').eq('id', row.agreement_id).maybeSingle()
   if (!a) return null
+  // S5 wave 8, BOUNCE: the link answers only on its agreement's tenant's host; elsewhere it
+  // is a dead link, said before anything about the form. The route passes the host's tenant
+  // (requestTenant() is for app/api only); NULL is a Stellr row.
+  if (hostTenantId && ((a as { tenant_id?: string | null }).tenant_id ?? STELLR_TENANT_ID) !== hostTenantId) return null
   return { row, agreement: a as { minor_name: string | null; signer_name: string | null; event_title: string | null } }
 }
 
 /** What the link page shows; null for any link that no longer works (one answer for every reason). */
-export async function viewLink(db: SupabaseClient, token: unknown, now: Date = new Date()): Promise<LinkView | null> {
-  const live = await liveLink(db, token, now)
+export async function viewLink(db: SupabaseClient, token: unknown, now: Date = new Date(), hostTenantId?: string): Promise<LinkView | null> {
+  const live = await liveLink(db, token, now, hostTenantId)
   if (!live) return null
   return {
     kind: live.row.kind as 'direct' | 'suggestion',
@@ -544,10 +548,10 @@ const DEAD_LINK = refuse(410, 'LINK', 'This link has expired or has already been
 /** Uses a one-time link: a parent's correction is applied; a student's suggestion waits for an adult. */
 export async function submitLink(
   db: SupabaseClient,
-  input: { token: unknown; email: unknown; now?: Date },
+  input: { token: unknown; email: unknown; now?: Date; hostTenantId?: string },
 ): Promise<{ ok: true; outcome: 'applied' | 'pending' } | ChangeRefusal> {
   const now = input.now ?? new Date()
-  const live = await liveLink(db, input.token, now)
+  const live = await liveLink(db, input.token, now, input.hostTenantId)
   if (!live) return DEAD_LINK
   const { row } = live
   const email = validEmail(input.email)

@@ -1,6 +1,7 @@
 // @vitest-environment node
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { STELLR_TENANT_ID } from '@/lib/tenancy/constants'
+import { tenantWideScope } from '@/lib/tenancy/scope-context'
 
 // S5 wave 8, C20b: the scholarship admin routes load their application through loadScoped
 // (lib/scholarship-admin.ts loadStellrScholarship) and are Stellr-only for other tenants
@@ -15,6 +16,7 @@ const REG_ID = '33333333-3333-4333-8333-333333333333'
 
 const h = vi.hoisted(() => ({
   hasCapability: vi.fn(async (_cap: string) => true),
+  requireEventCrew: vi.fn(async (_opts?: unknown): Promise<unknown> => null),
   appRow: { current: null as Record<string, unknown> | null },
   regRow: { current: null as Record<string, unknown> | null },
   events: new Map<string, { data: unknown; error: unknown }>(),
@@ -29,7 +31,12 @@ const h = vi.hoisted(() => ({
 }))
 
 vi.mock('@clerk/nextjs/server', () => ({ auth: async () => ({ userId: 'user_admin' }) }))
-vi.mock('@/lib/authz', () => ({ hasCapability: h.hasCapability, currentTenantId: () => STELLR_TENANT_ID }))
+// C20: the routes also ask requireEventCrew. A Stellr admin reaches every event of Stellr's.
+vi.mock('@/lib/authz', () => ({
+  hasCapability: h.hasCapability,
+  currentTenantId: () => STELLR_TENANT_ID,
+  requireEventCrew: h.requireEventCrew,
+}))
 vi.mock('@/lib/community', () => ({ getSignedInMember: async () => ({ id: 'm-admin', first_name: 'Ada', last_name: 'Admin' }) }))
 vi.mock('@/lib/stripe', () => ({ stripeClient: () => null }))
 vi.mock('@/lib/scholarship-offer', () => ({
@@ -96,6 +103,16 @@ const OFFERED = {
   registration_paid_at_offer: true,
 }
 
+/** requireEventCrew's answer for an admin of `tenantId`: every event of that tenant. */
+const crewIn = (tenantId: string) => ({
+  ok: true,
+  userId: 'user_admin',
+  isAdmin: true,
+  tenantId,
+  scope: tenantWideScope(tenantId, 'tenant_admin'),
+  covers: () => true,
+})
+
 /** Every route, called the way the review panel calls it. */
 const CALLS: [string, () => Promise<Response>, () => void][] = [
   ['PATCH notes', () => notes.PATCH(json('PATCH', '', { adminNotes: 'note' }), ctx()), () => expect(h.writes).toEqual([])],
@@ -118,6 +135,7 @@ const CALLS: [string, () => Promise<Response>, () => void][] = [
 beforeEach(() => {
   vi.clearAllMocks()
   h.hasCapability.mockResolvedValue(true)
+  h.requireEventCrew.mockImplementation(async () => crewIn(STELLR_TENANT_ID))
   h.appRow.current = { ...OFFERED }
   h.regRow.current = { id: REG_ID, event_slug: 'colorado', tenant_id: STELLR_TENANT_ID }
   h.events.clear()
@@ -227,5 +245,28 @@ describe("C20b: another tenant's event is refused, for a Stellr admin too", () =
     const stamped = await refundQuote.GET(new Request(`${base}/refund-quote?registrationId=${REG_ID}&percent=50`), ctx())
     expect(await stamped.json()).toMatchObject({ status: 'manual', detail: 'Registration not found' })
     expect(h.quoteScholarshipRefund).not.toHaveBeenCalled()
+  })
+})
+
+describe('C20: tenant_crew, on requireEventCrew after the scholarship capability', () => {
+  it.each(CALLS)('%s: refused by requireEventCrew before the application is read', async (_label, call, nothingDone) => {
+    h.requireEventCrew.mockResolvedValue({ ok: false, status: 403 })
+    expect((await call()).status).toBe(403)
+    expect(h.reads).toEqual([])
+    nothingDone()
+  })
+
+  it.each(CALLS)('%s: a tenant\'s staff get the Stellr-only 503, before the application is read', async (_label, call, nothingDone) => {
+    h.requireEventCrew.mockImplementation(async () => crewIn(OTHER_TENANT))
+    expect((await call()).status).toBe(503)
+    expect(h.reads).toEqual([])
+    nothingDone()
+  })
+
+  it.each(CALLS)('%s: an event the caller does not cover answers as a missing application', async (label, call, nothingDone) => {
+    h.requireEventCrew.mockImplementation(async () => ({ ...crewIn(STELLR_TENANT_ID), isAdmin: false, covers: (slug: string | null | undefined) => slug === 'elsewhere' }))
+    expect((await call()).status).toBe(label === 'POST refund' ? 409 : 404)
+    expect(h.writes).toEqual([])
+    nothingDone()
   })
 })

@@ -939,7 +939,7 @@ jobs:
           run=true
           if [ "$EVENT" = pull_request ]; then
             files=$(git diff --name-only --no-renames HEAD^1 HEAD || true)
-            if [ -n "$files" ] && ! echo "$files" | grep -qE '^supabase/|^lib/tenancy/|^lib/events/admin-config\.ts$|^app/api/admin/events/\[slug\]/(companies|offerings|merch/commit)/route\.ts$|^test/integration/|^scripts/ci-db-build\.sh$|^scripts/tenant-db-canary\.ts$|^vitest\.integration\.config\.mts$|^package(-lock)?\.json$|^\.github/workflows/ci\.yml$'; then
+            if [ -n "$files" ] && ! echo "$files" | grep -qE '^supabase/|^lib/tenancy/|^lib/events/admin-config\.ts$|^lib/events/tenant-facade\.ts$|^lib/event-emails/send\.ts$|^lib/admin-digest\.ts$|^lib/training-reminders\.ts$|^lib/compliance-notify\.ts$|^app/api/cron/(event-emails|group-invoice-sync)/route\.ts$|^app/api/admin/events/\[slug\]/(companies|offerings|merch/commit)/route\.ts$|^test/integration/|^scripts/ci-db-build\.sh$|^scripts/tenant-db-canary\.ts$|^vitest\.integration\.config\.mts$|^package(-lock)?\.json$|^\.github/workflows/ci\.yml$'; then
               run=false
               echo "No change to the database, lib/tenancy or this job: tenant-db skipped." >> "$GITHUB_STEP_SUMMARY"
             fi
@@ -1146,6 +1146,158 @@ jobs:
             docker logs --tail 80 "supabase_${c}_stellr-web" 2>&1 || true
             echo "::endgroup::"
           done
+
+  # S5 wave 8, K11: K8's canary start phase (scripts/canary-tenant-flow.ts) on a
+  # disposable local stack, so the canary cannot rot between hosted runs. WD-8
+  # (default): never the hosted dev database. It holds no Supabase secret; the
+  # stack's keys come from `supabase status`, a URL off this machine stops the job,
+  # and scripts/canary-ci.ts and the runner's --local-stack refuse any database not
+  # on this machine and any Clerk key that is not sk_test_. Clerk is read, never
+  # written: personas the dev instance does not have yet (K7a) get placeholder ids
+  # in the local role rows and are skipped, with a warning (lib/testing/canary-ci.ts).
+  # The canary event has no Sanity document CI may read, so a stand-in on this
+  # machine answers for k11stub.api.sanity.io (scripts/canary-ci.ts sanity-stub).
+  #
+  # Report-only: a failure shows red on the PR but does not fail the workflow, and
+  # it is not a required check. To make it one: set the repository variable
+  # CANARY_LOCAL_ENFORCE=true, then add `canary-local` to the required checks on
+  # dev and main. To prove it can go red (K11's gate), set CANARY_LOCAL_BREAK=S1
+  # for one run (S1 then registers on an event that does not exist), then unset it.
+  # No report artifact: the repo's artifacts are public.
+  canary-local:
+    name: canary-local
+    runs-on: ubuntu-latest
+    needs: [verify, changes]
+    if: ${{ !cancelled() && needs.verify.result == 'success' && needs.changes.outputs.e2e != 'false' }}
+    continue-on-error: ${{ vars.CANARY_LOCAL_ENFORCE != 'true' }}
+    timeout-minutes: 25
+
+    env:
+      SUPABASE_CLI_VERSION: 2.105.0
+      NEXT_PUBLIC_APP_ENV: dev
+      NEXT_PUBLIC_SITE_URL: http://localhost:3000
+      NEXT_PUBLIC_AUTH_APP_URL: http://localhost:3000
+      NEXT_PUBLIC_CLERK_SIGN_IN_URL: /sign-in
+      NEXT_PUBLIC_CLERK_SIGN_UP_URL: /sign-up
+      NEXT_PUBLIC_CLERK_AFTER_SIGN_IN_URL: /account
+      NEXT_PUBLIC_CLERK_AFTER_SIGN_UP_URL: /account/onboarding
+      NEXT_PUBLIC_MEDIA_BASE_URL: https://l3zabozgfpz3vahd.public.blob.vercel-storage.com
+      # verify's build has already type-checked this code. See next.config.mjs.
+      SKIP_BUILD_TYPECHECK: '1'
+      NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: ${{ secrets.DEV_CLERK_PUBLISHABLE_KEY }}
+      CLERK_SECRET_KEY: ${{ secrets.DEV_CLERK_SECRET_KEY }}
+      CANARY_STAND_IN_HOST: k11stub.api.sanity.io
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24.x
+          cache: npm
+
+      - run: npm ci
+
+      - uses: supabase/setup-cli@689adcfb80d947100a1eab127289b97d1fb07b13 # v3.2.0
+        with:
+          version: ${{ env.SUPABASE_CLI_VERSION }}
+
+      # As e2e-local: one `supabase start`, no migration replay, no seed.
+      - name: Start the local stack
+        env:
+          SUPABASE_DB_MIGRATIONS_ENABLED: 'false'
+          SUPABASE_DB_SEED_ENABLED: 'false'
+        run: >-
+          supabase start
+          -x realtime,studio,imgproxy,mailpit,logflare,vector,postgres-meta,supavisor,edge-runtime
+
+      # WD-8: a URL that is not on this machine stops the job here.
+      - name: Point the job at the local stack
+        run: |
+          values="$(supabase status -o env)"
+          read_value() { echo "$values" | sed -n "s/^$1=\"\(.*\)\"$/\1/p"; }
+          url="$(read_value API_URL)"
+          public_key="$(read_value PUBLISHABLE_KEY)"
+          secret_key="$(read_value SECRET_KEY)"
+          case "$url" in
+            http://127.0.0.1:*) ;;
+            *) echo "::error::The local stack's API URL is not on this machine."; exit 1 ;;
+          esac
+          if [ -z "$public_key" ] || [ -z "$secret_key" ]; then
+            echo "::error::supabase status did not report the local keys."; exit 1
+          fi
+          {
+            echo "NEXT_PUBLIC_SUPABASE_URL=$url"
+            echo "NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=$public_key"
+            echo "SUPABASE_SECRET_KEY=$secret_key"
+          } >> "$GITHUB_ENV"
+
+      - name: Build the database
+        run: bash scripts/e2e-stack-db.sh
+
+      - name: Wait for PostgREST to see the schema
+        run: |
+          for i in $(seq 1 30); do
+            curl -fsS -o /dev/null -H "apikey: $SUPABASE_SECRET_KEY" \
+              "$NEXT_PUBLIC_SUPABASE_URL/rest/v1/tenants?select=id&limit=1" && exit 0
+            sleep 2
+          done
+          echo "::error::PostgREST never served the schema."; exit 1
+
+      # The agreement documents, the tenant guardian-consent one among them.
+      - name: Seed documents, surveys and Clerk links
+        run: npm run seed:e2e-stack
+
+      # This run's zone (k11-<run>.localhost) and the switches the server starts with.
+      - name: Canary settings
+        run: npx tsx scripts/canary-ci.ts server-env --tag "${{ github.run_id }}-${{ github.run_attempt }}" >> "$GITHUB_ENV"
+
+      - name: Seed the canary tenant (local stack)
+        run: npx tsx scripts/canary-ci.ts seed --zone "$CANARY_CI_ZONE" --docs "$RUNNER_TEMP/canary-ci/docs.json"
+
+      # A throwaway CA, trusted only by this job's Node processes, and the stand-in
+      # on 127.0.0.1:443 for the stand-in host. Started before the build, which reads it.
+      - name: Start the Sanity stand-in
+        run: |
+          bash scripts/canary/sanity-stub-cert.sh "$RUNNER_TEMP/canary-ci" "$CANARY_STAND_IN_HOST"
+          echo "127.0.0.1 $CANARY_STAND_IN_HOST" | sudo tee -a /etc/hosts > /dev/null
+          sudo sysctl -q -w net.ipv4.ip_unprivileged_port_start=443
+          nohup npx tsx scripts/canary-ci.ts sanity-stub --docs "$RUNNER_TEMP/canary-ci/docs.json" \
+            --cert "$RUNNER_TEMP/canary-ci/stub.pem" --key "$RUNNER_TEMP/canary-ci/stub-key.pem" \
+            > "$RUNNER_TEMP/stand-in.log" 2>&1 &
+          echo "NODE_EXTRA_CA_CERTS=$RUNNER_TEMP/canary-ci/ca.pem" >> "$GITHUB_ENV"
+          for i in $(seq 1 30); do
+            curl -fsS -o /dev/null --cacert "$RUNNER_TEMP/canary-ci/ca.pem" \
+              "https://$CANARY_STAND_IN_HOST/v2024-01-01/data/query/production?query=x" && exit 0
+            sleep 1
+          done
+          echo "::error::The Sanity stand-in did not start."; cat "$RUNNER_TEMP/stand-in.log"; exit 1
+
+      - run: |
+          secret="$(openssl rand -hex 32)"
+          echo "::add-mask::$secret"
+          echo "ESIGN_TOKEN_SECRET=$secret" >> "$GITHUB_ENV"
+
+      - run: npm run build
+
+      - name: Start the app
+        run: |
+          nohup npm start > "$RUNNER_TEMP/app.log" 2>&1 &
+          for i in $(seq 1 60); do curl -sf -o /dev/null http://localhost:3000/ && exit 0; sleep 1; done
+          echo "::error::The app did not start."; tail -n 40 "$RUNNER_TEMP/app.log"; exit 1
+
+      # Personas the dev Clerk instance has get a session for this run, revoked after.
+      - name: Canary start phase (local stack)
+        env:
+          BREAK: ${{ vars.CANARY_LOCAL_BREAK }}
+        run: npx tsx scripts/canary-ci.ts run --zone "$CANARY_CI_ZONE" ${BREAK:+--break "$BREAK"}
+
+      # Synthetic fixture data only, so safe in this public log.
+      - if: failure()
+        name: App and stand-in logs
+        run: |
+          echo "::group::app"; tail -n 80 "$RUNNER_TEMP/app.log" 2>/dev/null || true; echo "::endgroup::"
+          echo "::group::stand-in"; tail -n 20 "$RUNNER_TEMP/stand-in.log" 2>/dev/null || true; echo "::endgroup::"
 
   # S5 B10a: one build served twice, tenant routing off and on, must answer the
   # same on every Stellr host for every page (e2e/tenancy/flag-parity.spec.ts).

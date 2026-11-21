@@ -1,12 +1,15 @@
 import { extrasByParticipant } from '@/lib/addons/admin'
 import { NextResponse } from 'next/server'
 import { randomBytes } from 'crypto'
-import type { SupabaseClient } from '@supabase/supabase-js'
+import type { StellrOnlyDb } from '@/lib/events/admin-records'
+import { stellrOnlyDb } from '@/lib/events/admin-records'
+import { deskTable } from '@/lib/events/admin-check-in'
 import { supabaseServer } from '@/lib/supabase'
-import { requireEventAccess } from '@/lib/event-access'
+import { requireEventRoute } from '@/lib/authz'
+import { stellrOnlyEvent } from '@/lib/tenancy/load-scoped'
 import { getEventBySlug } from '@/lib/events/repo'
 import { getEventRoster } from '@/lib/event-admin'
-import { checkInsVisibleTo, loadOpenCheckIns, pickBannerEvent, todayUtc } from '@/lib/check-in-banner'
+import { loadOpenCheckIns, pickBannerEvent, todayUtc } from '@/lib/check-in-banner'
 import { verifyCheckInCode } from '@/lib/check-in-codes'
 import { checkInTime, crewActionName, meaningfulNote, type DeskContact, type DeskDetails, type DeskFlags, type DeskGroup } from '@/lib/check-in-desk'
 import { loadDeskCrew, loadCrewCheckIns, writeCrewCheckIn } from '@/lib/check-in-crew'
@@ -29,7 +32,7 @@ import { auditSubject, noteAuditSubject } from '@/lib/audit/route-subject'
 //          Opening an in-person event closes the other in-person check-ins the
 //          caller manages, so the banner has one place to go. Only a full admin
 //          manages every event; an event manager never closes, or sees the name
-//          of, an event they aren't assigned to (lib/check-in-banner checkInsVisibleTo).
+//          of, an event they aren't assigned to (requireEventRoute's covers, as lib/check-in-banner checkInsVisibleTo).
 //          { action: 'manual', participantId, at? } | { action: 'undo', participantId }
 //          { action: 'group_check_in', participantIds, at? } | { action: 'group_undo', participantIds }
 //          { action: 'scan', code, at? } — a participant's code checks them in; a
@@ -43,7 +46,14 @@ import { auditSubject, noteAuditSubject } from '@/lib/audit/route-subject'
 
 type Params = { params: Promise<{ slug: string }> }
 
-// Platform audit (docs/TENANCY-S5.md, C7). The handler notes who passed requireEventAccess
+// S5 wave 8, C19c (decision WD-C19-DESK, 20 Nov 2026): the desk stays Stellr-only for now. A
+// tenant's own desk follows in S8 with tenant event operations. Both handlers ask
+// stellrOnlyEvent right after the access check: a tenant's staff get its 503, another
+// tenant's event is a 404 for everyone, a Stellr admin included, and a failed read of the
+// event's owner is a retryable 503. Stellr's own events answer as before.
+const ROUTE = '/api/admin/events/[slug]/check-in'
+
+// Platform audit (docs/TENANCY-S5.md, C7). The handler notes who passed requireEventRoute
 // and the slug that check passed for; the event goes on the chain of that event's owner,
 // read from the mirror by the slug. A request that stopped before the check noted no slug,
 // so it goes on the platform chain unplaced (resolveTenant's rule), never on the chain the
@@ -94,17 +104,19 @@ function consentPending(): NextResponse {
  * group refuses the whole group (BF-66), as the trigger's refusal of the whole
  * statement always has. A failed read is not a refusal; the trigger still decides.
  */
-async function anyConsentPending(db: SupabaseClient, participantIds: string[]): Promise<boolean> {
+async function anyConsentPending(db: StellrOnlyDb, participantIds: string[]): Promise<boolean> {
   const pending = await consentPendingParticipants(db, { participantIds })
   return !!pending && pending.size > 0
 }
 
 export async function GET(req: Request, { params }: Params) {
   const { slug } = await params
-  const access = await requireEventAccess(slug)
-  if (!access.ok) return NextResponse.json({ error: 'Forbidden' }, { status: access.status })
+  const crew = await requireEventRoute(slug, { route: ROUTE })
+  if (!crew.ok) return crew.response
+  const foreign = await stellrOnlyEvent(crew.scope, supabaseServer(), slug, ROUTE)
+  if (foreign) return foreign
 
-  const db = supabaseServer()
+  const db = stellrOnlyDb(crew.scope, supabaseServer())
   if (new URL(req.url).searchParams.get('details') === '1') {
     try {
       return NextResponse.json(await loadDeskDetails(db, slug))
@@ -115,9 +127,8 @@ export async function GET(req: Request, { params }: Params) {
   }
 
   const [{ data: settings }, { data: regs }, { data: merchRows }, openCheckIns, crewCheckIns] = await Promise.all([
-    db.from('event_settings').select('check_in_token, check_in_open, resources_url').eq('event_slug', slug).maybeSingle(),
-    db
-      .from('registrations')
+    deskTable(db, 'event_settings').select('check_in_token, check_in_open, resources_url').eq('event_slug', slug).maybeSingle(),
+    deskTable(db, 'registrations')
       .select(
         `id, type, school_name, group_name, teacher_first_name, teacher_last_name,
          participants(id, member_id, first_name, last_name, event_role, school_name, t_shirt_size, checked_in_at, check_in_method, merch_collected, event_companies(number, name))`
@@ -125,8 +136,7 @@ export async function GET(req: Request, { params }: Params) {
       .eq('event_slug', slug)
       .neq('status', 'withdrawn'),
     // Event-merch line items (included + add-ons) keyed by member, to show at the desk.
-    db
-      .from('store_order_items')
+    deskTable(db, 'store_order_items')
       .select('name, qty, participant_member_id, store_orders!inner(event_slug)')
       .eq('store_orders.event_slug', slug)
       .not('participant_member_id', 'is', null),
@@ -193,7 +203,9 @@ export async function GET(req: Request, { params }: Params) {
     // the open events could not be read, so the desk does not report the banner
     // pointing elsewhere on a hiccup.
     bannerTarget: openCheckIns ? pickBannerEvent(openCheckIns, todayUtc())?.slug === slug : null,
-    otherOpen: checkInsVisibleTo(openCheckIns ?? [], access)
+    // The events the caller reaches (requireEventRoute's covers: every event for an admin,
+    // an event manager's own), as checkInsVisibleTo answered from requireEventAccess.
+    otherOpen: (openCheckIns ?? []).filter((e) => crew.covers(e.slug))
       .filter((e) => e.inPerson && e.slug !== slug)
       .map((e) => ({ slug: e.slug, title: e.title ?? e.slug })),
   })
@@ -204,12 +216,11 @@ export async function GET(req: Request, { params }: Params) {
  * and the roster never disagree about whether an agreement is signed or a
  * registration paid. Only people with something to flag are listed.
  */
-async function loadDeskDetails(db: SupabaseClient, slug: string): Promise<DeskDetails> {
+async function loadDeskDetails(db: StellrOnlyDb, slug: string): Promise<DeskDetails> {
   const event = (await getEventBySlug(slug).catch(() => null)) as { date?: string } | null
   const [roster, { data: groupRegs }, crew] = await Promise.all([
     getEventRoster(slug, event?.date),
-    db
-      .from('registrations')
+    deskTable(db, 'registrations')
       .select('id, teacher_first_name, teacher_last_name, teacher_email, teacher_member_id, participants(member_id, event_role, phone)')
       .eq('event_slug', slug)
       .neq('status', 'withdrawn')
@@ -242,7 +253,7 @@ async function loadDeskDetails(db: SupabaseClient, slug: string): Promise<DeskDe
   }[]
   const needMember = regs.filter((r) => r.teacher_member_id).map((r) => r.teacher_member_id as string)
   const { data: members } = needMember.length
-    ? await db.from('members').select('id, phone').in('id', needMember)
+    ? await deskTable(db, 'members').select('id, phone').in('id', needMember)
     : { data: [] as { id: string; phone: string | null }[] }
   const memberPhone = new Map((members ?? []).map((m) => [m.id as string, (m.phone as string | null) || null]))
 
@@ -262,9 +273,8 @@ async function loadDeskDetails(db: SupabaseClient, slug: string): Promise<DeskDe
 }
 
 /** Every id belongs to a participant of this event. */
-async function allInEvent(db: SupabaseClient, slug: string, ids: string[]): Promise<boolean> {
-  const { data } = await db
-    .from('participants')
+async function allInEvent(db: StellrOnlyDb, slug: string, ids: string[]): Promise<boolean> {
+  const { data } = await deskTable(db, 'participants')
     .select('id, registrations!inner(event_slug)')
     .in('id', ids)
     .eq('registrations.event_slug', slug)
@@ -278,14 +288,16 @@ function idList(v: unknown): string[] | null {
 
 async function deskAction(req: Request, { params }: Params) {
   const { slug } = await params
-  const access = await requireEventAccess(slug)
-  if (!access.ok) return NextResponse.json({ error: 'Forbidden' }, { status: access.status })
+  const crew = await requireEventRoute(slug, { route: ROUTE })
+  if (!crew.ok) return crew.response
+  const foreign = await stellrOnlyEvent(crew.scope, supabaseServer(), slug, ROUTE)
+  if (foreign) return foreign
 
   const body = await req.json().catch(() => null)
   const action = crewActionName(body?.action)
-  const db = supabaseServer()
+  const db = stellrOnlyDb(crew.scope, supabaseServer())
   noteAuditSubject(req, {
-    userId: access.userId,
+    userId: crew.userId,
     eventSlug: slug,
     id: storableId(body?.participantId),
     detail: {
@@ -295,8 +307,7 @@ async function deskAction(req: Request, { params }: Params) {
   })
 
   if (action === 'open' || action === 'close' || action === 'regenerate') {
-    const { data: settings } = await db
-      .from('event_settings')
+    const { data: settings } = await deskTable(db, 'event_settings')
       .select('check_in_token')
       .eq('event_slug', slug)
       .maybeSingle()
@@ -311,12 +322,11 @@ async function deskAction(req: Request, { params }: Params) {
       if (event?.setting !== 'virtual') {
         const open = await loadOpenCheckIns(db).catch(() => null)
         if (!open) return NextResponse.json({ error: 'Database error' }, { status: 500 })
-        closed = checkInsVisibleTo(open, access)
+        closed = open.filter((e) => crew.covers(e.slug))
           .filter((e) => e.inPerson && e.slug !== slug)
           .map((e) => ({ slug: e.slug, title: e.title ?? e.slug }))
         if (closed.length) {
-          const { error } = await db
-            .from('event_settings')
+          const { error } = await deskTable(db, 'event_settings')
             .update({ check_in_open: false })
             .in('event_slug', closed.map((e) => e.slug))
           if (error) return NextResponse.json({ error: 'Database error' }, { status: 500 })
@@ -334,7 +344,7 @@ async function deskAction(req: Request, { params }: Params) {
       update.check_in_token = randomBytes(16).toString('hex')
     }
 
-    const { error } = await db.from('event_settings').upsert(update, { onConflict: 'event_slug' })
+    const { error } = await deskTable(db, 'event_settings').upsert(update, { onConflict: 'event_slug' })
     if (error) return NextResponse.json({ error: 'Database error' }, { status: 500 })
     // How many other events' check-in this closed, as a count (never their names).
     if (action === 'open') noteAuditSubject(req, { detail: { desk_action: action, closed_count: closed.length } })
@@ -353,8 +363,7 @@ async function deskAction(req: Request, { params }: Params) {
         return NextResponse.json({ error: 'Enter a full https:// link' }, { status: 400 })
       }
     }
-    const { error } = await db
-      .from('event_settings')
+    const { error } = await deskTable(db, 'event_settings')
       .upsert({ event_slug: slug, resources_url: url }, { onConflict: 'event_slug' })
     if (error) return NextResponse.json({ error: 'Database error' }, { status: 500 })
     return NextResponse.json({ ok: true, resourcesUrl: url })
@@ -369,8 +378,7 @@ async function deskAction(req: Request, { params }: Params) {
     if (!(await allInEvent(db, slug, [participantId]))) {
       return NextResponse.json({ error: 'Participant not found for this event' }, { status: 404 })
     }
-    const { error } = await db
-      .from('registration_addons')
+    const { error } = await deskTable(db, 'registration_addons')
       .update({ checked_at: action === 'addon_checked' ? new Date().toISOString() : null })
       .eq('id', lineId)
       .eq('participant_id', participantId)
@@ -388,8 +396,7 @@ async function deskAction(req: Request, { params }: Params) {
     }
 
     const collected = action === 'merch_collected'
-    const { error } = await db
-      .from('participants')
+    const { error } = await deskTable(db, 'participants')
       .update({ merch_collected: collected, merch_collected_at: collected ? new Date().toISOString() : null })
       .eq('id', participantId)
     if (error) return NextResponse.json({ error: 'Database error' }, { status: 500 })
@@ -407,8 +414,7 @@ async function deskAction(req: Request, { params }: Params) {
     }
     if (action === 'manual' && (await anyConsentPending(db, [participantId]))) return consentPending()
 
-    const { error } = await db
-      .from('participants')
+    const { error } = await deskTable(db, 'participants')
       .update(
         action === 'manual'
           ? { checked_in_at: checkInTime(body?.at), check_in_method: 'manual' }
@@ -431,12 +437,11 @@ async function deskAction(req: Request, { params }: Params) {
     if (action === 'group_check_in' && (await anyConsentPending(db, ids))) return consentPending()
     const { error } =
       action === 'group_check_in'
-        ? await db
-            .from('participants')
+        ? await deskTable(db, 'participants')
             .update({ checked_in_at: checkInTime(body?.at), check_in_method: 'manual' })
             .in('id', ids)
             .is('checked_in_at', null)
-        : await db.from('participants').update({ checked_in_at: null, check_in_method: null }).in('id', ids)
+        : await deskTable(db, 'participants').update({ checked_in_at: null, check_in_method: null }).in('id', ids)
     // The trigger's backstop: one consent-pending member refuses the whole statement.
     if (error) return checkInWriteFailed(error)
     return NextResponse.json({ ok: true })
@@ -447,7 +452,7 @@ async function deskAction(req: Request, { params }: Params) {
       db,
       slug,
       body?.crewKey ?? body?.staffKey, // staff-word-ok: a tap queued before the 13 Nov rename
-      action === 'crew_check_in' ? { checkIn: true, at: checkInTime(body?.at), by: access.userId } : { checkIn: false },
+      action === 'crew_check_in' ? { checkIn: true, at: checkInTime(body?.at), by: crew.userId } : { checkIn: false },
     )
     if (!result.ok) return NextResponse.json({ error: result.error }, { status: result.status })
     return NextResponse.json({ ok: true })
@@ -458,8 +463,7 @@ async function deskAction(req: Request, { params }: Params) {
     if (!code) return NextResponse.json({ error: 'That code isn’t for this event.' }, { status: 404 })
 
     if (code.kind === 'g') {
-      const { data: reg } = await db
-        .from('registrations')
+      const { data: reg } = await deskTable(db, 'registrations')
         .select('id')
         .eq('id', code.id)
         .eq('event_slug', slug)
@@ -469,8 +473,7 @@ async function deskAction(req: Request, { params }: Params) {
       return NextResponse.json({ ok: true, kind: 'group', registrationId: reg.id })
     }
 
-    const { data: p } = await db
-      .from('participants')
+    const { data: p } = await deskTable(db, 'participants')
       .select('id, checked_in_at, registrations!inner(event_slug, status)')
       .eq('id', code.id)
       .eq('registrations.event_slug', slug)
@@ -484,8 +487,7 @@ async function deskAction(req: Request, { params }: Params) {
     // A participant waiting on guardian consent is a failed scan: nothing is written.
     if (await anyConsentPending(db, [p.id])) return consentPending()
     const at = checkInTime(body?.at)
-    const { error } = await db
-      .from('participants')
+    const { error } = await deskTable(db, 'participants')
       .update({ checked_in_at: at, check_in_method: 'manual' })
       .eq('id', p.id)
       .is('checked_in_at', null)

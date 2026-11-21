@@ -5,6 +5,7 @@ import { captureLead, logLine, readHubspotCookie } from '@/lib/hubspot'
 import { HOUR_MS, rateLimitGuard } from '@/lib/rate-limit'
 import { getCqFormSource } from '@/content/cq/form-sources'
 import { checkSpamSignals } from '@/lib/spam-guard'
+import { auditMutation } from '@/lib/audit/route'
 import { cqLeadFields as f } from './schema'
 
 /**
@@ -47,6 +48,9 @@ export async function POST(req: Request) {
   const limited = rateLimitGuard(req, 'cq-lead', { limit: 5, windowMs: HOUR_MS })
   if (limited) return limited
 
+  // Read after the try: the lead, and the page it came from.
+  let result: Awaited<ReturnType<typeof captureLead>>
+  let leadSource: string
   try {
     const body: unknown = await req.json()
     const parsed = cqLeadSchema.safeParse(body)
@@ -91,7 +95,8 @@ export async function POST(req: Request) {
       .filter(Boolean)
       .join(' · ')
 
-    const result = await captureLead({
+    leadSource = config.leadSource
+    result = await captureLead({
       email: data.email,
       firstName: data.firstName,
       lastName: data.lastName,
@@ -106,13 +111,28 @@ export async function POST(req: Request) {
         pageName: config.pageName,
       },
     })
-
-    // 200 either way, with `stored` saying whether the lead landed. The visitor
-    // still gets the curriculum link: a teacher turned away at the last step is
-    // worse than a lead we reconcile from the dead-letter alert.
-    return NextResponse.json({ ok: result.ok, stored: result.via !== 'none' })
   } catch (err) {
     console.error('[cq-lead] Unexpected error:', err)
     return NextResponse.json({ error: 'Server error' }, { status: 500 })
   }
+
+  // Platform audit (docs/TENANCY-S5.md, C7), as privacy-requests and scholarship do for
+  // their public forms: nobody is signed in, so the actor is anonymous, on Stellr's chain.
+  // The lead lives in HubSpot, so there is no row to name, and nothing from the form goes
+  // in the event: only the page's own key and whether the lead landed. A tripped trap
+  // answered above and records nothing.
+  await auditMutation(
+    {
+      action: 'lead.curriculum_request.create',
+      actor: { userId: null },
+      tenant: { stellr: true },
+      metadata: { lead_source: leadSource, stored: result.via !== 'none', ok: result.ok },
+    },
+    { afterResponse: true },
+  )
+
+  // 200 either way, with `stored` saying whether the lead landed. The visitor
+  // still gets the curriculum link: a teacher turned away at the last step is
+  // worse than a lead we reconcile from the dead-letter alert.
+  return NextResponse.json({ ok: result.ok, stored: result.via !== 'none' })
 }

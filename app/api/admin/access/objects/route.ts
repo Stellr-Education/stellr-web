@@ -1,10 +1,9 @@
-import { auth } from '@clerk/nextjs/server'
+import { isStellrAdmin } from '@/lib/authz'
 import { NextResponse } from 'next/server'
 import { supabaseServer } from '@/lib/supabase'
 import { CONTAINER_TYPE_TO_OBJECT, type AccessObjectType } from '@/lib/access-objects'
 import { fireObjectCreatedRules } from '@/lib/object-created-rules'
 import { getAllEvents, getAllCampaigns } from '@/lib/events/repo'
-import { isAdminClaims } from '@/lib/admin-auth'
 import { STELLR_TENANT_ID } from '@/lib/tenancy/constants'
 import { withAudit } from '@/lib/audit/route'
 import { adminAuditSubject, noteAuditSubject } from '@/lib/audit/route-subject'
@@ -21,8 +20,7 @@ export interface AccessObjectListItem {
 }
 
 export async function GET() {
-  const { sessionClaims } = await auth()
-  if (!isAdminClaims(sessionClaims)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  if (!(await isStellrAdmin({ route: '/api/admin/access/objects' }))) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
   const db = supabaseServer()
   const [containers, spaces, modules, resources, liveEvents, campaigns] = await Promise.all([
@@ -127,8 +125,7 @@ export const POST = withAudit(
 )
 
 async function createObject(req: Request) {
-  const { sessionClaims } = await auth()
-  if (!isAdminClaims(sessionClaims)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  if (!(await isStellrAdmin({ route: '/api/admin/access/objects' }))) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
   const b = await req.json().catch(() => ({}))
   const objectType = b.objectType as AccessObjectType

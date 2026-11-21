@@ -20,21 +20,20 @@
     "roleTableRead"
   ],
   "totals": {
-    "files": 82,
-    "sites": 117,
+    "files": 40,
+    "sites": 55,
     "byIdiom": {
       "CREW_CLERK_ROLES": 1,
-      "adminName": 5,
       "clerkRoleRead": 8,
       "currentUserHasScope": 3,
       "currentUserIsAdmin": 4,
       "hasAdminPortalAccess": 1,
-      "isAdminClaims": 44,
+      "isAdminClaims": 5,
       "isCrewRole": 1,
       "isEventManagerClaims": 2,
       "pageRequireAdmin": 1,
       "requireAdminPage": 17,
-      "requireEventAccess": 28,
+      "requireEventAccess": 10,
       "roleTableRead": 2
     }
   },
@@ -126,128 +125,11 @@
     "app/(stellr)/(member)/layout.tsx": {
       "isAdminClaims": 1
     },
-    "app/api/admin/access/conflicts/route.ts": {
-      "isAdminClaims": 1
-    },
-    "app/api/admin/access/objects/[id]/contents/route.ts": {
-      "isAdminClaims": 3
-    },
-    "app/api/admin/access/objects/[id]/gates/route.ts": {
-      "isAdminClaims": 1
-    },
-    "app/api/admin/access/objects/[id]/managers/route.ts": {
-      "isAdminClaims": 3
-    },
-    "app/api/admin/access/objects/[id]/roster/route.ts": {
-      "isAdminClaims": 3
-    },
-    "app/api/admin/access/objects/[id]/route.ts": {
-      "isAdminClaims": 1
-    },
-    "app/api/admin/access/objects/route.ts": {
-      "isAdminClaims": 2
-    },
-    "app/api/admin/access/people/[id]/route.ts": {
-      "isAdminClaims": 3
-    },
-    "app/api/admin/access/relations/route.ts": {
-      "isAdminClaims": 2
-    },
-    "app/api/admin/compliance/sync/route.ts": {
-      "isAdminClaims": 1
-    },
-    "app/api/admin/deletion-requests/[id]/route.ts": {
-      "isAdminClaims": 1
-    },
-    "app/api/admin/deletion-requests/route.ts": {
-      "isAdminClaims": 1
-    },
-    "app/api/admin/deletion/preflight/route.ts": {
-      "isAdminClaims": 1
-    },
-    "app/api/admin/deletion/route.ts": {
-      "isAdminClaims": 1
-    },
     "app/api/admin/digest/send/route.ts": {
       "currentUserIsAdmin": 1
     },
     "app/api/admin/duties/route.ts": {
       "clerkRoleRead": 1
-    },
-    "app/api/admin/email/audience/preview/route.ts": {
-      "isAdminClaims": 1
-    },
-    "app/api/admin/email/campaigns/[id]/route.ts": {
-      "isAdminClaims": 2
-    },
-    "app/api/admin/email/campaigns/[id]/test/route.ts": {
-      "isAdminClaims": 1
-    },
-    "app/api/admin/email/campaigns/route.ts": {
-      "isAdminClaims": 1
-    },
-    "app/api/admin/email/templates/[id]/route.ts": {
-      "isAdminClaims": 2
-    },
-    "app/api/admin/email/templates/route.ts": {
-      "isAdminClaims": 1
-    },
-    "app/api/admin/esign/maintenance/route.ts": {
-      "isAdminClaims": 1
-    },
-    "app/api/admin/esign/membership-backfill/route.ts": {
-      "isAdminClaims": 1
-    },
-    "app/api/admin/esign/state/route.ts": {
-      "isAdminClaims": 1
-    },
-    "app/api/admin/esign/templates/[id]/approve/route.ts": {
-      "adminName": 1
-    },
-    "app/api/admin/esign/templates/file/route.ts": {
-      "adminName": 1
-    },
-    "app/api/admin/esign/templates/guard.ts": {
-      "isAdminClaims": 1
-    },
-    "app/api/admin/esign/templates/preview/route.ts": {
-      "adminName": 1
-    },
-    "app/api/admin/esign/templates/route.ts": {
-      "adminName": 1
-    },
-    "app/api/admin/esign/templates/upload/route.ts": {
-      "adminName": 1
-    },
-    "app/api/admin/events/[slug]/awards/issue/route.ts": {
-      "requireEventAccess": 1
-    },
-    "app/api/admin/events/[slug]/awards/route.ts": {
-      "requireEventAccess": 2
-    },
-    "app/api/admin/events/[slug]/badge-templates/preview/route.ts": {
-      "requireEventAccess": 1
-    },
-    "app/api/admin/events/[slug]/badge-templates/route.ts": {
-      "requireEventAccess": 3
-    },
-    "app/api/admin/events/[slug]/badges/route.ts": {
-      "requireEventAccess": 1
-    },
-    "app/api/admin/events/[slug]/certificate-templates/preview/route.ts": {
-      "requireEventAccess": 1
-    },
-    "app/api/admin/events/[slug]/certificate-templates/route.ts": {
-      "requireEventAccess": 3
-    },
-    "app/api/admin/events/[slug]/certificates/route.ts": {
-      "requireEventAccess": 1
-    },
-    "app/api/admin/events/[slug]/check-in/route.ts": {
-      "requireEventAccess": 2
-    },
-    "app/api/admin/events/[slug]/credentials/route.ts": {
-      "requireEventAccess": 3
     },
     "app/api/admin/events/slug-guard/route.ts": {
       "currentUserHasScope": 1
@@ -255,17 +137,8 @@
     "app/api/admin/health/integrations/route.ts": {
       "clerkRoleRead": 1
     },
-    "app/api/admin/members/[id]/background-check/adjudicate/route.ts": {
-      "isAdminClaims": 1
-    },
-    "app/api/admin/members/[id]/route.ts": {
-      "isAdminClaims": 1
-    },
     "app/api/admin/members/merge/route.ts": {
       "currentUserIsAdmin": 2
-    },
-    "app/api/admin/privacy-requests/[id]/route.ts": {
-      "isAdminClaims": 1
     },
     "components/layout/NavUserButton.tsx": {
       "clerkRoleRead": 1

@@ -9,7 +9,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { sendEmail, EmailSendError } from '@/lib/email'
 import { extractTokens } from '@/lib/email-render'
 import { RESOURCES_BUCKET } from '@/lib/community'
-import { getEventBySlug } from '@/lib/events/repo'
+import { getEventBySlugIn } from '@/lib/events/tenant-facade'
 import { reissueParticipantAgreement } from '@/lib/docusign-reissue'
 import { resolveAudience, type ResolvedRecipient } from './audiences'
 import { AWARD_MERGE_TOKENS, loadAwardMergeVars } from './awards'
@@ -115,8 +115,13 @@ export type SendOutcome =
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
-export async function loadEventForEmail(slug: string): Promise<EventForEmail | null> {
-  const e = (await getEventBySlug(slug)) as
+/**
+ * The event's details for an email, read for the tenant that owns the email (S5 wave 8,
+ * C8-PG): an email row's tenant_id, NULL read as Stellr's. With TENANT_DB_AREAS unset this
+ * is today's Sanity read.
+ */
+export async function loadEventForEmail(slug: string, tenantId: string): Promise<EventForEmail | null> {
+  const e = (await getEventBySlugIn(tenantId, slug)) as
     | { title: string; date?: string; venue?: string; city?: string; state?: string; startTime?: string; endTime?: string }
     | null
   if (!e) return null
@@ -205,7 +210,7 @@ export async function sendEventEmail(
   if (!email.subject.trim()) return { ok: false, status: 400, error: 'Add a subject first' }
   if (!email.audiences.length) return { ok: false, status: 400, error: 'Choose at least one group to send to' }
 
-  const event = await loadEventForEmail(email.event_slug)
+  const event = await loadEventForEmail(email.event_slug, email.tenant_id ?? STELLR_TENANT_ID)
   if (!event) return { ok: false, status: 404, error: 'Event not found' }
 
   const isTest = opts.trigger === 'test'
@@ -518,6 +523,8 @@ export async function deliver(
         text: content.text,
         attachments: opts.attachments,
         kind,
+        // S5 B24: a tenant's mail, if queued, waits in the outbox as that tenant's.
+        ...(isTenantRow(email.tenant_id) ? { tenantId: email.tenant_id } : {}),
       })
       // sendEmail does not throw for an address on our suppression list or for
       // mail parked in the outbox by the daily budget — record what really

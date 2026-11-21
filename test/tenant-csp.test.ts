@@ -40,8 +40,8 @@ import nextConfig, { stellrHostsPattern } from '../next.config.mjs'
 const CANARY = '11111111-1111-4111-8111-111111111111'
 const TENANT = 'canary-academy.localhost'
 const HOST_ROWS = [
-  { host: TENANT, tenant_id: CANARY, tenants: { slug: 'canary-academy', status: 'active' } },
-  { host: 'stellr.localhost', tenant_id: STELLR_TENANT_ID, tenants: { slug: 'stellr', status: 'active' } },
+  { host: TENANT, tenant_id: CANARY, tenant_slug: 'canary-academy' },
+  { host: 'stellr.localhost', tenant_id: STELLR_TENANT_ID, tenant_slug: 'stellr' },
 ]
 
 const event = { waitUntil: (p: Promise<unknown>) => void p } as unknown as NextFetchEvent
@@ -73,6 +73,8 @@ beforeEach(() => {
   vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify(HOST_ROWS), { status: 200 })))
   vi.stubEnv('NEXT_PUBLIC_SUPABASE_URL', 'https://db.test')
   vi.stubEnv('SUPABASE_SECRET_KEY', 'sb_secret_TESTONLY')
+  // B25: the host map is read with the publishable key (tenant_host_map()).
+  vi.stubEnv('NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY', 'sb_publishable_TESTONLY')
 })
 afterEach(() => {
   vi.unstubAllEnvs()
@@ -491,7 +493,7 @@ describe('what the tenant tree’s own code asks of the policy', () => {
     expect(browser.size).toBeGreaterThan(0)
     expect(scan(closure, readRepoFile, browser)).toEqual([
       // The QR code: a data: URL from the encoder. See below.
-      'app/(stellr)/(flow)/check-in/[slug]/code/page.tsx: an image from a value',
+      'app/(stellr)/(flow)/check-in/[slug]/code/code-body.tsx: an image from a value',
       // /api/register/pay, or /api/register/pay-seat from its one other caller.
       'app/(stellr)/(flow)/register/[slug]/pay/[token]/PayNowButton.tsx: a call to a host from a value',
       // /api/sign/document, from its one caller.
@@ -515,7 +517,7 @@ describe('what the tenant tree’s own code asks of the policy', () => {
 
   it('has no QR code or image the policy would stop', () => {
     // A data: URL from the encoder, which img-src allows.
-    const src = readFileSync('app/(stellr)/(flow)/check-in/[slug]/code/page.tsx', 'utf8')
+    const src = readFileSync('app/(stellr)/(flow)/check-in/[slug]/code/code-body.tsx', 'utf8')
     expect(src).toContain('src={qr}')
     expect(src).toContain('data:')
     expect(directive(tenantPagePolicy('abc', ENV), 'img-src')).toContain('data:')

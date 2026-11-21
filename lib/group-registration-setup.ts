@@ -10,6 +10,7 @@ import { runGroupRegistrationFollowUp, type FollowUpPerson } from '@/lib/group-r
 import { formatUsd } from '@/lib/mentoring-format'
 import { checkInCodeLink } from '@/lib/check-in-codes'
 import { STELLR_TENANT_ID } from '@/lib/tenancy/constants'
+import { eventSiteOrigin } from '@/lib/tenancy/event-origin'
 
 // "Finish registration setup" (admin): completes a group registration whose
 // request was cut off after the records were written — on 28 Oct 2026 a team of
@@ -264,6 +265,8 @@ export async function finishGroupSetup(
 
   if (want.has('confirmation')) {
     try {
+      // S5 wave 8, A12: the group's check-in link opens on the event's own host.
+      const origin = await eventSiteOrigin(reg.event_slug)
       const content = groupConfirmationEmail({
         teacherFirstName: teacher.firstName,
         teacherLastName: teacher.lastName,
@@ -278,7 +281,7 @@ export async function finishGroupSetup(
         detailsMethod: (reg.details_method as 'add_now' | 'spreadsheet' | 'email_link' | null) ?? 'add_now',
         spreadsheetUrl: spreadsheetUrl ?? undefined,
         joinUrl: joinUrl ?? undefined,
-        checkInCodeUrl: checkInCodeLink(reg.event_slug, 'g', reg.id) ?? undefined,
+        checkInCodeUrl: checkInCodeLink(reg.event_slug, 'g', reg.id, origin) ?? undefined,
       })
       await sendEmail({ to: teacher.email, cc: reg.teacher_poc_email ? [reg.teacher_poc_email] : [], ...content })
       out.confirmation = 'sent'

@@ -1,7 +1,10 @@
 import { supabaseServer } from '@/lib/supabase'
 import { verifyToken } from '@/lib/esign/native/tokens'
 import { STORED_RECORD_COLUMNS, loadSignedRecord, logRecordAccess, type StoredRecordRow } from '@/lib/esign/archive'
+import { recordOnHost } from '@/lib/tenancy/host-record'
 import { actingSession, invalidLink, json, readJson, sameOrigin, throttle } from '@/lib/esign/native/http'
+import { withAudit } from '@/lib/audit/route'
+import { noteSigner, signerEvent } from '../audit'
 
 // POST /api/sign/copy — a signer's own copy of the signed agreement, as a
 // short-lived link. Reached two ways: straight after signing (the session
@@ -9,7 +12,7 @@ import { actingSession, invalidLink, json, readJson, sameOrigin, throttle } from
 // the URL fragment by /sign/copy). Parents have no account, so this is how
 // they keep the record of what they signed.
 
-export async function POST(req: Request) {
+export const POST = withAudit(({ args: [req] }: { args: [Request] }) => ({ action: 'esign.signer.copy_download' as const, ...signerEvent(req) }), async (req: Request) => {
   const limited = await throttle(req, 'copy', 10)
   if (limited) return limited
   if (!sameOrigin(req)) return json({ error: 'Forbidden' }, 403)
@@ -44,17 +47,20 @@ export async function POST(req: Request) {
 
   const { data: row } = await db
     .from('agreements')
-    .select(STORED_RECORD_COLUMNS)
+    .select(`${STORED_RECORD_COLUMNS}, tenant_id`)
     .eq('id', envelopeRow)
     .eq('provider', 'native')
     .maybeSingle()
-  const record = row as StoredRecordRow | null
+  const record = row as (StoredRecordRow & { tenant_id: string | null }) | null
+  // S5 wave 8, A11: another tenant's record is a dead link on this host.
+  if (record && !(await recordOnHost(record))) return invalidLink()
   if (!record || record.status !== 'completed' || record.restricted_at) {
     return json({ state: 'pending', message: 'Your copy is being prepared. Try again in a minute.' }, 409)
   }
 
+  noteSigner(req, { recipient: { id: recipientId as string }, envelope: record })
   const signed = await loadSignedRecord(db, record, 'pdf')
   if (signed.kind !== 'url') return json({ error: 'Your copy could not be retrieved. Try again shortly.' }, 409)
   await logRecordAccess(db, { envelopeRow: record.id, action: 'download', actorType: 'signer', actorId: recipientId })
   return json({ url: signed.url, filename: signed.filename })
-}
+})

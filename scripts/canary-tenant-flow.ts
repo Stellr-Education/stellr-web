@@ -59,6 +59,20 @@
  * addresses (canary-<run>-…@example.test, or the role inbox plus-addressed with
  * --mailbox role-inbox), so the guardian invitation cap (5 a day per address) never trips.
  *
+ * --local-stack (S5 wave 8, K11: CI's canary-local job, through scripts/canary-ci.ts).
+ *   The start phase on a Supabase stack on this machine only (WD-8): it refuses any
+ *   database that is not on this machine, any Clerk key that is not sk_test_, and any
+ *   origin or --connect address that is not this machine (lib/testing/canary-ci.ts).
+ *   The run's modes are stated (--authz-source, --loadscoped-mode, and
+ *   --guardian-consent on|off), so it may start without stellr-probe-admin's
+ *   session; with that session the health route is still read and must agree.
+ *   Before the first write it asks canary.<zone> and nobody.<zone> for /sign: the
+ *   first must answer as a tenant, the second 404, so a server reading any other
+ *   database (which does not map this run's zone) is refused before anything is
+ *   written. --result-file <path> writes the run's scenario statuses and probe
+ *   verdicts as JSON (ids and statuses only). --break S1 sends S1's registration to
+ *   an event that does not exist, so the job can be shown to turn red (K11's gate).
+ *
  * Output: ids, counts and status codes only, through safeOutput, which withholds any
  * line that looks like an email or a date. Exit 1 unless every scenario passed.
  * VERCEL_AUTOMATION_BYPASS_SECRET, when set, is sent only on requests to a
@@ -112,6 +126,7 @@ import {
   type ScenarioResult,
 } from '../lib/testing/canary-flow-scenarios'
 import { CANARY_FLOW_EVENT, CANARY_FLOW_TENANT, CANARY_PERSONAS, canaryReadiness, formatReadiness, planCanaryFlowSeed, readCanaryFacts } from '../lib/testing/canary-flow-seed'
+import { assertCanaryCiTarget, preflightProblems, type CanaryRunReport } from '../lib/testing/canary-ci'
 import { bypassHeadersFor, connectAddress, rawRequest } from './canary/tenant-host-headers.mjs'
 
 const envPath = path.resolve(process.cwd(), '.env.local')
@@ -289,7 +304,20 @@ async function startPhase(
   consentOn: boolean | null,
   zone: string,
   save: (state: RunState) => string,
+  local: { preflight: boolean; breakS1: boolean } = { preflight: false, breakS1: false },
 ): Promise<{ results: ScenarioResult[]; probes: ProbeOutcome[]; state: RunState; file: string }> {
+  if (local.preflight) {
+    const status = async (host: 'tenant' | 'unmapped') => {
+      try {
+        return (await send(c, host, 'anonymous', { method: 'GET', path: '/sign' })).answer.status
+      } catch {
+        return null
+      }
+    }
+    const problems = preflightProblems({ mapped: await status('tenant'), unmapped: await status('unmapped') })
+    print(['Host preflight (--local-stack)', ...(problems.length ? problems.map((p) => `  NOT READY  ${p}`) : ['  READY      canary host mapped, probe host unknown'])])
+    if (problems.length) throw new Error('the server is not reading the stack this run seeded; nothing was sent')
+  }
   const plan = planCanaryFlowSeed({ zone })
   const { tenantEventSender } = await import('../lib/event-emails/tenant-mail')
   const readiness = canaryReadiness(plan, await readCanaryFacts(db, plan), { senderOf: tenantEventSender })
@@ -318,7 +346,9 @@ async function startPhase(
   print([`Run ${runId}: started`])
   const results: ScenarioResult[] = []
   const register = async (key: 'adult' | 'minor-sign' | 'minor-decline') => {
-    const { answer } = await send(c, 'tenant', 'anonymous', { method: 'POST', path: '/api/register/individual', body: registrationBody(ids[key], SLUG, startsOn) })
+    // --break S1 (--local-stack only): an event that does not exist, so S1 fails on purpose.
+    const slug = key === 'adult' && local.breakS1 ? `${SLUG}-k11-broken` : SLUG
+    const { answer } = await send(c, 'tenant', 'anonymous', { method: 'POST', path: '/api/register/individual', body: registrationBody(ids[key], slug, startsOn) })
     const rb = await readBack(db, registrationIdOf(answer))
     if (rb.registration) state.registrations[key] = { registrationId: rb.registration.id, participantId: rb.participants[0]?.id ?? null, agreementId: rb.agreement?.id ?? null }
     return { answer, rb }
@@ -471,9 +501,24 @@ async function main() {
   const zone = flagValue('--zone') ?? state?.zone
   if (state && zone !== state.zone) throw new Error('--zone differs from the zone the run started under')
 
+  // --local-stack (K11): this machine only, with the modes stated. Checked before anything else.
+  const localStack = process.argv.includes('--local-stack')
+  const breakFlag = flagValue('--break')
+  const consentFlag = flagValue('--guardian-consent')
+  const resultFile = flagValue('--result-file')
+  if (localStack) {
+    if (phase !== 'start') throw new Error('--local-stack runs the start phase only')
+    assertCanaryCiTarget(process.env, { base: flagValue('--base'), stellrBase: flagValue('--stellr-base'), connect: flagValue('--connect') ?? '127.0.0.1' })
+    if (consentFlag !== 'on' && consentFlag !== 'off') throw new Error('--local-stack needs --guardian-consent on or off')
+    if (!stated.authzSource || !stated.loadScopedMode) throw new Error('--local-stack needs --authz-source and --loadscoped-mode')
+  } else if (breakFlag !== undefined || consentFlag !== undefined) {
+    throw new Error('--break and --guardian-consent belong to --local-stack')
+  }
+  if (breakFlag !== undefined && breakFlag !== 'S1') throw new Error('--break takes S1 only')
+
   // Guards first: nothing is imported that reads the database before they pass.
   const bases = assertCanaryRunTarget(process.env, { base: flagValue('--base'), stellrBase: flagValue('--stellr-base'), zone })
-  const connect = connectAddress(flagValue('--connect'))
+  const connect = connectAddress(flagValue('--connect') ?? (localStack ? '127.0.0.1' : undefined))
   const sessions = new Map<ProbePersona, PersonaSession>()
   const missing = new Map<ProbePersona, string>()
   const now = new Date()
@@ -492,7 +537,7 @@ async function main() {
   ])
 
   const reported = await reportedModes(c)
-  if (phase === 'start' && !reported) {
+  if (phase === 'start' && !reported && !localStack) {
     throw new Error(`--phase start needs stellr-probe-admin's session (${missing.get('stellr-probe-admin') ?? 'not set'}): the health route is read before anything is written`)
   }
   const mode = resolveRunMode(reported?.mode ?? null, stated)
@@ -506,8 +551,23 @@ async function main() {
       fs.writeFileSync(file, `${JSON.stringify(s, null, 2)}\n`, { mode: 0o600 })
       return file
     }
-    const run = await startPhase(c, db, mode, reported?.guardianConsent ?? null, zone as string, save)
+    const statedConsent = consentFlag === 'on' ? true : consentFlag === 'off' ? false : null
+    if (localStack && reported?.guardianConsent != null && reported.guardianConsent !== statedConsent) {
+      throw new Error('--guardian-consent differs from what the target reports; judge the run against the target')
+    }
+    const consentOn = reported?.guardianConsent ?? statedConsent
+    const run = await startPhase(c, db, mode, consentOn, zone as string, save, { preflight: localStack, breakS1: breakFlag === 'S1' })
     print(formatResults(run.state.runId, mode, run.results, run.probes))
+    if (resultFile) {
+      const report: CanaryRunReport = {
+        runId: run.state.runId,
+        mode,
+        results: run.results.map((r) => ({ id: r.id, status: r.status })),
+        probes: run.probes.map((p) => ({ id: p.id, verdict: p.verdict, persona: ISOLATION_PROBES.find((q) => q.id === p.id)?.persona ?? 'unknown' })),
+      }
+      fs.mkdirSync(path.dirname(resultFile), { recursive: true })
+      fs.writeFileSync(resultFile, `${JSON.stringify(report, null, 2)}\n`, { mode: 0o600 })
+    }
     print([
       `State: ${run.file}`,
       `Next: in the role inbox, the consent mails for run ${run.state.runId} name it in their subject. Sign the "guardian-sign" form, decline the "guardian-decline" one, then run --phase settle --state <that file>.`,

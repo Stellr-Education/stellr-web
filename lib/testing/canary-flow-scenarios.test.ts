@@ -53,7 +53,8 @@ import { DEV_SUPABASE_REF } from './e2e-supabase-target'
 import { PRODUCTION_SUPABASE_REF } from './two-tenant-seed'
 import { ageOn, isMinorOn } from '../age'
 import { guardianFromForm } from '../registration/tenant-guardian-consent'
-import { hasSchool } from '../registration/individual/parse'
+import { hasParticipantDetails, hasSchool } from '../registration/individual/parse'
+import { DIETARY, ETHNICITIES, GENDERS, SCHOOL_GRADES, T_SHIRT_SIZES } from '../registration-constants'
 import { STELLR_TENANT_ID } from '../tenancy/constants'
 import { PRODUCTION_TENANT_ZONE } from '../tenancy/host-pure'
 
@@ -354,16 +355,40 @@ describe("the run's people", () => {
   it("send register bodies the gate accepts: a school, and a guardian the consent flow can use for each minor", () => {
     const adult = registrationBody(IDS.adult, CANARY_FLOW_EVENT.slug, '2026-12-29')
     expect(hasSchool(adult)).toBe(true)
+    expect(hasParticipantDetails(adult)).toBe(true)
     expect(adult.emergency_contact_email).toBeUndefined()
     expect(guardianFromForm(adult, IDS.adult.email)).toBeNull()
     for (const k of ['minor-sign', 'minor-decline'] as const) {
       const body = registrationBody(IDS[k], CANARY_FLOW_EVENT.slug, '2026-12-29')
       expect(hasSchool(body), k).toBe(true)
+      expect(hasParticipantDetails(body), k).toBe(true)
       expect(body.event_slug).toBe(CANARY_FLOW_EVENT.slug)
       const guardian = guardianFromForm(body, IDS[k].email)
       expect(guardian, k).not.toBeNull()
       expect(guardian!.email).toBe(IDS[k].guardian!.email)
     }
+  })
+
+  it('send what the individual form sends, from its own option lists (K11: a body without a phone 500ed at the insert)', () => {
+    const adult = registrationBody(IDS.adult, CANARY_FLOW_EVENT.slug, '2026-12-29')
+    const minor = registrationBody(IDS['minor-sign'], CANARY_FLOW_EVENT.slug, '2026-12-29')
+    for (const body of [adult, minor]) {
+      // The form's zod rule: a phone of at least 7 characters.
+      expect(body.phone.length).toBeGreaterThanOrEqual(7)
+      expect(GENDERS).toContain(body.gender)
+      expect(T_SHIRT_SIZES).toContain(body.t_shirt_size)
+      for (const e of body.ethnicity) expect(ETHNICITIES).toContain(e)
+      for (const d of body.dietary_requirements) expect(DIETARY).toContain(d)
+      expect(body.ethnicity.length).toBeGreaterThan(0)
+      expect(body.dietary_requirements.length).toBeGreaterThan(0)
+      expect(body.merch_addons).toEqual([])
+    }
+    // registrantTypeToAgeBracket and the form's event_role for each registrant type.
+    expect(adult).toMatchObject({ age_bracket: 'Adult', event_role: 'Adult', grade: '' })
+    expect(minor).toMatchObject({ age_bracket: 'High School', event_role: 'School Student' })
+    expect(SCHOOL_GRADES).toContain(minor.grade)
+    expect(minor.emergency_contact_phone!.length).toBeGreaterThanOrEqual(7)
+    expect(adult.emergency_contact_phone).toBeUndefined()
   })
 })
 
@@ -497,9 +522,9 @@ describe('S7: the isolation table', () => {
     for (const p of ISOLATION_PROBES) for (const m of ALL_RUN_MODES) expect(p.expect(m), `${p.id} ${m.authzSource}/${m.loadScopedMode}`).toBeTruthy()
   })
 
-  it('names each known gap by its slice, and every one of A11, A12, .23 and .24 appears', () => {
+  it('names each known gap by its slice, and every one of .23 and .24 appears (A11 and A12 closed in wave 8)', () => {
     // .29 closed: the agreements list reads only Stellr's rows (P14 now expects no marker).
-    expect(Object.keys(KNOWN_GAPS).sort()).toEqual(['.23', '.24', 'A11', 'A12'])
+    expect(Object.keys(KNOWN_GAPS).sort()).toEqual(['.23', '.24'])
     const named = new Set(ALL_RUN_MODES.flatMap((m) => ISOLATION_PROBES.map((p) => p.expect(m)).map((e) => ('gap' in e ? e.gap : undefined))))
     for (const gap of Object.keys(KNOWN_GAPS)) expect(named.has(gap as keyof typeof KNOWN_GAPS), gap).toBe(true)
   })
@@ -580,17 +605,21 @@ describe('S7: the isolation table', () => {
     const m = mode('clerk', 'off')
     expect(judgeProbe(probe('P1'), m, { status: 404, marker: null }).verdict).toBe('pass')
     expect(judgeProbe(probe('P1'), m, { status: 200, marker: null }).verdict).toBe('differs')
-    expect(judgeProbe(probe('P6'), m, { status: 200, marker: null })).toMatchObject({ verdict: 'known-gap', gap: 'A12', note: 'slice A12' })
-    const closed = judgeProbe(probe('P6'), m, { status: 404, marker: null })
+    // P9 still names a known gap (.24): matching it is a known gap; answering the closed state differs.
+    expect(judgeProbe(probe('P9'), m, { status: 409, marker: null })).toMatchObject({ verdict: 'known-gap', gap: '.24' })
+    const closed = judgeProbe(probe('P9'), m, { status: 200, marker: null })
     expect(closed.verdict).toBe('differs')
     expect(closed.note).toMatch(/update this table/)
+    // P6 is closed by A12: Stellr's check-in page is not found for dev-canary's event.
+    expect(judgeProbe(probe('P6'), m, { status: 404, marker: null }).verdict).toBe('pass')
+    expect(judgeProbe(probe('P6'), m, { status: 200, marker: null }).verdict).toBe('differs')
     // P14: dev-canary's agreement absent from Stellr's list passes; present again differs.
     expect(judgeProbe(probe('P14'), m, { status: 200, marker: false }).verdict).toBe('pass')
     expect(judgeProbe(probe('P14'), m, { status: 200, marker: true }).verdict).toBe('differs')
     for (const mm of ALL_RUN_MODES) expect(probe('P14').expect(mm), `${mm.authzSource}/${mm.loadScopedMode}`).toEqual({ status: 200, marker: false })
     expect(judgeProbe(probe('P7'), m, { status: 200, marker: null }).verdict).toBe('differs')
     expect(judgeProbe(probe('P8'), m, null, 'no canary-manager session')).toMatchObject({ verdict: 'skipped', note: 'no canary-manager session' })
-    expect(judgeProbe(probe('P15'), m, null)).toMatchObject({ verdict: 'not-run', gap: 'A11' })
+    expect(judgeProbe(probe('P15'), m, null)).toMatchObject({ verdict: 'not-run' })
   })
 
   it('S7 is green with known gaps, and not with a difference or a skip', () => {
@@ -601,7 +630,7 @@ describe('S7: the isolation table', () => {
     })
     const s7 = judgeIsolation(good)
     expect(s7.status).toBe('pass')
-    expect(s7.facts).toContainEqual(['gaps named', 'A12 .23 .24 A11'])
+    expect(s7.facts).toContainEqual(['gaps named', '.23 .24'])
     expect(judgeIsolation([...good, judgeProbe(probe('P1'), m, { status: 200, marker: null })]).status).toBe('fail')
     expect(judgeIsolation([...good, judgeProbe(probe('P1'), m, null)]).status).toBe('fail')
   })

@@ -226,7 +226,7 @@ describe('found by shape', () => {
     expect(sites('lib/x.ts', "await db\n  .from('event_manager_assignments')\n  .select('event_slug')\n  .eq('a', b)")).toEqual({ roleTableRead: 1 })
     expect(sites('lib/x.ts', "db.from('admin_duties').delete().eq('a', b); db.from('admin_duties').upsert(r)")).toEqual({})
     expect(sites('lib/x.ts', "db.from('members').select('id')")).toEqual({})
-    expect(sites('app/api/admin/event-managers/route.ts', "db.from('event_manager_assignments').select('id')")).toEqual({})
+    expect(sites('lib/event-manager.ts', "db.from('event_manager_assignments').select('id')")).toEqual({})
     expect(sites('lib/x.ts', "const q = db.from('admin_duties'); q.select('scopes')")).toEqual({ roleTableRead: 1 })
     expect(sites('lib/x.ts', "const T = 'admin_duties'; db.from(T).select('scopes')")).toEqual({ roleTableRead: 1 })
     expect(sites('lib/x.ts', "const q = db.from('members'); q.select('id')")).toEqual({})

@@ -1,9 +1,8 @@
 import { auth } from '@clerk/nextjs/server'
-import { hasCapability } from '@/lib/authz'
+import { hasCapability, isStellrAdmin } from '@/lib/authz'
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import { supabaseServer } from '@/lib/supabase'
-import { isAdminClaims } from '@/lib/admin-auth'
 import { withAudit } from '@/lib/audit/route'
 import { adminAuditSubject, noteAuditSubject } from '@/lib/audit/route-subject'
 import { tiptapToEmailHtml } from '@/lib/email-render'
@@ -45,8 +44,7 @@ export const POST = withAudit(
 )
 
 async function createTemplate(req: Request) {
-  const { sessionClaims } = await auth()
-  if (!isAdminClaims(sessionClaims)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  if (!(await isStellrAdmin({ route: '/api/admin/email/templates' }))) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
   const parsed = createSchema.safeParse(await req.json().catch(() => null))
   if (!parsed.success) return NextResponse.json({ error: 'Invalid request' }, { status: 400 })

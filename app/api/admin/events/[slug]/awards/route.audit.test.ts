@@ -2,6 +2,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { fakeSupabase, type FakeDb } from '@/test/fake-supabase'
 import { sanitizeMetadata } from '@/lib/audit/platform'
+import { STELLR_TENANT_ID } from '@/lib/tenancy/constants'
+import { eventRouteFor, eventRouteRefused } from '@/test/fixtures/event-route'
 
 // The event routes a Stellr Staff member or an event manager writes through
 // requireEventAccess (Staff role P3/P4, GATE-AUDIT): judging, badge and certificate
@@ -9,6 +11,11 @@ import { sanitizeMetadata } from '@/lib/audit/platform'
 // audit event naming the caller requireEventAccess verified, on the chain of the event's
 // owner (from the events mirror), with enums, ids and counts as metadata: never a
 // student's name, a credential's wording, a check-in code or a link.
+//
+// S5 wave 8, C19a and C19b: the judging, artwork and credentials routes check through lib/authz
+// requireEventRoute and are Stellr-only for other tenants (decision W7-9), so on a tenant's
+// event they refuse and record nothing. Their events below are on a Stellr event (h.owner),
+// on Stellr's chain, the tenant requireEventRoute placed the event in.
 
 const SLUG = 'tenant-event-2027'
 const OWNER = '11111111-1111-4111-8111-111111111111'
@@ -23,6 +30,8 @@ const h = vi.hoisted(() => ({
   afters: [] as Array<() => Promise<unknown>>,
   audits: [] as Array<Record<string, unknown>>,
   access: { ok: true, userId: 'user_managerplaceholder', isAdmin: false, assignedSlugs: ['tenant-event-2027'] } as Record<string, unknown>,
+  /** SLUG's owner in the events mirror. */
+  owner: '11111111-1111-4111-8111-111111111111',
 }))
 
 vi.mock('next/server', async (orig) => ({
@@ -39,7 +48,14 @@ vi.mock('@/lib/audit/platform', async (orig) => ({
   },
 }))
 vi.mock('@/lib/events/mirror', () => ({
-  getMirroredEvent: async (slug: string) => ({ slug, tenant_id: slug === 'tenant-event-2027' ? '11111111-1111-4111-8111-111111111111' : '77777777-7777-4777-8777-777777777777' }),
+  getMirroredEvent: async (slug: string) => ({ slug, tenant_id: slug === 'tenant-event-2027' ? h.owner : '77777777-7777-4777-8777-777777777777' }),
+}))
+// requireEventRoute answers as requireEventAccess does here: the same caller, let in or refused,
+// in Stellr's scope (the default AUTHZ_SOURCE and LOADSCOPED_MODE).
+vi.mock('@/lib/authz', async (orig) => ({
+  ...(await orig<typeof import('@/lib/authz')>()),
+  requireEventRoute: async (slug: string) =>
+    h.access.ok ? { ...eventRouteFor(slug), userId: h.access.userId, isAdmin: false } : eventRouteRefused(h.access.status as 401 | 403),
 }))
 vi.mock('@clerk/nextjs/server', () => ({ auth: async () => ({ userId: 'user_someoneelse' }) }))
 vi.mock('@/lib/event-access', () => ({ requireEventAccess: async () => h.access }))
@@ -97,6 +113,12 @@ const flush = async () => {
 }
 const recorded = () => h.audits.map((a) => ({ action: a.action, tenantId: a.tenantId, actor: a.actor, target: a.target, metadata: a.metadata }))
 const common = { tenantId: OWNER, actor: CALLER }
+/** The C19a and C19b routes' events: a Stellr event, on Stellr's chain. */
+const stellr = { tenantId: STELLR_TENANT_ID, actor: CALLER }
+const stellrEvent = () => {
+  h.owner = STELLR_TENANT_ID
+  h.db.table('events')[0].tenant_id = STELLR_TENANT_ID
+}
 
 beforeEach(() => {
   vi.unstubAllEnvs()
@@ -104,7 +126,9 @@ beforeEach(() => {
   h.afters = []
   h.audits = []
   h.access = { ok: true, userId: CALLER, isAdmin: false, assignedSlugs: [SLUG] }
+  h.owner = OWNER
   h.db = fakeSupabase({
+    events: [{ slug: SLUG, tenant_id: OWNER }],
     event_badge_templates: [{ id: TEMPLATE, event_slug: SLUG, format: 'avery_5392', audience: 'everyone', company_id: null, artwork_path: 'event-artwork/b.png' }],
     event_certificate_templates: [{ event_slug: SLUG, award_type: 'participation', artwork_path: 'event-artwork/x.png' }],
     event_settings: [{ event_slug: SLUG, check_in_token: 'placeholder-token', check_in_open: false }],
@@ -123,12 +147,13 @@ beforeEach(() => {
 
 describe('judging', () => {
   it('a change records which one, the award and the student id, never a name', async () => {
+    stellrEvent()
     const res = await awards.PUT(send('PUT', 'awards', { action: 'remove', awardType: 'norm_chaffee', participantId: STUDENT }), ctx)
     expect(res.status).toBe(200)
     await flush()
     expect(recorded()).toEqual([
       {
-        ...common,
+        ...stellr,
         action: 'event.awards.assign',
         target: { table: 'event_award_assignments', id: null },
         metadata: { event_slug: SLUG, award_action: 'remove', award_type: 'norm_chaffee', participant_id: STUDENT, status: 200 },
@@ -143,10 +168,18 @@ describe('judging', () => {
     await flush()
     expect(h.audits).toEqual([])
   })
+
+  it('on a tenant’s event a change and an issue run are refused and record nothing (C19b)', async () => {
+    expect((await awards.PUT(send('PUT', 'awards', { action: 'remove', awardType: 'norm_chaffee', participantId: STUDENT }), ctx)).status).toBe(404)
+    expect((await issue.POST(send('POST', 'awards/issue'), ctx)).status).toBe(404)
+    await flush()
+    expect(h.audits).toEqual([])
+  })
 })
 
 describe('badge and certificate artwork', () => {
-  it('each save and delete records one event on the owner’s chain', async () => {
+  it('each save and delete records one event on the chain of the tenant the check placed the event in', async () => {
+    stellrEvent()
     expect((await badges.PUT(send('PUT', 'badge-templates', { format: 'avery_5392', audience: 'everyone' }), ctx)).status).toBe(200)
     expect((await badges.DELETE(send('DELETE', `badge-templates?id=${TEMPLATE}`), ctx)).status).toBe(200)
     expect((await certificates.PUT(send('PUT', 'certificate-templates', { awardType: 'participation' }), ctx)).status).toBe(200)
@@ -155,25 +188,37 @@ describe('badge and certificate artwork', () => {
     const badge = { table: 'event_badge_templates', id: TEMPLATE }
     const certificate = { table: 'event_certificate_templates', id: null }
     expect(recorded()).toEqual([
-      { ...common, action: 'event.badge_template.save', target: badge, metadata: { event_slug: SLUG, format: 'avery_5392', audience: 'everyone', status: 200 } },
-      { ...common, action: 'event.badge_template.delete', target: badge, metadata: { event_slug: SLUG, status: 200 } },
-      { ...common, action: 'event.certificate_template.save', target: certificate, metadata: { event_slug: SLUG, award_type: 'participation', status: 200 } },
-      { ...common, action: 'event.certificate_template.delete', target: certificate, metadata: { event_slug: SLUG, award_type: 'participation', status: 200 } },
+      { ...stellr, action: 'event.badge_template.save', target: badge, metadata: { event_slug: SLUG, format: 'avery_5392', audience: 'everyone', status: 200 } },
+      { ...stellr, action: 'event.badge_template.delete', target: badge, metadata: { event_slug: SLUG, status: 200 } },
+      { ...stellr, action: 'event.certificate_template.save', target: certificate, metadata: { event_slug: SLUG, award_type: 'participation', status: 200 } },
+      { ...stellr, action: 'event.certificate_template.delete', target: certificate, metadata: { event_slug: SLUG, award_type: 'participation', status: 200 } },
     ])
+  })
+
+  it('on a tenant’s event each save and delete is refused, writes nothing and records nothing (C19a)', async () => {
+    const before = JSON.stringify([h.db.table('event_badge_templates'), h.db.table('event_certificate_templates')])
+    expect((await badges.PUT(send('PUT', 'badge-templates', { format: 'avery_5392', audience: 'everyone' }), ctx)).status).toBe(404)
+    expect((await badges.DELETE(send('DELETE', `badge-templates?id=${TEMPLATE}`), ctx)).status).toBe(404)
+    expect((await certificates.PUT(send('PUT', 'certificate-templates', { awardType: 'participation' }), ctx)).status).toBe(404)
+    expect((await certificates.DELETE(send('DELETE', 'certificate-templates?awardType=participation'), ctx)).status).toBe(404)
+    await flush()
+    expect(h.audits).toEqual([])
+    expect(JSON.stringify([h.db.table('event_badge_templates'), h.db.table('event_certificate_templates')])).toBe(before)
   })
 })
 
 describe('participation credentials', () => {
   it('the wording saved, and a run’s counts, never a name or the wording itself', async () => {
+    stellrEvent()
     expect((await credentials.PATCH(send('PATCH', 'credentials', { credential_title: 'Free text title', audience: 'students' }), ctx)).status).toBe(200)
     const run = await credentials.POST(send('POST', 'credentials', { mode: 'checked_in' }), ctx)
     expect(run.status).toBe(200)
     expect(await run.json()).toMatchObject({ considered: 1, created: 1, emailed: 1 })
     await flush()
     expect(recorded()).toEqual([
-      { ...common, action: 'event.credentials.configure', target: { table: 'event_settings', id: null }, metadata: { event_slug: SLUG, audience: 'students', status: 200 } },
+      { ...stellr, action: 'event.credentials.configure', target: { table: 'event_settings', id: null }, metadata: { event_slug: SLUG, audience: 'students', status: 200 } },
       {
-        ...common,
+        ...stellr,
         action: 'event.credentials.issue',
         target: { table: 'credentials', id: null },
         metadata: { event_slug: SLUG, audience: 'students', mode: 'checked_in', considered: 1, created: 1, existing: 0, notified: 1, skipped: 0, failed: 0, status: 200 },
@@ -181,29 +226,45 @@ describe('participation credentials', () => {
     ])
     expect(JSON.stringify(h.audits)).not.toMatch(/Free text|Sam|example\.test/)
   })
+
+  it('on a tenant’s event the wording and a run are refused and record nothing (W7-9, C19a)', async () => {
+    expect((await credentials.PATCH(send('PATCH', 'credentials', { credential_title: 'Free text title', audience: 'students' }), ctx)).status).toBe(404)
+    expect((await credentials.POST(send('POST', 'credentials', { mode: 'checked_in' }), ctx)).status).toBe(404)
+    await flush()
+    expect(h.audits).toEqual([])
+    expect(h.db.table('event_settings')[0]).not.toHaveProperty('credential_title')
+  })
 })
 
 describe('the check-in desk', () => {
   it('a manual check-in names the participant and the tap', async () => {
+    stellrEvent()
     expect((await desk.POST(send('POST', 'check-in', { action: 'manual', participantId: STUDENT }), ctx)).status).toBe(200)
     await flush()
     expect(recorded()).toEqual([
-      { ...common, action: 'event.check_in.desk_action', target: { table: 'participants', id: STUDENT }, metadata: { event_slug: SLUG, desk_action: 'manual', status: 200 } },
+      { ...stellr, action: 'event.check_in.desk_action', target: { table: 'participants', id: STUDENT }, metadata: { event_slug: SLUG, desk_action: 'manual', status: 200 } },
     ])
   })
 
   it('regenerating the code records the tap and never the new token', async () => {
+    stellrEvent()
     expect((await desk.POST(send('POST', 'check-in', { action: 'regenerate' }), ctx)).status).toBe(200)
     await flush()
     expect(recorded()).toEqual([
-      { ...common, action: 'event.check_in.desk_action', target: { table: 'participants', id: null }, metadata: { event_slug: SLUG, desk_action: 'regenerate', status: 200 } },
+      { ...stellr, action: 'event.check_in.desk_action', target: { table: 'participants', id: null }, metadata: { event_slug: SLUG, desk_action: 'regenerate', status: 200 } },
     ])
     const token = h.db.table('event_settings')[0].check_in_token as string
     expect(JSON.stringify(h.audits)).not.toContain(token)
   })
 
   it('an unknown tap is refused and records nothing', async () => {
+    stellrEvent()
     expect((await desk.POST(send('POST', 'check-in', { action: 'teleport' }), ctx)).status).toBe(400)
+    await flush()
+    expect(h.audits).toEqual([])
+  })
+  it('on a tenant’s event a desk tap is refused and records nothing (C19c)', async () => {
+    expect((await desk.POST(send('POST', 'check-in', { action: 'manual', participantId: STUDENT }), ctx)).status).toBe(404)
     await flush()
     expect(h.audits).toEqual([])
   })
@@ -227,12 +288,14 @@ describe('every event route’s metadata survives the real sanitiser', () => {
   })
 
   it('judging: a change', async () => {
+    stellrEvent()
     expect((await awards.PUT(send('PUT', 'awards', { action: 'remove', awardType: 'norm_chaffee', participantId: STUDENT }), ctx)).status).toBe(200)
     await flush()
     survives()
   })
 
   it('judging: issuing the awards records the emailed count as notified', async () => {
+    stellrEvent()
     expect((await issue.POST(send('POST', 'awards/issue'), ctx)).status).toBe(200)
     await flush()
     survives()
@@ -240,6 +303,7 @@ describe('every event route’s metadata survives the real sanitiser', () => {
   })
 
   it('badge and certificate artwork: save and delete', async () => {
+    stellrEvent()
     expect((await badges.PUT(send('PUT', 'badge-templates', { format: 'avery_5392', audience: 'everyone' }), ctx)).status).toBe(200)
     expect((await badges.DELETE(send('DELETE', `badge-templates?id=${TEMPLATE}`), ctx)).status).toBe(200)
     expect((await certificates.PUT(send('PUT', 'certificate-templates', { awardType: 'participation' }), ctx)).status).toBe(200)
@@ -249,6 +313,7 @@ describe('every event route’s metadata survives the real sanitiser', () => {
   })
 
   it('participation credentials: configure, and the students and mentors runs', async () => {
+    stellrEvent()
     expect((await credentials.PATCH(send('PATCH', 'credentials', { credential_title: 'Free text title', audience: 'students' }), ctx)).status).toBe(200)
     expect((await credentials.POST(send('POST', 'credentials', { mode: 'checked_in' }), ctx)).status).toBe(200)
     expect((await credentials.POST(send('POST', 'credentials', { audience: 'mentors' }), ctx)).status).toBe(200)
@@ -259,6 +324,7 @@ describe('every event route’s metadata survives the real sanitiser', () => {
   })
 
   it('the check-in desk: a manual check-in and a regenerated code', async () => {
+    stellrEvent()
     expect((await desk.POST(send('POST', 'check-in', { action: 'manual', participantId: STUDENT }), ctx)).status).toBe(200)
     expect((await desk.POST(send('POST', 'check-in', { action: 'regenerate' }), ctx)).status).toBe(200)
     await flush()
@@ -275,6 +341,8 @@ describe('the chain follows the slug requireEventAccess verified, not the URL', 
     new Request(`https://app.test/api/admin/events/${urlSlug}/${path}`, { method, ...(body === undefined ? {} : { body: JSON.stringify(body) }) })
   const chains = () => h.audits.map((a) => ({ action: a.action, tenantId: a.tenantId, event_slug: (a.metadata as Record<string, unknown>).event_slug }))
   const verified = (action: string) => ({ action, tenantId: OWNER, event_slug: SLUG })
+  // C19a's and C19b's routes, on a Stellr event: the tenant requireEventRoute placed it in.
+  const placed = (action: string) => ({ action, tenantId: STELLR_TENANT_ID, event_slug: SLUG })
 
   for (const [label, urlSlug] of [
     ['a URL slug in another case', 'TENANT-EVENT-2027'],
@@ -284,36 +352,41 @@ describe('the chain follows the slug requireEventAccess verified, not the URL', 
       const req = at(urlSlug)
 
       it('judging: a change', async () => {
+        stellrEvent()
         expect((await awards.PUT(req('PUT', 'awards', { action: 'remove', awardType: 'norm_chaffee', participantId: STUDENT }), ctx)).status).toBe(200)
         await flush()
-        expect(chains()).toEqual([verified('event.awards.assign')])
+        expect(chains()).toEqual([placed('event.awards.assign')])
       })
 
       it('judging: issuing the awards', async () => {
+        stellrEvent()
         expect((await issue.POST(req('POST', 'awards/issue'), ctx)).status).toBe(200)
         await flush()
-        expect(chains()).toEqual([verified('event.awards.issue')])
+        expect(chains()).toEqual([placed('event.awards.issue')])
       })
 
       it('badge artwork: save and delete', async () => {
+        stellrEvent()
         expect((await badges.PUT(req('PUT', 'badge-templates', { format: 'avery_5392', audience: 'everyone' }), ctx)).status).toBe(200)
         expect((await badges.DELETE(req('DELETE', `badge-templates?id=${TEMPLATE}`), ctx)).status).toBe(200)
         await flush()
-        expect(chains()).toEqual([verified('event.badge_template.save'), verified('event.badge_template.delete')])
+        expect(chains()).toEqual([placed('event.badge_template.save'), placed('event.badge_template.delete')])
       })
 
       it('certificate artwork: save and delete', async () => {
+        stellrEvent()
         expect((await certificates.PUT(req('PUT', 'certificate-templates', { awardType: 'participation' }), ctx)).status).toBe(200)
         expect((await certificates.DELETE(req('DELETE', 'certificate-templates?awardType=participation'), ctx)).status).toBe(200)
         await flush()
-        expect(chains()).toEqual([verified('event.certificate_template.save'), verified('event.certificate_template.delete')])
+        expect(chains()).toEqual([placed('event.certificate_template.save'), placed('event.certificate_template.delete')])
       })
 
       it('participation credentials: configure and issue', async () => {
+        stellrEvent()
         expect((await credentials.PATCH(req('PATCH', 'credentials', { credential_title: 'Free text title', audience: 'students' }), ctx)).status).toBe(200)
         expect((await credentials.POST(req('POST', 'credentials', { mode: 'checked_in' }), ctx)).status).toBe(200)
         await flush()
-        expect(chains()).toEqual([verified('event.credentials.configure'), verified('event.credentials.issue')])
+        expect(chains()).toEqual([placed('event.credentials.configure'), placed('event.credentials.issue')])
       })
     })
   }

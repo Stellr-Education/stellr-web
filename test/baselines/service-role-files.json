@@ -141,13 +141,13 @@
       "class": "convert",
       "reason": "auto: reaches tables it does not name (dynamic .from, rpc, or a client passed to a helper); review before converting; tables: survey_definitions"
     },
-    "app/(stellr)/(flow)/check-in/[slug]/code/page.tsx": {
+    "app/(stellr)/(flow)/check-in/[slug]/check-in-body.tsx": {
       "class": "convert",
-      "reason": "auto: touches tenant or event-scoped tables; tables: participants, registrations"
+      "reason": "Moved from check-in/[slug]/page.tsx (S5 wave 8, A12), unchanged: the participant check-in page body, shared with the tenant tree, whose pages check the event's owner first. auto: reaches tables it does not name (dynamic .from, rpc, or a client passed to a helper); review before converting"
     },
-    "app/(stellr)/(flow)/check-in/[slug]/page.tsx": {
+    "app/(stellr)/(flow)/check-in/[slug]/code/code-body.tsx": {
       "class": "convert",
-      "reason": "auto: reaches tables it does not name (dynamic .from, rpc, or a client passed to a helper); review before converting"
+      "reason": "Moved from check-in/[slug]/code/page.tsx (S5 wave 8, A12), unchanged: the check-in code page body, shared with the tenant tree, whose pages check the event's owner first. auto: touches tenant or event-scoped tables; tables: participants, registrations"
     },
     "app/(stellr)/(flow)/check-in/page.tsx": {
       "class": "convert",
@@ -523,7 +523,7 @@
     },
     "app/api/admin/event-managers/route.ts": {
       "class": "convert",
-      "reason": "auto: touches tenant or event-scoped tables; tables: event_manager_assignments"
+      "reason": "auto: reaches tables it does not name (dynamic .from, rpc, or a client passed to a helper); review before converting"
     },
     "app/api/admin/event-participations/[id]/route.ts": {
       "class": "convert",
@@ -551,7 +551,7 @@
     },
     "app/api/admin/events/[slug]/awards/route.ts": {
       "class": "convert",
-      "reason": "auto: touches tenant or event-scoped tables; tables: event_award_assignments, event_settings"
+      "reason": "auto: reaches tables it does not name (dynamic .from, rpc, or a client passed to a helper); review before converting"
     },
     "app/api/admin/events/[slug]/background-reports/route.ts": {
       "class": "convert",
@@ -563,7 +563,7 @@
     },
     "app/api/admin/events/[slug]/badge-templates/route.ts": {
       "class": "convert",
-      "reason": "auto: touches tenant or event-scoped tables; tables: event_badge_templates, event_companies"
+      "reason": "auto: reaches tables it does not name (dynamic .from, rpc, or a client passed to a helper); review before converting"
     },
     "app/api/admin/events/[slug]/badges/route.ts": {
       "class": "convert",
@@ -575,7 +575,7 @@
     },
     "app/api/admin/events/[slug]/certificate-templates/route.ts": {
       "class": "convert",
-      "reason": "auto: touches tenant or event-scoped tables; tables: event_certificate_templates"
+      "reason": "auto: reaches tables it does not name (dynamic .from, rpc, or a client passed to a helper); review before converting"
     },
     "app/api/admin/events/[slug]/certificates/route.ts": {
       "class": "convert",
@@ -583,7 +583,7 @@
     },
     "app/api/admin/events/[slug]/check-in/route.ts": {
       "class": "convert",
-      "reason": "auto: touches tenant or event-scoped tables; tables: event_settings, members, participants, registrations, store_order_items"
+      "reason": "auto: reaches tables it does not name (dynamic .from, rpc, or a client passed to a helper); review before converting"
     },
     "app/api/admin/events/[slug]/companies/route.ts": {
       "class": "convert",
@@ -591,7 +591,7 @@
     },
     "app/api/admin/events/[slug]/credentials/route.ts": {
       "class": "convert",
-      "reason": "auto: touches tenant or event-scoped tables; tables: credentials, event_settings, participants, registrations"
+      "reason": "auto: reaches tables it does not name (dynamic .from, rpc, or a client passed to a helper); review before converting"
     },
     "app/api/admin/events/[slug]/docusign-reissue/route.ts": {
       "class": "convert",
@@ -839,7 +839,7 @@
     },
     "app/api/admin/scholarships/[id]/refund/route.ts": {
       "class": "convert",
-      "reason": "auto: touches tenant or event-scoped tables; tables: scholarship_applications"
+      "reason": "auto: reaches tables it does not name (dynamic .from, rpc, or a client passed to a helper); review before converting"
     },
     "app/api/admin/scholarships/[id]/resend/route.ts": {
       "class": "convert",
@@ -847,7 +847,7 @@
     },
     "app/api/admin/scholarships/[id]/route.ts": {
       "class": "convert",
-      "reason": "auto: touches tenant or event-scoped tables; tables: scholarship_applications"
+      "reason": "auto: reaches tables it does not name (dynamic .from, rpc, or a client passed to a helper); review before converting"
     },
     "app/api/admin/schools/[id]/route.ts": {
       "class": "platform",
@@ -895,7 +895,7 @@
     },
     "app/api/check-in/route.ts": {
       "class": "convert",
-      "reason": "auto: touches tenant or event-scoped tables; tables: event_settings, participants, registrations"
+      "reason": "auto: touches tenant or event-scoped tables; tables: event_settings, events, participants, registrations"
     },
     "app/api/community/coaching/manage/route.ts": {
       "class": "convert",
@@ -1071,7 +1071,7 @@
     },
     "app/api/cron/group-invoice-sync/route.ts": {
       "class": "convert",
-      "reason": "auto: reaches tables it does not name (dynamic .from, rpc, or a client passed to a helper); review before converting"
+      "reason": "auto: touches tenant or event-scoped tables; tables: registration_addons, registrations"
     },
     "app/api/cron/hubspot-event-options/route.ts": {
       "class": "convert",
@@ -1135,7 +1135,7 @@
     },
     "app/api/members/billing/route.ts": {
       "class": "convert",
-      "reason": "auto: touches tenant or event-scoped tables; tables: account_credits, event_refunds, group_invoices, participants, registrations"
+      "reason": "auto: touches tenant or event-scoped tables; tables: event_refunds, group_invoices, participants, registrations"
     },
     "app/api/members/compliance/document/route.ts": {
       "class": "convert",
@@ -1431,7 +1431,7 @@
     },
     "lib/admin-digest.ts": {
       "class": "convert",
-      "reason": "auto: touches tenant or event-scoped tables; tables: agreements, chat_messages, coaching_requests, cohort_members, community_comments, community_posts (+12)"
+      "reason": "auto: touches tenant or event-scoped tables; tables: agreements, chat_messages, coaching_requests, cohort_members, community_comments, community_posts (+13)"
     },
     "lib/app-errors.ts": {
       "class": "convert",
@@ -1491,7 +1491,7 @@
     },
     "lib/deletion/execute.ts": {
       "class": "convert",
-      "reason": "auto: touches tenant or event-scoped tables; tables: member_pending_consent, participants, registrations, tenant_guardian_consents"
+      "reason": "auto: touches tenant or event-scoped tables; tables: deletion_archive, member_pending_consent, participants, registrations, tenant_guardian_consents"
     },
     "lib/deletion/external.ts": {
       "class": "convert",
@@ -1511,7 +1511,7 @@
     },
     "lib/entitlements.ts": {
       "class": "convert",
-      "reason": "auto: touches tenant or event-scoped tables; tables: entitlements.bookings, entitlements.discounts, entitlements.entitlements, entitlements.offerings, entitlements.tier_benefits, entitlements.tiers (+3)"
+      "reason": "auto: touches tenant or event-scoped tables; tables: entitlements.bookings, entitlements.discounts, entitlements.entitlements, entitlements.offerings, entitlements.tier_benefits, entitlements.tiers (+2)"
     },
     "lib/event-access.ts": {
       "class": "convert",
@@ -1524,6 +1524,10 @@
     "lib/event-portal.ts": {
       "class": "convert",
       "reason": "auto: touches tenant or event-scoped tables; tables: cohort_members, community_resources, community_space_sources, community_spaces"
+    },
+    "lib/events/stellr-owner.ts": {
+      "class": "convert",
+      "reason": "Stellr's side of the tenant tree's requireTenantEvent (S5 wave 8, K11 canary probe P4). Reads one event's tenant_id from the events mirror by slug for a signed-out visitor on Stellr's public and registration pages, through loadEventTenantId (lib/authz/principal.ts, C20c's read), so another tenant's event answers as not found. It reads the owner to decide whose record it is, so a tenantDb client can't be used yet; reads only, no write."
     },
     "lib/field-crypto-shadow.ts": {
       "class": "convert",
@@ -1562,8 +1566,8 @@
       "reason": "auto: touches tenant or event-scoped tables; tables: member_memberships, members, membership_tiers, participants, registrations, tier_grant_rules"
     },
     "lib/mentions.ts": {
-      "class": "identity",
-      "reason": "auto: no tenant or event-scoped table, classed by its identity tables; tables: member_directory_prefs, members"
+      "class": "stellr_only",
+      "reason": "auto: no tenant or event-scoped table, classed by its stellr_only tables; tables: member_directory_prefs, member_memberships, members"
     },
     "lib/mentoring.ts": {
       "class": "convert",
@@ -1673,9 +1677,9 @@
       "class": "convert",
       "reason": "auto: touches tenant or event-scoped tables; tables: community_space_roles, community_space_sources, community_space_tiers, community_spaces, registrations"
     },
-    "lib/tenancy/host.ts": {
+    "lib/tenancy/event-origin.ts": {
       "class": "convert",
-      "reason": "The tenant host resolver (S5 B1) reads the host map over raw PostgREST with the secret key, because it runs in the proxy on the Edge before any tenant is known and supabase-js is not Edge-safe there. Inert until TENANT_ROUTING_ENABLED and the proxy wiring land. Class left at the conservative convert until a person reviews it."
+      "reason": "S5 wave 8 A12: reads the event's owner (events mirror) and the tenant's primary host (tenant_domains) to build participant links on the event's own host. Server-only, no request input reaches the tenant id. Only when TENANT_ROUTING_ENABLED is on; off, it reads nothing."
     },
     "lib/tenancy/tenant-records.ts": {
       "class": "convert",
@@ -1691,7 +1695,7 @@
     },
     "lib/training-admin.ts": {
       "class": "convert",
-      "reason": "auto: touches tenant or event-scoped tables; tables: cohort_members, cohort_training_links, community_space_members, community_spaces, course_object_assignments, mentoring_cohorts (+7)"
+      "reason": "auto: touches tenant or event-scoped tables; tables: cohort_members, cohort_training_links, community_space_members, community_spaces, course_object_assignments, member_memberships (+8)"
     },
     "lib/training-portal.ts": {
       "class": "convert",
@@ -1819,7 +1823,7 @@
     },
     "scripts/survey-seed-dev.ts": {
       "class": "script",
-      "reason": "auto: operator script, run by hand; tables: agreement_recipients, agreements, esign_templates, event_participations, members, participants (+3)"
+      "reason": "auto: operator script, run by hand; tables: agreement_recipients, agreements, esign_templates, event_participations, events, members (+4)"
     },
     "scripts/sync-event-spaces.ts": {
       "class": "script",

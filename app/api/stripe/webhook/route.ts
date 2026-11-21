@@ -24,6 +24,7 @@ import { reportError } from '@/lib/app-errors'
 import { withAudit } from '@/lib/audit/route'
 import { noteWebhook, stripeEventNote, webhookAudit, webhookEvent } from '@/lib/audit/webhook'
 import { isCheckoutInvoice } from '@/lib/payments/checkout-invoice'
+import { eventSiteOrigin } from '@/lib/tenancy/event-origin'
 
 // Formats a Stripe minor-unit amount as " ($60.00)" for activity-log summaries.
 function fmtMoney(amount: number | null | undefined, currency: string | null | undefined): string {
@@ -200,13 +201,15 @@ async function markIndividualPayment(registrationId: string, seat: SeatSelector)
   if (participant && reg) {
     const p = participant as { id: string; first_name: string; last_name: string; email: string; membership_id: string }
     const r = reg as { event_title: string; event_slug: string }
+    // S5 wave 8, A12: the check-in link opens on the event's own host.
+    const origin = await eventSiteOrigin(r.event_slug)
     const emailContent = individualConfirmationEmail({
       firstName: p.first_name,
       lastName: p.last_name,
       membershipId: p.membership_id,
       eventTitle: r.event_title,
       registrationId,
-      checkInCodeUrl: checkInCodeLink(r.event_slug, 'p', p.id) ?? undefined,
+      checkInCodeUrl: checkInCodeLink(r.event_slug, 'p', p.id, origin) ?? undefined,
     })
     await sendEmail({ to: p.email, ...emailContent })
   }

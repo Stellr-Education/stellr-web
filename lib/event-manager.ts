@@ -41,6 +41,8 @@ import { sendEmail } from '@/lib/email'
 import { emailLayout, escapeHtml as esc } from '@/lib/email-layout'
 import { AUTH_APP_URL } from '@/lib/env'
 import { activeAssignmentFilter, isAssignmentActive } from '@/lib/event-manager-active'
+import type { StellrOnlyDb } from '@/lib/events/admin-records'
+import { stellrRows } from '@/lib/tenancy/stellr-scope'
 
 export const EVENT_MANAGER_GRACE_DAYS = 30
 /** An override may run at most this many days past the later of today and the event's last day. */
@@ -51,6 +53,23 @@ const TABLE = 'event_manager_assignments'
 // ── Active rows ─────────────────────────────────────────────────────────────
 
 export { activeAssignmentFilter, isAssignmentActive }
+
+// ── The admin list ──────────────────────────────────────────────────────────
+
+/**
+ * Stellr's assignments, oldest first, for one event or every event: GET
+ * app/api/admin/event-managers. That route became tenant_crew in S5 wave 9 (C21), which
+ * holds it off a direct .from(), and is Stellr-only for other tenants until the owner
+ * settles who may grant the role in a tenant. So this takes a StellrOnlyDb, which only
+ * stellrOnlyDb hands out in Stellr's scope, and keeps the list to Stellr's rows (and rows
+ * with no tenant yet), so a list across events shows no other tenant's assignments.
+ */
+export function listEventManagerAssignments(db: StellrOnlyDb, eventSlug: string | null) {
+  const query = stellrRows(
+    db.from(TABLE).select('id, clerk_user_id, event_slug, expires_at, created_at').order('created_at', { ascending: true }),
+  )
+  return eventSlug ? query.eq('event_slug', eventSlug) : query
+}
 
 // ── Dates ───────────────────────────────────────────────────────────────────
 

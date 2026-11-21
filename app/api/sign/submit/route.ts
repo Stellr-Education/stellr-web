@@ -3,6 +3,8 @@ import { submitSignature } from '@/lib/esign/native/flow'
 import { parseSignatureImage } from '@/lib/esign/native/signature-image'
 import { sendInvites } from '@/lib/esign/outbox'
 import { actingSession, invalidLink, json, readJson, requestMeta, sameOrigin, throttle } from '@/lib/esign/native/http'
+import { withAudit } from '@/lib/audit/route'
+import { noteSigner, signerEvent } from '../audit'
 
 // POST /api/sign/submit — the signature. Records the signer's field values and
 // typed name, then either emails the next signer (a student, after their
@@ -10,13 +12,14 @@ import { actingSession, invalidLink, json, readJson, requestMeta, sameOrigin, th
 
 export const maxDuration = 60
 
-export async function POST(req: Request) {
+export const POST = withAudit(({ args: [req] }: { args: [Request] }) => ({ action: 'esign.signer.submit' as const, ...signerEvent(req) }), async (req: Request) => {
   const limited = await throttle(req, 'submit', 10)
   if (limited) return limited
   if (!sameOrigin(req)) return json({ error: 'Forbidden' }, 403)
   const db = supabaseServer()
   const ctx = await actingSession(db, req, 'act')
   if (!ctx) return invalidLink()
+  noteSigner(req, ctx)
 
   // Room for a drawn signature (at most ~200 KB as base64) on top of the fields.
   const body = await readJson<{ values?: unknown; signature?: unknown; confirmDifferentName?: unknown; signatureImage?: unknown }>(req, 260_000)
@@ -48,6 +51,7 @@ export async function POST(req: Request) {
   }
   if (!result.ok) return json({ error: result.error, fieldErrors: result.fieldErrors, nameOnRecord: result.nameOnRecord }, result.status)
 
+  noteSigner(req, ctx, { agreement_complete: result.agreementComplete })
   if (result.activated.length) await sendInvites(db, result.activated)
   return json({ ok: true, complete: result.agreementComplete })
-}
+})

@@ -435,29 +435,64 @@ export function birthDateForAge(eventStartsOn: string, years: number): string {
 export const CANARY_SCHOOL_NAME = 'Dev Canary Test School'
 
 /**
- * What the runner posts to register/individual: the fields the gate requires, and a
- * guardian as the emergency contact for a minor. Nothing optional is guessed at.
+ * A fictional number (555-01xx is reserved for fiction in the North American plan),
+ * for the registrant and a minor's guardian alike.
  */
-export type RegistrationBody = Pick<IndividualBody, 'event_slug' | 'first_name' | 'last_name' | 'school_name'> &
-  Partial<Pick<IndividualBody, 'emergency_contact_first_name' | 'emergency_contact_last_name' | 'emergency_contact_email' | 'emergency_contact_relationship'>> & {
+export const CANARY_PHONE = '+1 555 010 0199'
+
+/**
+ * What the runner posts to register/individual: what components/forms/
+ * IndividualRegistrationForm.tsx sends, with values from its own option lists
+ * (lib/registration-constants): phone, gender, T-shirt size, ethnicity and dietary
+ * requirements, the age bracket and event role the form derives from the registrant
+ * type, a grade for a student, no add-ons, and a guardian as a minor's emergency
+ * contact. The adult names no emergency contact, so the run has no address beyond
+ * its registrants and guardians; those columns are nullable and the gate does not ask.
+ */
+export type RegistrationBody = Pick<
+  IndividualBody,
+  'event_slug' | 'first_name' | 'last_name' | 'school_name' | 'phone' | 'grade' | 'gender' | 't_shirt_size' | 'age_bracket' | 'event_role'
+> &
+  Partial<
+    Pick<
+      IndividualBody,
+      'emergency_contact_first_name' | 'emergency_contact_last_name' | 'emergency_contact_email' | 'emergency_contact_phone' | 'emergency_contact_relationship'
+    >
+  > & {
     email: string
     date_of_birth: string
+    ethnicity: string[]
+    dietary_requirements: string[]
+    merch_addons: { variantId: string; qty: number }[]
   }
 
 /** The register/individual body for one of the run's people. */
 export function registrationBody(person: RunIdentity, eventSlug: string, eventStartsOn: string): RegistrationBody {
+  const student = person.age < 18
   return {
     event_slug: eventSlug,
     email: person.email,
     first_name: person.firstName,
     last_name: person.lastName,
+    phone: CANARY_PHONE,
     date_of_birth: birthDateForAge(eventStartsOn, person.age),
+    // The form sends '' for an adult, and a school grade for a student.
+    grade: student ? '10' : '',
+    gender: 'Other',
+    t_shirt_size: 'M',
+    ethnicity: ['Prefer Not To Say'],
+    dietary_requirements: ['None'],
     school_name: CANARY_SCHOOL_NAME,
+    // registrantTypeToAgeBracket and the form's event_role, for 'high_school' or 'adult'.
+    age_bracket: student ? 'High School' : 'Adult',
+    event_role: student ? 'School Student' : 'Adult',
+    merch_addons: [],
     ...(person.guardian
       ? {
           emergency_contact_first_name: person.guardian.firstName,
           emergency_contact_last_name: person.guardian.lastName,
           emergency_contact_email: person.guardian.email,
+          emergency_contact_phone: CANARY_PHONE,
           emergency_contact_relationship: person.guardian.relationship,
         }
       : {}),
@@ -725,11 +760,10 @@ export function judgeStellrUnchanged(input: {
  * known gap, not a failure. One that answers as the closed state says is reported
  * as differing, so the table is updated in the same change that closes the gap.
  */
-export type KnownGapId = 'A11' | 'A12' | '.23' | '.24'
+// A11 closed in #804 and A12 in its own PR (S5 wave 8): their probes now expect the closed state.
+export type KnownGapId = '.23' | '.24'
 
 export const KNOWN_GAPS: Record<KnownGapId, { owner: string; what: string }> = {
-  A11: { owner: 'slice A11', what: "e-sign participant side: dev-canary's signing link and envelope have no tenant check on Stellr's host" },
-  A12: { owner: 'slice A12', what: "check-in participant side: /check-in/<slug> answers for dev-canary's event on Stellr's host" },
   '.23': { owner: 'tracker s5-programme.23', what: 'the desk shows no "waiting for guardian consent" marker' },
   '.24': { owner: 'tracker s5-programme.24', what: 'a group check-in with one pending minor refuses the whole group' },
 }
@@ -764,7 +798,7 @@ export type Expectation =
       /** app_errors route labels a shadow mode is expected to write for this probe. */
       appErrorRoutes?: string[]
     }
-  | { notRun: true; gap: KnownGapId; reason: string }
+  | { notRun: true; gap?: KnownGapId; reason: string }
 
 export interface IsolationProbe {
   id: string
@@ -878,7 +912,8 @@ export const ISOLATION_PROBES: readonly IsolationProbe[] = [
     persona: 'anonymous',
     host: 'stellr',
     request: (c) => ({ method: 'GET', path: `/check-in/${c.canarySlug}` }),
-    expect: () => ({ status: 200, gap: 'A12' }),
+    // Closed by A12 (S5 wave 8): Stellr's check-in page is not found for another tenant's event.
+    expect: () => ({ status: 404 }),
   },
   {
     id: 'P7',
@@ -970,8 +1005,7 @@ export const ISOLATION_PROBES: readonly IsolationProbe[] = [
     request: () => null,
     expect: () => ({
       notRun: true,
-      gap: 'A11',
-      reason: "not probed: opening a signing link records a view on the guardian's envelope, and the runner never reads a signing token",
+      reason: "not probed: opening a signing link records a view on the guardian's envelope, and the runner never reads a signing token. Closed by A11 (#804): the signing APIs refuse another tenant's envelope on Stellr's host (test/idor/tenant-host-routes.test.ts)",
     }),
   },
   // The other direction of P4 and P5: a Stellr event through dev-canary's host. P17 is
@@ -1028,7 +1062,7 @@ export function describeExpectation(e: Expectation): string {
 export function judgeProbe(probe: IsolationProbe, m: RunMode, observed: ProbeObservation | null, skipReason?: string): ProbeOutcome {
   const e = probe.expect(m)
   const expected = describeExpectation(e)
-  if ('notRun' in e) return { id: probe.id, verdict: 'not-run', expected, observed: '-', gap: e.gap, note: e.reason }
+  if ('notRun' in e) return { id: probe.id, verdict: 'not-run', expected, observed: '-', gap: e.gap ?? null, note: e.reason }
   if (!observed) return { id: probe.id, verdict: 'skipped', expected, observed: '-', gap: e.gap ?? null, note: skipReason ?? 'not sent' }
   const seen = `${observed.status}${e.marker !== undefined ? `, marker ${observed.marker === null ? 'unreadable' : observed.marker ? 'yes' : 'no'}` : ''}`
   const matches = observed.status === e.status && (e.marker === undefined || observed.marker === e.marker)

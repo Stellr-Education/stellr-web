@@ -73,9 +73,6 @@
     "app/api/admin/community/training/modules/route.ts :: public.training_modules": {
       "reason": "Unfiltered when this ratchet started (s5-programme.29 follow-up). The training modules API lists every module for the admin editor. Filter with stellrRows together with the academy training editor."
     },
-    "app/api/admin/event-managers/route.ts :: public.event_manager_assignments": {
-      "reason": "Unfiltered when this ratchet started (s5-programme.29 follow-up). Lists event manager assignments, optionally for one event. Stays stellr_only until C21 (lib/security/stellr-only-dispositions.ts), which converts it or filters it."
-    },
     "app/api/admin/staff-settings/route.ts :: public.training_modules": {
       "reason": "Unfiltered when this ratchet started (s5-programme.29 follow-up). The Staff settings page offers every training module as the staff training module. Filter with stellrRows together with the academy training editor."
     },

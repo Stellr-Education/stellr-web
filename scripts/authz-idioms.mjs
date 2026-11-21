@@ -86,10 +86,10 @@ export const ROLE_TABLES = ['admin_duties', 'event_manager_assignments']
 
 /** Screens whose job is to show or edit a role table. A read here decides nothing, and it stays after C25. */
 export const ROLE_TABLE_MANAGERS = {
-  'app/api/admin/event-managers/route.ts': 'the screen that assigns event managers',
   'app/(stellr)/(admin)/admin/duties/page.tsx': 'lists duty scopes for editing',
   'app/(stellr)/(admin)/admin/competitions/[slug]/page.tsx': 'lists the managers assigned to the event being edited',
-  'lib/event-manager.ts': 'the service both assignment screens call to grant, change, remove and sweep event managers',
+  // The event-managers API lists through lib/event-manager.ts since C21 (S5 wave 9): its read is counted there.
+  'lib/event-manager.ts': 'the service both assignment screens call to grant, change, remove, list and sweep event managers',
 }
 
 const SKIP_FILE = /^scripts\/|\.stories\.[jt]sx?$|^lib\/authz(\.|\/)/

@@ -8,6 +8,7 @@ import { attachConsoleGuard } from '../fixtures/console-guard'
 import { freshClerkSession } from '../fixtures/fresh-session'
 import { expect, test } from '../fixtures/test'
 import { storageStatePath } from '../fixtures/users'
+import { mirrorE2eEvent, unmirrorE2eEvent } from '../fixtures/mirror-event'
 
 /**
  * Default artwork (30 Oct 2026): every event prints its theme's badges,
@@ -66,6 +67,7 @@ async function removeEventArtwork(slug: string) {
     const { error: rmError } = await bucket.remove(files.map((f) => `event-artwork/${slug}/${f.name}`))
     expect(rmError, `removing ${slug}'s artwork files: ${rmError?.message}`).toBeNull()
   }
+  await unmirrorE2eEvent(client, slug)
 }
 
 /** Open the defaults page (it loads Clerk) and check it is this run's server, not another host. */
@@ -125,8 +127,10 @@ test('the defaults page renders for an admin, each panel saying what every Space
 
 test.describe('an event without its own badge background', () => {
   let slug = ''
-  test.beforeEach(() => {
+  test.beforeEach(async () => {
     slug = `e2e-artwork-${randomBytes(4).toString('hex')}`
+    // S5 wave 8 (ENF prep): the event is in the mirror, so its templates derive Stellr's tenant.
+    await mirrorE2eEvent(db(), slug, `E2E Artwork ${slug.slice(-8)}`)
   })
   test.afterEach(async () => {
     if (slug) await removeEventArtwork(slug)

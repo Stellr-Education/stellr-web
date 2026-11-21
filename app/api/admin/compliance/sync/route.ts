@@ -1,7 +1,6 @@
 import { NextResponse } from 'next/server'
-import { auth } from '@clerk/nextjs/server'
+import { isStellrAdmin } from '@/lib/authz'
 import { supabaseServer } from '@/lib/supabase'
-import { isAdminClaims } from '@/lib/admin-auth'
 import { getBackgroundProvider } from '@/lib/background-provider'
 import { syncStaleChecks } from '@/lib/background-sync'
 import { withAudit } from '@/lib/audit/route'
@@ -21,8 +20,7 @@ export const POST = withAudit(
 )
 
 async function syncNow(req: Request) {
-  const { sessionClaims } = await auth()
-  if (!isAdminClaims(sessionClaims)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  if (!(await isStellrAdmin({ route: '/api/admin/compliance/sync' }))) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
   const provider = getBackgroundProvider()
   if (!provider.configured()) {

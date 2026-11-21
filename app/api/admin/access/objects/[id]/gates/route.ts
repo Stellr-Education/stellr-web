@@ -1,9 +1,8 @@
-import { auth } from '@clerk/nextjs/server'
+import { isStellrAdmin } from '@/lib/authz'
 import { NextResponse } from 'next/server'
 import { supabaseServer } from '@/lib/supabase'
 import { resolveAccessObject } from '@/lib/access-objects'
 import { accessGatesEnforced } from '@/lib/access-gates'
-import { isAdminClaims } from '@/lib/admin-auth'
 
 // /api/admin/access/objects/[id]/gates — the object's gate profile (payment ∧
 // DocuSign, the only enforced gates per decision D-F). Gates are DERIVED, not
@@ -13,8 +12,7 @@ import { isAdminClaims } from '@/lib/admin-auth'
 // lib/access-gates.ts via the roster rows.
 
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
-  const { sessionClaims } = await auth()
-  if (!isAdminClaims(sessionClaims)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  if (!(await isStellrAdmin({ route: '/api/admin/access/objects/[id]/gates' }))) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
   const { id } = await params
   const object = await resolveAccessObject(decodeURIComponent(id))

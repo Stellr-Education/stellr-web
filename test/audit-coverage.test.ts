@@ -136,11 +136,15 @@ describe('audit coverage', () => {
   })
 
   it('reports the GET handlers known to write', () => {
+    // Both audit since S5 wave 9, so they have left the baseline; the measurement still
+    // counts each as a GET that writes.
     for (const [file, method] of [
       ['app/api/registrations/[id]/spreadsheet/route.ts', 'update'],
       ['app/api/members/teams/[id]/route.ts', 'insert'],
     ]) {
-      expect(baseline.getMutations, method).toContain(`${file}#GET`)
+      const got = live.mutations.find((m: { key: string }) => m.key === `${file}#GET`)
+      expect(got, method).toMatchObject({ kind: 'get_mutation', audited: true })
+      expect(baseline.getMutations, method).not.toContain(`${file}#GET`)
     }
     // Writes only through an rpc. B16 audits it, so it has left the baseline, and the
     // measurement still counts it as a GET that writes.

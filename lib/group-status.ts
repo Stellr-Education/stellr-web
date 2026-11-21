@@ -5,6 +5,7 @@ import { classifyAgreement } from '@/lib/docusign'
 import { registrationPaid } from '@/lib/payment-status'
 import { resolveSpaceAudiences } from '@/lib/spaces'
 import { checkInCodeLink } from '@/lib/check-in-codes'
+import { eventSiteOrigin } from '@/lib/tenancy/event-origin'
 
 // The organiser's view of a group they registered: for each person, where
 // their agreement is, whether their Stellr account is in use, and whether they
@@ -110,13 +111,15 @@ export async function getOrganisedGroups(memberId: string, eventSlug: string): P
   const inSpace = new Set<string>()
   for (const entries of audiences.values()) for (const e of entries as Array<{ memberId: string }>) inSpace.add(e.memberId)
 
+  // S5 wave 8, A12: the group's check-in link opens on the event's own host.
+  const origin = await eventSiteOrigin(eventSlug)
   return rows.map((r) => ({
     registrationId: r.id,
     name: r.school_name || 'Your group',
     paid: registrationPaid({ invoiceRequested: r.invoice_requested, invoicePaidAt: r.invoice_paid_at, status: r.status }),
     invoiceRequested: !!r.invoice_requested,
     amountDueCents: r.amount_due_cents,
-    checkInCodeUrl: r.type === 'group' ? checkInCodeLink(eventSlug, 'g', r.id) : null,
+    checkInCodeUrl: r.type === 'group' ? checkInCodeLink(eventSlug, 'g', r.id, origin) : null,
     people: (r.participants ?? [])
       .map((p): GroupPersonStatus => {
         const env = agreementOf.get(p.id)

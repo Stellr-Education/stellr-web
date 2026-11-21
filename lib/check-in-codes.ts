@@ -46,13 +46,21 @@ export function checkInCodePath(slug: string, code: string): string {
   return `/check-in/${slug}/code?c=${encodeURIComponent(code)}`
 }
 
-/** The link a code's QR holds and its email button opens. */
-export function checkInCodeUrl(slug: string, code: string): string {
-  return `${SITE_URL}${checkInCodePath(slug, code)}`
+/**
+ * The link a code's QR holds and its email button opens. `origin` is the event's site
+ * (lib/tenancy/event-origin.ts eventSiteOrigin): SITE_URL for Stellr, the tenant's own host
+ * for another tenant's event (S5 wave 8, A12).
+ */
+export function checkInCodeUrl(slug: string, code: string, origin: string = SITE_URL): string {
+  return `${origin}${checkInCodePath(slug, code)}`
 }
 
-/** The code page link for one participant or group, or null with no secret configured. */
-export function checkInCodeLink(slug: string, kind: CheckInCodeKind, id: string): string | null {
+/**
+ * The code page link for one participant or group on `origin`, or null with no secret
+ * configured, or when the event has no origin to link to (null: see eventSiteOrigin).
+ */
+export function checkInCodeLink(slug: string, kind: CheckInCodeKind, id: string, origin: string | null = SITE_URL): string | null {
+  if (origin === null) return null
   const code = signCheckInCode(slug, kind, id)
-  return code ? checkInCodeUrl(slug, code) : null
+  return code ? checkInCodeUrl(slug, code, origin) : null
 }

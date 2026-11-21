@@ -48,28 +48,21 @@ const GROUPS: readonly DispositionGroup[] = [
   {
     disposition: 'tenant_destined',
     convertedBy: 'C19',
-    reason: 'event operations by slug: a tenant runs its own events. C18 moved companies, offerings and merch/commit',
+    reason: 'event operations by slug: a tenant runs its own events. C18 moved companies, offerings and merch/commit; C19a credentials and the badge and certificate artwork; C19b awards and awards/issue; C19c the admin check-in desk (Stellr-only for now, WD-C19-DESK). Empty since C19c',
     routes: [
-      'events/[slug]/awards', 'events/[slug]/awards/issue',
-      'events/[slug]/badge-templates', 'events/[slug]/badge-templates/preview', 'events/[slug]/badges',
-      'events/[slug]/certificate-templates', 'events/[slug]/certificate-templates/preview', 'events/[slug]/certificates',
-      'events/[slug]/check-in', 'events/[slug]/credentials',
     ],
   },
   {
     disposition: 'tenant_destined',
     convertedBy: 'C21',
-    reason: 'assigning event managers: C16 moved its check to lib/authz and left it on the Stellr admin guard until roles are settled',
-    routes: ['event-managers'],
+    reason: 'assigning event managers: C16 moved its check to lib/authz; C21 made it tenant_crew, Stellr-only for other tenants until the owner settles who grants one in a tenant. Empty since C21',
+    routes: [],
   },
   {
     disposition: 'tenant_destined',
     convertedBy: 'C20',
-    reason: 'an event-scoped table; the owner to confirm whether tenants get scholarships in release 1',
-    routes: [
-      'scholarships/[id]', 'scholarships/[id]/cancel', 'scholarships/[id]/not-offered', 'scholarships/[id]/offer',
-      'scholarships/[id]/refund', 'scholarships/[id]/refund-quote', 'scholarships/[id]/resend',
-    ],
+    reason: 'an event-scoped table: C20b put the routes on loadScoped and C20 made them tenant_crew, Stellr-only for other tenants until the owner says tenants get scholarships (WD-4, SQ-16). Empty since C20',
+    routes: [],
   },
   {
     disposition: 'platform_destined',

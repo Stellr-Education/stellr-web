@@ -41,7 +41,8 @@ vi.mock('@/lib/events/mirror', () => ({
 vi.mock('@clerk/nextjs/server', () => ({ auth: async () => ({ userId: null }) }))
 vi.mock('@/lib/supabase', () => ({ supabaseServer: () => h.db.client }))
 vi.mock('@/lib/events/repo', () => ({ getEventBySlug: async () => ({ setting: 'in_person' }) }))
-vi.mock('@/lib/tenancy/request-tenant', () => ({ requestTenant: async () => ({ tenantId: null }) }))
+// The door is on the event owner's host (A12 refuses another tenant's event elsewhere).
+vi.mock('@/lib/tenancy/request-tenant', () => ({ requestTenant: async () => ({ tenantId: '11111111-1111-4111-8111-111111111111' }) }))
 vi.mock('@/lib/rate-limit-async', () => ({ rateLimit: async () => null, limit: async () => ({ ok: true, retryAfterSeconds: 0 }) }))
 vi.mock('@/lib/check-in-view', () => ({ loadCheckInView: async () => ({ firstName: 'x' }) }))
 vi.mock('@/lib/app-errors', () => ({ reportError: async () => {} }))
@@ -62,6 +63,7 @@ beforeEach(() => {
   h.mirrored = []
   h.db = fakeSupabase({
     event_settings: [{ event_slug: SLUG, check_in_token: 'placeholder-token', check_in_open: true }],
+    events: [{ slug: SLUG, tenant_id: OWNER }],
     registrations: [
       {
         id: 'reg-1',

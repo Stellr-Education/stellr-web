@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { fakeSupabase } from '@/test/fake-supabase'
 import { decryptBackup, encryptBackup } from './backup-crypto'
 import { memoryBackupStore } from './backup-store'
-import { backupName, exportTables, replicatePending } from './replicate'
+import { backupName, exportTables, findSignedCopy, replicatePending } from './replicate'
 import { purgeExpired } from './retention'
 import { SIGNED_BUCKET, sha256Hex } from './storage'
 
@@ -131,5 +131,33 @@ describe('exportTables', () => {
     expect(payload.heads).toEqual([{ envelope_row: 'a', last_id: 3, hash: 'h3' }])
     expect(payload.tables.agreements).toHaveLength(1)
     expect([...store.files.keys()].filter((k) => k.startsWith('export-'))).toHaveLength(30)
+  })
+})
+
+describe('findSignedCopy', () => {
+  const sha = 'a'.repeat(64)
+
+  it('finds a copy named by its content hash (made since ES-5)', async () => {
+    const store = memoryBackupStore()
+    await store.put(backupName('row-1', 'signed', sha), new Uint8Array([1]))
+    expect(await findSignedCopy(store, 'row-1', sha)).toEqual({ name: backupName('row-1', 'signed', sha), bytes: new Uint8Array([1]) })
+  })
+
+  it('falls back to the legacy name for a copy made before ES-5, even when the row has a hash', async () => {
+    const store = memoryBackupStore()
+    await store.put(backupName('row-1', 'signed'), new Uint8Array([2]))
+    expect((await findSignedCopy(store, 'row-1', sha))?.name).toBe('row-1-signed.pdf.enc')
+  })
+
+  it('with no hash (row gone), takes the hash-named copy rather than giving up', async () => {
+    const store = memoryBackupStore()
+    await store.put(backupName('row-1', 'signed', sha), new Uint8Array([3]))
+    expect((await findSignedCopy(store, 'row-1', null))?.bytes).toEqual(new Uint8Array([3]))
+  })
+
+  it('returns null when there is no copy, and never matches another record', async () => {
+    const store = memoryBackupStore()
+    await store.put(backupName('row-10', 'signed', sha), new Uint8Array([4]))
+    expect(await findSignedCopy(store, 'row-1', null)).toBeNull()
   })
 })

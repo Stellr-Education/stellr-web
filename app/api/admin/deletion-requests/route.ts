@@ -1,13 +1,11 @@
-import { auth } from '@clerk/nextjs/server'
+import { isStellrAdmin } from '@/lib/authz'
 import { NextResponse } from 'next/server'
 import { supabaseServer } from '@/lib/supabase'
-import { isAdminClaims } from '@/lib/admin-auth'
 
 // GET /api/admin/deletion-requests?status=pending — review queue for the
 // Activity Review Log.
 export async function GET(req: Request) {
-  const { sessionClaims } = await auth()
-  if (!isAdminClaims(sessionClaims)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  if (!(await isStellrAdmin({ route: '/api/admin/deletion-requests' }))) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
   const status = new URL(req.url).searchParams.get('status') ?? 'pending'
   const db = supabaseServer()

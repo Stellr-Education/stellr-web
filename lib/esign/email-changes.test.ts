@@ -197,6 +197,24 @@ describe('one-time links', () => {
     expect(await submitLink(fake.client, { token, email: 'ash@other.test' })).toMatchObject({ ok: false, code: 'LINK' })
   })
 
+  // S5 wave 8, BOUNCE: a link answers only on its agreement's tenant's host (the route passes
+  // requestTenant()'s); elsewhere it is a dead link, said before anything about the form.
+  it('answers a link only on its agreement tenant’s host', async () => {
+    const CANARY = '00000000-0000-4000-8000-0000000ca4a2'
+    const STELLR = '00000000-0000-4000-8000-000000000001'
+    const fake = setup()
+    fake.table('agreements').find((a) => a.id === 'agr-1')!.tenant_id = CANARY
+    const { token } = await link(fake, 'suggestion')
+    expect(await viewLink(fake.client, token, new Date(), STELLR)).toBeNull()
+    expect(await submitLink(fake.client, { token, email: 'ash@home.test', hostTenantId: STELLR })).toMatchObject({ ok: false, code: 'LINK' })
+    expect(fake.table('agreement_email_changes')[0]).toMatchObject({ status: 'link_sent' })
+    expect(await viewLink(fake.client, token, new Date(), CANARY)).toMatchObject({ kind: 'suggestion' })
+    // A Stellr agreement (NULL tenant) answers on Stellr's host, as before.
+    fake.table('agreements').find((a) => a.id === 'agr-1')!.tenant_id = null
+    expect(await viewLink(fake.client, token, new Date(), STELLR)).toMatchObject({ kind: 'suggestion' })
+    expect(await viewLink(fake.client, token, new Date(), CANARY)).toBeNull()
+  })
+
   it("a parent's correction of the student's address is applied at once", async () => {
     const fake = studentBounced()
     const { token } = await link(fake, 'direct')

@@ -17,11 +17,13 @@ import { STELLR_ONLY_DISPOSITIONS } from '@/lib/security/stellr-only-disposition
 // handler reaches anything but the access check and audit bookkeeping before the option, or
 // never reaches the option at all. The routes walked are:
 //   - STELLR_ACCOUNT_ROUTES: tenant_crew routes that run on Stellr's signing accounts, sender,
-//     Stripe account or store. They left the Stellr-only register (C16 to C18) and carry the
-//     option instead.
+//     Stripe account or store, or issue in Stellr's name (credentials, and the badge and
+//     certificate artwork: decision W7-9). They left the Stellr-only register (C16 to C19a)
+//     and carry the option instead.
 //   - every events/[slug] route still in the Stellr-only register
 //     (lib/security/stellr-only-dispositions.ts). Those not yet on the option are listed in
-//     PENDING_C19A, which only shrinks: C19a converts them in batch 4.
+//     PENDING_C19A, which only shrinks: C19a converted seven, C19b the two awards routes and C19c the admin check-in;
+//     it is now empty.
 
 const OPTION = 'stellrOnlyEvent'
 const OPTION_ORIGIN = 'lib/tenancy/load-scoped'
@@ -48,25 +50,29 @@ const STELLR_ACCOUNT_ROUTES = [
   `${EVENTS_DIR}/merch/commit/route.ts`,
   `${EVENTS_DIR}/invoice-paid/route.ts`,
   `${EVENTS_DIR}/payment-link/route.ts`,
-]
-
-/**
- * Register routes under events/[slug] that read people on legacy requireEventAccess(slug)
- * without the option. C19a (events credentials, artwork and admin check-in) converts them.
- * Shrink-only: an entry that gains the option, or leaves the register, fails until removed.
- */
-const PENDING_C19A = new Set([
-  `${EVENTS_DIR}/awards/route.ts`,
-  `${EVENTS_DIR}/awards/issue/route.ts`,
+  // C19a: Stellr's credentials and artwork (W7-9).
+  `${EVENTS_DIR}/credentials/route.ts`,
   `${EVENTS_DIR}/badge-templates/route.ts`,
   `${EVENTS_DIR}/badge-templates/preview/route.ts`,
   `${EVENTS_DIR}/badges/route.ts`,
   `${EVENTS_DIR}/certificate-templates/route.ts`,
   `${EVENTS_DIR}/certificate-templates/preview/route.ts`,
   `${EVENTS_DIR}/certificates/route.ts`,
+  // C19b: awards become Stellr-issued credentials (W7-9).
+  `${EVENTS_DIR}/awards/route.ts`,
+  `${EVENTS_DIR}/awards/issue/route.ts`,
+  // C19c: the admin check-in desk, Stellr-only until a tenant's own desk in S8 (WD-C19-DESK).
   `${EVENTS_DIR}/check-in/route.ts`,
-  `${EVENTS_DIR}/credentials/route.ts`,
-])
+]
+
+/**
+ * Register routes under events/[slug] that read people on legacy requireEventAccess(slug)
+ * without the option. C19a converted credentials and the artwork routes, C19b the awards;
+ * C19's last part converts the admin check-in.
+ * Shrink-only: an entry that gains the option, or leaves the register, fails until removed.
+ */
+// Empty since C19c (S5 wave 8). Kept, typed, so a new entry still has to be argued in.
+const PENDING_C19A = new Set<string>([])
 
 /** What is wrong with each handler of a Stellr-only event route; empty when it is guarded. */
 function stellrOnlyViolations(fileName: string, src: string): string[] {
@@ -106,7 +112,10 @@ describe('Stellr-only event routes ask the Stellr-only option before reading a p
   it('walks real routes: each listed file exists and sits under events/[slug]', () => {
     const present = new Set(routesUnder(EVENTS_DIR))
     for (const f of WALKED) expect(present.has(f), f).toBe(true)
-    expect(REGISTER_EVENT_ROUTES.length).toBeGreaterThan(0)
+    // Since C19c (S5 wave 8) no events/[slug] route is left in the Stellr-only register: each one
+    // is tenant_crew with the option (STELLR_ACCOUNT_ROUTES) or tenant-capable. The walk is not empty.
+    expect(REGISTER_EVENT_ROUTES).toEqual([])
+    expect(WALKED.length).toBeGreaterThan(0)
   })
 
   it.each(STELLR_ACCOUNT_ROUTES)('%s is tenant_crew and off the register', (f) => {

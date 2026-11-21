@@ -8,6 +8,7 @@ import { teamViewerRole, type TeamViewerRegistration } from '@/lib/team-access'
 import { assertNotImpersonating, resolveRequestMember } from '@/lib/impersonation'
 import { actorFromAuth, logActivity } from '@/lib/activity-log'
 import { withAudit } from '@/lib/audit/route'
+import { auditSubject, noteAuditSubject } from '@/lib/audit/route-subject'
 import { rowTenant } from '@/lib/registration/event-context'
 import { changeGroupPaymentMethod, paymentChangeView, PAYMENT_METHOD_LABEL } from '@/lib/group-payment-change'
 import { paymentChangeBody } from '@/lib/group-payment-change-body'
@@ -40,7 +41,15 @@ const REG_COLUMNS = 'id, type, event_slug, teacher_member_id, teacher_email, tea
 /** S5 A8: a group of another tenant than this host's answers as a missing one. */
 const otherTenant = async (reg: { tenant_id?: string | null }) => rowTenant(reg.tenant_id) !== (await requestTenant()).tenantId
 
-export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+// The view can write: reading the current invoice fills in a ledger row for one sent
+// before the ledger existed (lib/group-billing currentSeatsInvoice). withAudit records
+// every answer but a 4xx, on the group's own chain, noted once the caller passed.
+const readAuditSpec = ({ args: [req] }: { args: [Request, unknown] }) => {
+  const { tenant, target, metadata } = auditSubject(req, 'registrations')
+  return { action: 'registration.payment_method.read' as const, actor: { session: true } as const, tenant, target, metadata }
+}
+
+export const GET = withAudit(readAuditSpec, async (req: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
   const { id } = await params
   const db = supabaseServer()
 
@@ -54,6 +63,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
   const role = teamViewerRole(member, registration as unknown as TeamViewerRegistration)
   // Same answer as no such group: this caller learns nothing about whether it exists.
   if (!role) return NextResponse.json({ error: 'Team not found' }, { status: 404 })
+  noteAuditSubject(req, { tenantId: rowTenant(registration.tenant_id), id: registration.id as string })
 
   try {
     const view = await paymentChangeView(db, stripeClient(), id)
@@ -70,7 +80,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     console.error('[teams/payment-method] view failed:', e)
     return NextResponse.json({ error: 'We couldn’t load your group’s payment details. Try again shortly.' }, { status: 502 })
   }
-}
+})
 
 export const POST = withAudit(auditSpec, async (req: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
   const limited = await rateLimit(req, 'members/teams/payment-method', { limit: 10, windowMs: 10 * 60_000, tenantId: (await requestTenant()).tenantId })

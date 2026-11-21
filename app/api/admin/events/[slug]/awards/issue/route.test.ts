@@ -1,4 +1,5 @@
 // @vitest-environment node
+import { STELLR_TENANT_ID } from '@/lib/tenancy/constants'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 // POST /api/admin/events/[slug]/awards/issue (legacy-17.16): turns the judged awards into
@@ -36,8 +37,18 @@ vi.mock('@/lib/audit/platform', async (orig) => ({
 }))
 vi.mock('@/lib/events/mirror', () => ({ getMirroredEvent: async (slug: string) => ({ slug, tenant_id: OWNER }) }))
 vi.mock('@clerk/nextjs/server', () => ({ auth: async () => ({ userId: CALLER }) }))
-vi.mock('@/lib/event-access', () => ({ requireEventAccess: async () => h.access }))
-vi.mock('@/lib/supabase', () => ({ supabaseServer: () => ({ from: () => ({}) }) }))
+// C19b: lib/authz's check, answering as the old gate did here, in Stellr's scope.
+vi.mock('@/lib/authz', async () => {
+  const { eventRouteFor, eventRouteRefused } = await import('@/test/fixtures/event-route')
+  return {
+    requireEventRoute: async (slug: string) =>
+      h.access.ok ? { ...eventRouteFor(slug), userId: h.access.userId, isAdmin: h.access.isAdmin } : eventRouteRefused(h.access.status as 401 | 403),
+  }
+})
+// The events mirror, for stellrOnlyEvent: a slug it does not hold is Stellr's.
+vi.mock('@/lib/supabase', () => ({
+  supabaseServer: () => ({ from: () => ({ select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: null, error: null }) }) }) }) }),
+}))
 vi.mock('@/lib/events/repo', () => ({ getEventBySlug: h.getEventBySlug }))
 vi.mock('@/lib/event-award-issue', () => ({ issueAwards: h.issueAwards }))
 
@@ -94,7 +105,8 @@ describe('POST /api/admin/events/[slug]/awards/issue', () => {
     expect(h.audits.map((a) => ({ action: a.action, tenantId: a.tenantId, actor: a.actor, target: a.target, metadata: a.metadata }))).toEqual([
       {
         action: 'event.awards.issue',
-        tenantId: OWNER,
+        // C19b: the chain of the tenant requireEventRoute placed the event in (Stellr's here).
+        tenantId: STELLR_TENANT_ID,
         actor: CALLER,
         target: { table: 'credentials', id: null },
         metadata: { event_slug: SLUG, issued: 3, students: 2, reinstated: 1, revoked: 1, unchanged: 4, notified: 2, skipped: 1, failed: 0, status: 200 },

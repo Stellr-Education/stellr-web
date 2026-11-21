@@ -24,6 +24,7 @@ import { isTenantRow, type EventSender } from './tenant-mail'
 // them here to keep existing importers working.
 import { alreadyTriedAddresses, missedRecipients } from './history'
 import { MAX_RECIPIENTS_PER_SEND, type AudienceKey, type EventEmailRow, type RecipientRole } from './types'
+import { STELLR_TENANT_ID } from '@/lib/tenancy/constants'
 
 export { alreadyTriedAddresses, missedRecipients }
 
@@ -66,7 +67,7 @@ export async function catchUpStatus(db: SupabaseClient, email: EventEmailRow): P
   const base = { eligible: email.status === 'sent' && audiences.length > 0, audiences }
   if (!base.eligible) return { ...base, open: false, pending: [] }
 
-  const event = await loadEventForEmail(email.event_slug)
+  const event = await loadEventForEmail(email.event_slug, email.tenant_id ?? STELLR_TENANT_ID)
   const open = catchUpOpen(event?.date, todayInMountain())
   if (!event || !open) return { ...base, open: false, pending: [] }
 
@@ -106,7 +107,7 @@ export async function sendCatchUp(
   const audiences = catchUpAudiences(email.audiences)
   if (!audiences.length) return { ok: false, status: 400, error: 'Only emails sent to All participants are caught up' }
 
-  const event = await loadEventForEmail(email.event_slug)
+  const event = await loadEventForEmail(email.event_slug, email.tenant_id ?? STELLR_TENANT_ID)
   if (!event) return { ok: false, status: 404, error: 'Event not found' }
   if (!catchUpOpen(event.date, opts.today ?? todayInMountain())) {
     return { ok: false, status: 400, error: 'The event has passed — catch-ups have stopped' }

@@ -68,6 +68,7 @@ export const TENANT_SURFACE_ALLOW: readonly TenantSurfaceRule[] = [
   { match: 'app/(stellr)/(flow)/register/[slug]/pay-seat/[token]/page.tsx', reason: FLOW },
   { match: 'app/(stellr)/(flow)/register/[slug]/pay/[token]/page.tsx', reason: FLOW },
   { match: 'app/(stellr)/(flow)/sign/copy/page.tsx', reason: FLOW },
+  { match: 'app/(stellr)/(flow)/sign/email/page.tsx', reason: FLOW },
   { match: 'app/(stellr)/(flow)/sign/page.tsx', reason: FLOW },
   { match: 'app/(stellr)/(flow)/survey/[token]/page.tsx', reason: FLOW },
   { match: 'app/(stellr)/(flow)/survey/[token]/stop-reminders/page.tsx', reason: FLOW },
@@ -98,6 +99,9 @@ export const TENANT_SURFACE_ALLOW: readonly TenantSurfaceRule[] = [
   { match: 'app/api/sign/session/route.ts', reason: FLOW },
   { match: 'app/api/sign/submit/route.ts', reason: FLOW },
   { match: 'app/api/sign/viewed/route.ts', reason: FLOW },
+  // S5 wave 8, BOUNCE: the bounce notice link is built on the agreement's tenant's host, and
+  // the API answers a link only on that host.
+  { match: 'app/api/sign/email/route.ts', reason: FLOW },
   { match: 'app/api/survey/[token]/route.ts', reason: FLOW },
   { match: 'app/api/survey/[token]/stop-reminders/route.ts', reason: FLOW },
   { match: 'app/api/survey/[token]/submit/route.ts', reason: FLOW },
@@ -119,15 +123,6 @@ export const TENANT_SURFACE_ALLOW: readonly TenantSurfaceRule[] = [
 // host until then.
 
 export const TENANT_SURFACE_PENDING: readonly TenantSurfaceRule[] = [
-  {
-    match: 'app/(stellr)/(flow)/sign/email/page.tsx',
-    reason:
-      "the one-time link a bounce notice sends the other signer (lib/esign/email-changes.ts). Links are built on Stellr's host today; allow once the notice builds a tenant-host link and the API confirms the agreement's tenant matches the host",
-  },
-  {
-    match: 'app/api/sign/email/route.ts',
-    reason: 'the API behind the bounce notice link above; same condition',
-  },
   {
     match: 'app/api/registrations/[id]/spreadsheet/route.ts',
     reason:

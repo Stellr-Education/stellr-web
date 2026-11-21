@@ -382,6 +382,31 @@ export const AUDIT_ACTIONS = [
   'store.variant.create',
   'store.variant.update',
   'store.variant.delete',
+
+  // The rest of C7's gate (S5 wave 9): mutating handlers that had no claimant.
+  // The signer's side of Stellr signing (app/api/sign/**): nobody is signed in, the
+  // emailed link or its session cookie is the key, and the recipient is the target.
+  'esign.signer.session_open',
+  'esign.signer.viewed',
+  'esign.signer.consent',
+  'esign.signer.submit',
+  'esign.signer.decline',
+  'esign.signer.copy_download',
+  // A member's own store return, and the store manager's decision on it (app/api/store/returns)
+  'store.return.request',
+  'store.return.decide',
+  // A member buying a membership themselves (app/api/stripe/membership-{checkout,invoice})
+  'membership.checkout.start',
+  'membership.invoice.send',
+  // A teacher's Classroom Qualifier curriculum request (app/api/cq-lead): a HubSpot lead
+  'lead.curriculum_request.create',
+  // An organiser's team pages that can write as they read (app/api/members/teams/[id]/**,
+  // app/api/registrations/[id]/spreadsheet): a join token minted, a ledger row filled in,
+  // a roster sheet created. One event per answer, whatever it wrote. The payment-method
+  // view keeps registration.payment_method.read, above.
+  'registration.team.open',
+  'registration.invoice_discount.read',
+  'registration.roster.sheet_open',
 ] as const
 
 export type AuditAction = (typeof AUDIT_ACTIONS)[number]

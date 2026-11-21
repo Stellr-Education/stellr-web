@@ -44,20 +44,28 @@ const MANIFEST_CLASS_COUNTS: Record<RouteClass, number> = {
   platform_destined: 9,
   // +1 tenant_crew, -1 stellr_only: admin registrations/[id]/payment-method (C16 follow-up)
   // +3 tenant_crew, -3 stellr_only: admin events/[slug]/{companies,offerings,merch/commit} (C18)
+  // +7 tenant_crew, -7 stellr_only: admin events/[slug]/{credentials,badge-templates(+preview),badges,
+  //   certificate-templates(+preview),certificates} (C19a, S5 wave 8)
   // +1 tenant_crew: admin events/[slug]/participants/[pid]/guardian-consent/resend (wave 8 CONSENT (c))
   // +2 tenant_crew, +1 participant on 17 Nov 2026: admin registrations/[id]/{receipt,paid-invoice}, members/billing/paid-invoice
   // +3 tenant_crew: admin events/[slug]/addons, addons/[id], addons/settings (event add-ons, 17 Nov)
   // +1 tenant_crew: admin events/[slug]/addons/bookings (event add-ons staff tools, 17 Nov)
-  tenant_crew: 45,
+  // +2 tenant_crew, -2 stellr_only: admin events/[slug]/awards and awards/issue (C19b, S5 wave 8)
+  // +1 tenant_crew, -1 stellr_only: admin events/[slug]/check-in, the desk (C19c, S5 wave 8)
+  // +8 tenant_crew, -8 stellr_only: admin scholarships/[id] and its six actions (C20) and event-managers (C21), S5 wave 9
+  tenant_crew: 63,
   // +2 on 17 Nov 2026: members/addons/[registrationId] and account/extras/[registrationId] (event add-ons)
   participant: 134,
   // +6 on 16 Nov 2026: the Classroom Qualifier hub, its two window pages, the library and the teacher stories list and detail.
   // +2 on 17 Nov 2026: register/addons-pay and register/[slug]/addons/pay/[token] (event add-ons, denied on tenant hosts)
-  public: 141,
+  // +1 on 20 Nov 2026: the tenant tree's /sign/email page (BOUNCE)
+  public: 142,
   webhook: 12,
   cron: 24,
   // -1 on 14 Nov 2026: the embedded Sanity Studio page left the app for Sanity's hosting.
-  stellr_only: 163,
+  // -7 on 16 Nov 2026: C19a (see tenant_crew).
+  // -8 on 20 Nov 2026: C20 and C21 (see tenant_crew).
+  stellr_only: 145,
 }
 // +3 on 9 Nov 2026: members/compliance/external-check (participant) and the
 // admin members/[id]/event-manager and members/[id]/external-check (stellr_only).
@@ -74,17 +82,19 @@ const MANIFEST_CLASS_COUNTS: Record<RouteClass, number> = {
 // +3 on 17 Nov 2026: payment documents, admin registrations/[id]/receipt and paid-invoice (tenant_crew, denied on tenant hosts like every admin route) and members/billing/paid-invoice (participant, pending like the other member routes).
 // +7 on 17 Nov 2026: event add-ons (3 admin, 2 member, 2 pay link; members/addons pending like every member API, the rest denied).
 // +1 on 17 Nov 2026: admin events/[slug]/addons/bookings (tenant_crew, denied on tenant hosts like every admin route).
-const MANIFEST_TOTAL = 528
+// +1 on 20 Nov 2026: the tenant tree's /sign/email page (S5 wave 8, BOUNCE).
+const MANIFEST_TOTAL = 529
 
 // The decisions. Moving a route between them is a deliberate diff here.
 const DECISION_COUNTS: Record<TenantSurfaceDecision, number> = {
-  allow: 50,
-  // members 39, schools 2, privacy request pages 2 and APIs 2, the bounce-notice
-  // link page and API 2, and the 4 held
+  // +2 allow, -2 pending: /sign/email and its API (S5 wave 8, BOUNCE)
+  allow: 52,
+  // members 39, schools 2, privacy request pages 2 and APIs 2, and the 4 held
   // files pinned under 'routes held back' below
-  pending: 51,
+  pending: 49,
   bypass: 4,
-  deny: 423,
+  // +1: the tenant tree's /sign/email page, a tree file like its siblings (BOUNCE)
+  deny: 424,
 }
 
 /** A concrete URL a manifest file serves, with sample values for its params. */

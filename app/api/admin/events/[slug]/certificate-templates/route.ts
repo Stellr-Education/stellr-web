@@ -1,24 +1,34 @@
 import { NextResponse } from 'next/server'
 import { supabaseServer } from '@/lib/supabase'
-import { requireEventAccess } from '@/lib/event-access'
+import { requireEventRoute } from '@/lib/authz'
 import { isAwardType } from '@/lib/event-awards'
 import { eventArtworkTheme } from '@/lib/artwork-defaults'
 import { CERTIFICATE_PLACEMENT_RANGES, claimArtwork, placementInput } from '@/lib/artwork-template-input'
 import { loadDefaultTemplates, loadEventTemplate, loadEventTemplates } from '@/lib/event-certificates'
 import { withAudit } from '@/lib/audit/route'
-import { noteAuditSubject } from '@/lib/audit/route-subject'
-import { verifiedEventAudit } from '@/lib/audit-route-helpers'
+import { auditSubject, noteAuditSubject } from '@/lib/audit/route-subject'
+import { stellrOnlyDb } from '@/lib/events/admin-records'
+import { deleteEventCertificateTemplate, saveEventCertificateTemplate } from '@/lib/events/admin-artwork'
+import { stellrOnlyEvent } from '@/lib/tenancy/load-scoped'
 
 export const dynamic = 'force-dynamic'
 
-// Platform audit (docs/TENANCY-S5.md, C7). The handler notes who passed requireEventAccess;
-// the event goes on the chain of the owner of the event that check verified (the slug it
-// noted), read from the mirror, never from the raw slug in the URL (lib/audit-route-helpers).
+// Platform audit (docs/TENANCY-S5.md, C7). The handler notes who passed requireEventRoute and
+// the tenant that check placed the event in, so the event goes on that tenant's chain, never
+// one picked from the raw slug in the URL.
+//
+// S5 wave 8, C19a: tenant_crew, and Stellr-only for other tenants. Certificates print on
+// Stellr's artwork and say Stellr Education, so every handler asks stellrOnlyEvent right after
+// the access check: a tenant's staff get its 503, another tenant's event is a 404 for everyone,
+// a Stellr admin included, and a failed read of the event's owner is a retryable 503. Stellr's
+// own events answer as before.
+
+const ROUTE = '/api/admin/events/[slug]/certificate-templates'
 
 // One row per event and award, so no target id; the award type (an enum) is the metadata.
 type Ctx = { params: Promise<{ slug: string }> }
-const saveAudit = ({ args: [req] }: { args: [Request, Ctx] }) => ({ action: 'event.certificate_template.save' as const, ...verifiedEventAudit(req, 'event_certificate_templates') })
-const deleteAudit = ({ args: [req] }: { args: [Request, Ctx] }) => ({ action: 'event.certificate_template.delete' as const, ...verifiedEventAudit(req, 'event_certificate_templates') })
+const saveAudit = ({ args: [req] }: { args: [Request, Ctx] }) => ({ action: 'event.certificate_template.save' as const, ...auditSubject(req, 'event_certificate_templates') })
+const deleteAudit = ({ args: [req] }: { args: [Request, Ctx] }) => ({ action: 'event.certificate_template.delete' as const, ...auditSubject(req, 'event_certificate_templates') })
 
 export const PUT = withAudit(saveAudit, saveCertificateTemplate)
 export const DELETE = withAudit(deleteAudit, deleteCertificateTemplate)
@@ -31,9 +41,11 @@ export const DELETE = withAudit(deleteAudit, deleteCertificateTemplate)
 
 export async function GET(_req: Request, { params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params
-  const access = await requireEventAccess(slug)
-  if (!access.ok) return NextResponse.json({ error: 'Forbidden' }, { status: access.status })
-  const db = supabaseServer()
+  const crew = await requireEventRoute(slug, { route: ROUTE })
+  if (!crew.ok) return crew.response
+  const foreign = await stellrOnlyEvent(crew.scope, supabaseServer(), slug, ROUTE)
+  if (foreign) return foreign
+  const db = stellrOnlyDb(crew.scope, supabaseServer())
   const theme = await eventArtworkTheme(slug)
   const [templates, defaults] = await Promise.all([loadEventTemplates(db, slug), loadDefaultTemplates(db, theme)])
   return NextResponse.json({ theme, templates, defaults })
@@ -42,15 +54,18 @@ export async function GET(_req: Request, { params }: { params: Promise<{ slug: s
 // PUT { awardType, storagePath?, fileType?, name_y?, name_max_width?, name_size? }
 async function saveCertificateTemplate(req: Request, { params }: Ctx) {
   const { slug } = await params
-  const access = await requireEventAccess(slug)
-  if (!access.ok) return NextResponse.json({ error: 'Forbidden' }, { status: access.status })
+  const crew = await requireEventRoute(slug, { route: ROUTE })
+  if (!crew.ok) return crew.response
+  noteAuditSubject(req, { userId: crew.userId, tenantId: crew.tenantId, eventSlug: slug })
+  const foreign = await stellrOnlyEvent(crew.scope, supabaseServer(), slug, ROUTE)
+  if (foreign) return foreign
 
   const b = (await req.json().catch(() => ({}))) as Record<string, unknown>
   const awardType = b.awardType
   if (!isAwardType(awardType)) return NextResponse.json({ error: 'awardType is required' }, { status: 400 })
-  noteAuditSubject(req, { userId: access.userId, eventSlug: slug, detail: { award_type: awardType } })
+  noteAuditSubject(req, { detail: { award_type: awardType } })
 
-  const db = supabaseServer()
+  const db = stellrOnlyDb(crew.scope, supabaseServer())
   const update: Record<string, unknown> = { event_slug: slug, award_type: awardType }
 
   const art = await claimArtwork(b, 'event-artwork', `event-artwork/${slug}/certificate-${awardType}-`)
@@ -68,9 +83,7 @@ async function saveCertificateTemplate(req: Request, { params }: Ctx) {
 
   // Postgres checks NOT NULL on the row an upsert would insert before it finds
   // the conflict, so a placement-only save (no artwork_path) must be an update.
-  const { error } = existing
-    ? await db.from('event_certificate_templates').update(update).eq('event_slug', slug).eq('award_type', awardType)
-    : await db.from('event_certificate_templates').upsert(update, { onConflict: 'event_slug,award_type' })
+  const { error } = await saveEventCertificateTemplate(db, slug, awardType, !!existing, update)
   if (error) {
     console.error('[certificate templates] save error:', error)
     return NextResponse.json({ error: 'Database error' }, { status: 500 })
@@ -83,16 +96,15 @@ async function saveCertificateTemplate(req: Request, { params }: Ctx) {
 // plain design).
 async function deleteCertificateTemplate(req: Request, { params }: Ctx) {
   const { slug } = await params
-  const access = await requireEventAccess(slug)
-  if (!access.ok) return NextResponse.json({ error: 'Forbidden' }, { status: access.status })
+  const crew = await requireEventRoute(slug, { route: ROUTE })
+  if (!crew.ok) return crew.response
+  noteAuditSubject(req, { userId: crew.userId, tenantId: crew.tenantId, eventSlug: slug })
+  const foreign = await stellrOnlyEvent(crew.scope, supabaseServer(), slug, ROUTE)
+  if (foreign) return foreign
   const awardType = new URL(req.url).searchParams.get('awardType')
   if (!isAwardType(awardType)) return NextResponse.json({ error: 'awardType is required' }, { status: 400 })
-  noteAuditSubject(req, { userId: access.userId, eventSlug: slug, detail: { award_type: awardType } })
-  const { error } = await supabaseServer()
-    .from('event_certificate_templates')
-    .delete()
-    .eq('event_slug', slug)
-    .eq('award_type', awardType)
+  noteAuditSubject(req, { detail: { award_type: awardType } })
+  const { error } = await deleteEventCertificateTemplate(stellrOnlyDb(crew.scope, supabaseServer()), slug, awardType)
   if (error) {
     console.error('[certificate templates] delete error:', error)
     return NextResponse.json({ error: 'Database error' }, { status: 500 })

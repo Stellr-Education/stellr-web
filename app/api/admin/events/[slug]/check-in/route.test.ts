@@ -13,6 +13,11 @@ const { requireEventAccess, getEventBySlug, loadOpenCheckIns, updates, upserts }
 }))
 
 vi.mock('@/lib/event-access', () => ({ requireEventAccess }))
+// C19c: the route asks lib/authz requireEventRoute; it answers for the caller requireEventAccess describes here.
+vi.mock('@/lib/authz', async () => {
+  const { eventRouteFromAccess } = await import('@/test/fixtures/event-route')
+  return { requireEventRoute: async (slug: string) => eventRouteFromAccess(slug, (await requireEventAccess(slug)) as never) }
+})
 vi.mock('@/lib/sanity', () => ({ getEventBySlug }))
 vi.mock('@/lib/check-in-banner', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/lib/check-in-banner')>()),
