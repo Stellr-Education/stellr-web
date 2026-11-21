@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import { auth } from '@clerk/nextjs/server'
+import { isStellrAdmin } from '@/lib/authz'
 import { redirect } from 'next/navigation'
 import { supabaseServer } from '@/lib/supabase'
 import { DocusignTable, type EnvelopeRow } from '@/components/admin/DocusignTable'
@@ -13,9 +13,7 @@ import { stellrRows } from '@/lib/tenancy/stellr-scope'
 export const metadata = { title: 'Admin — Consent Forms' }
 
 export default async function AdminDocusignsPage() {
-  const { sessionClaims } = await auth()
-  const role = (sessionClaims?.metadata as { role?: string } | undefined)?.role
-  if (role !== 'admin') redirect('/account')
+  if (!(await isStellrAdmin({ route: '/admin/docusigns' }))) redirect('/account')
 
   const db = supabaseServer()
 

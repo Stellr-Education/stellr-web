@@ -1,4 +1,4 @@
-import { auth } from '@clerk/nextjs/server'
+import { isStellrAdmin } from '@/lib/authz'
 import { NextResponse } from 'next/server'
 import { vercelTarget } from '@/lib/env'
 import { integrationEnvironments, isRealProductionApp } from '@/lib/env-guards'
@@ -67,9 +67,7 @@ async function readDerivationMode(): Promise<DerivationModeReport> {
 // or a fixed reason, never a value. The driver module is loaded for it by dynamic
 // import, so with the flag off nothing more is imported and the response is unchanged.
 export async function GET() {
-  const { sessionClaims } = await auth()
-  const role = (sessionClaims?.metadata as { role?: string } | undefined)?.role
-  if (role !== 'admin') return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  if (!(await isStellrAdmin({ route: '/api/admin/health/integrations' }))) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
   const environments = integrationEnvironments()
   const deployment = vercelTarget()

@@ -20,13 +20,13 @@
     "roleTableRead"
   ],
   "totals": {
-    "files": 23,
-    "sites": 38,
+    "files": 14,
+    "sites": 28,
     "byIdiom": {
       "CREW_CLERK_ROLES": 1,
-      "clerkRoleRead": 8,
-      "currentUserHasScope": 3,
-      "currentUserIsAdmin": 4,
+      "clerkRoleRead": 2,
+      "currentUserHasScope": 2,
+      "currentUserIsAdmin": 1,
       "hasAdminPortalAccess": 1,
       "isAdminClaims": 5,
       "isCrewRole": 1,
@@ -58,35 +58,8 @@
     "app/(stellr)/(admin)/admin/competitions/page.tsx": {
       "requireEventAccess": 1
     },
-    "app/(stellr)/(admin)/admin/docusigns/page.tsx": {
-      "clerkRoleRead": 1
-    },
-    "app/(stellr)/(admin)/admin/docusigns/templates/edit/page.tsx": {
-      "clerkRoleRead": 1
-    },
-    "app/(stellr)/(admin)/admin/docusigns/templates/page.tsx": {
-      "clerkRoleRead": 1
-    },
-    "app/(stellr)/(admin)/admin/privacy-requests/page.tsx": {
-      "clerkRoleRead": 1
-    },
     "app/(stellr)/(member)/layout.tsx": {
       "isAdminClaims": 1
-    },
-    "app/api/admin/digest/send/route.ts": {
-      "currentUserIsAdmin": 1
-    },
-    "app/api/admin/duties/route.ts": {
-      "clerkRoleRead": 1
-    },
-    "app/api/admin/events/slug-guard/route.ts": {
-      "currentUserHasScope": 1
-    },
-    "app/api/admin/health/integrations/route.ts": {
-      "clerkRoleRead": 1
-    },
-    "app/api/admin/members/merge/route.ts": {
-      "currentUserIsAdmin": 2
     },
     "components/layout/NavUserButton.tsx": {
       "clerkRoleRead": 1

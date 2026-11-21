@@ -4,6 +4,7 @@ import { supabaseServer } from '@/lib/supabase'
 import { getSignedInMember } from '@/lib/community'
 import { DUTY_SCOPES } from '@/lib/admin-auth'
 import { actorFromAuth, logActivity } from '@/lib/activity-log'
+import { isStellrAdmin } from '@/lib/authz'
 import { syncDutyGranted, syncDutyRevoked } from '@/lib/authz/role-sync'
 import { reportRoleSyncFailure, roleSyncMetadata } from '@/lib/authz/role-sync-report'
 import { withAudit } from '@/lib/audit/route'
@@ -11,11 +12,6 @@ import { withAudit } from '@/lib/audit/route'
 // Admin CRUD for the duties function-scope seam (migration 044).
 
 const ROUTE = '/api/admin/duties'
-
-async function requireAdmin() {
-  const { sessionClaims } = await auth()
-  return (sessionClaims?.metadata as { role?: string } | undefined)?.role === 'admin'
-}
 
 // What this request acted on, which withAudit's spec cannot read for itself: the body has
 // gone. The member id, never the email a grant may have been keyed on.
@@ -38,7 +34,7 @@ export const POST = withAudit(
 // POST — grant/replace a member's function scopes.
 // Body: { memberId?, email?, scopes: string[] } — member from the picker (id) or email.
 async function grantDuty(req: Request) {
-  if (!(await requireAdmin())) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  if (!(await isStellrAdmin({ route: '/api/admin/duties' }))) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
   const { memberId, email, scopes } = await req.json().catch(() => ({}))
   if ((!memberId && !email) || !Array.isArray(scopes) || scopes.length === 0) {
@@ -100,7 +96,7 @@ export const DELETE = withAudit(
 
 // DELETE — remove a member's staff role. Body: { memberId }
 async function revokeDuty(req: Request) {
-  if (!(await requireAdmin())) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  if (!(await isStellrAdmin({ route: '/api/admin/duties' }))) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   const { memberId } = await req.json().catch(() => ({}))
   if (!memberId) return NextResponse.json({ error: 'memberId required' }, { status: 400 })
   audited.set(req, { memberId, userId: (await auth()).userId })

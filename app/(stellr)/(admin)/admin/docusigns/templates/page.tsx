@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import { auth } from '@clerk/nextjs/server'
+import { isStellrAdmin } from '@/lib/authz'
 import { redirect } from 'next/navigation'
 import { Badge } from '@stellr/web-ui'
 import { supabaseServer } from '@/lib/supabase'
@@ -48,9 +48,7 @@ const SOURCE_LABEL: Record<string, string> = {
 }
 
 export default async function AgreementTemplatesPage({ searchParams }: { searchParams: Promise<{ v?: string }> }) {
-  const { sessionClaims } = await auth()
-  const role = (sessionClaims?.metadata as { role?: string } | undefined)?.role
-  if (role !== 'admin') redirect('/account')
+  if (!(await isStellrAdmin({ route: '/admin/docusigns/templates' }))) redirect('/account')
 
   const { data } = await supabaseServer()
     .from('esign_templates')
