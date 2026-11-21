@@ -226,8 +226,18 @@ function signSessionFixture(): CaseFixture {
  * Tenant routing on, as on a real tenant host: requestTenant() then reads the tenant the
  * proxy would have set (the harness sends both headers on Canary's host), instead of
  * answering Stellr whatever the host. Only for the routes whose slice checks the host
- * (A10a's, A10b's, A11's signing routes and A12's check-in); a route still without a check would answer for its own reasons with
+ * (A10a's, A10b's, A11's signing routes, A12's check-in, and A7's register routes); a route still without a check would answer for its own reasons with
  * it on, which is that route's slice to settle, not this table's.
+ *
+ * With it off, Canary's host is Stellr's to every route, so a case naming a Stellr record
+ * there was Stellr's own record on Stellr's host: the register routes wrote, and answered
+ * a live link differently from a missing one, because that is what they do for Stellr.
+ * With it on they refuse the other tenant's event, link and registration as unknown (A7).
+ *
+ * Not the scholarship offer variant. On a tenant's host the individual route refuses any
+ * offer link before it reads one (offers are Stellr's), so with routing on that case uses
+ * no Canary value and proves nothing, which the unproven cap does not allow to rise. It
+ * stays as it was until the owner decides how that case is counted.
  */
 const ROUTING_ON = { TENANT_ROUTING_ENABLED: 'true' }
 const HOST_READ = 'tenant routing on, so the route reads the host the case is on'
@@ -245,13 +255,14 @@ const FIXTURES: Record<string, () => CaseFixture> = {
   'app/api/credentials/[number]/certificate/route.ts': () => hostChecked(),
   'app/api/credentials/[number]/events/route.ts': () => hostChecked(),
   'app/api/credentials/[number]/pdf/route.ts': () => hostChecked(),
-  'app/api/register/pay/route.ts': () => payFixture,
-  'app/api/register/pay-seat/route.ts': () => payFixture,
+  'app/api/register/pay/route.ts': () => hostChecked(payFixture),
+  'app/api/register/pay-seat/route.ts': () => hostChecked(payFixture),
   'app/api/sign/session/route.ts': () => hostChecked(signLinkFixture()),
   'app/api/sign/copy/route.ts': () => hostChecked(downloadLinkFixture()),
   'app/api/credentials/[number]/visibility/route.ts': () => hostChecked({ reason: 'the consent check past the owner check reads a grade as text', honey: { grade: '10' } }),
-  'app/api/register/individual/route.ts': () => individualFixture,
-  'app/api/register/group/route.ts': () => groupFixture,
+  'app/api/register/individual/route.ts': () => hostChecked(individualFixture),
+  'app/api/register/group-join/route.ts': () => hostChecked(),
+  'app/api/register/group/route.ts': () => hostChecked(groupFixture),
   'app/api/volunteer/interest/route.ts': () => hostChecked(volunteerFixture),
   'app/api/survey/event/[slug]/link/route.ts': () => hostChecked(surveyLinkFixture),
   'app/api/email/unsubscribe/route.ts': () => hostChecked(),
