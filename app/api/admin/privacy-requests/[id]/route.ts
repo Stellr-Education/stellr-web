@@ -1,5 +1,5 @@
 import { auth, currentUser } from '@clerk/nextjs/server'
-import { isStellrAdmin } from '@/lib/authz'
+import { assertPlatformAdmin } from '@/lib/authz'
 import { NextResponse } from 'next/server'
 import { supabaseServer } from '@/lib/supabase'
 import { resolveRequest, resolveSchema } from '@/lib/privacy-requests'
@@ -31,7 +31,7 @@ export const PATCH = withAudit(
 
 async function resolvePrivacyRequest(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { userId } = await auth()
-  if (!userId || !(await isStellrAdmin({ route: '/api/admin/privacy-requests/[id]' }))) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  if (!userId || !(await assertPlatformAdmin({ route: '/api/admin/privacy-requests/[id]' })).ok) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   const { id } = await params
   if (!UUID.test(id)) return NextResponse.json({ error: 'Not found' }, { status: 404 })
   const parsed = resolveSchema.safeParse(await req.json().catch(() => null))

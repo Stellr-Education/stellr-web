@@ -70,9 +70,14 @@ describe('stellr_staff runs where the other staff personas run', () => {
 describe('stellr_staff on Stellr’s own records', () => {
   const DUTIES = 'app/api/admin/duties/route.ts'
 
-  it('an admin gets past the Duties guard to the grant: the control', async () => {
+  // Duties is platform_admin since BF-15 (a), 21 Nov 2026: owner-only once AUTHZ_SOURCE=postgres,
+  // which the crew personas run under. So a Stellr tenant_admin with no platform_admins row is
+  // refused here too, before the grant is read. Under the default clerk source a Stellr admin
+  // still gets past (the control, in test/platform-destined-c15.test.ts, "who gets in").
+  it('a Stellr tenant admin with no platform_admins row is refused at the Duties guard under postgres (BF-15 (a))', async () => {
     const r = await run(DUTIES, 'DELETE', 'stellr_crew', { context: SAME_TENANT, strict: true })
-    expect(r.touched, show(r)).toBe(true)
+    expect(r.status, show(r)).toBe(403)
+    expect(r.touched, show(r)).toBe(false)
   })
 
   it('Staff is refused at that guard, before the grant is read', async () => {

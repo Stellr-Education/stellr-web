@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { supabaseServer } from '@/lib/supabase'
 import { actorFromAuth, logActivity } from '@/lib/activity-log'
 import { deleteUnsharedClerkLogin } from '@/lib/deletion/external'
-import { isCrewTargetOrUnknown, isStellrAdmin } from '@/lib/authz'
+import { assertPlatformAdmin, isCrewTargetOrUnknown } from '@/lib/authz'
 import { loadTargetClerkRole } from '@/lib/authz/principal'
 import { withAudit } from '@/lib/audit/route'
 import {
@@ -64,7 +64,7 @@ async function linkCounts(memberId: string) {
 }
 
 export async function GET(req: NextRequest) {
-  if (!(await isStellrAdmin({ route: '/api/admin/members/merge' }))) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  if (!(await assertPlatformAdmin({ route: '/api/admin/members/merge' })).ok) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
   const sp = new URL(req.url).searchParams
   const a = sp.get('a') ?? ''
@@ -112,7 +112,7 @@ export const POST = withAudit(
 )
 
 async function mergeMembers(req: NextRequest) {
-  if (!(await isStellrAdmin({ route: '/api/admin/members/merge' }))) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  if (!(await assertPlatformAdmin({ route: '/api/admin/members/merge' })).ok) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
   const body = await req.json().catch(() => null) as
     { keepId?: string; dropId?: string; fields?: Record<string, unknown> } | null

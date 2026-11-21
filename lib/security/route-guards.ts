@@ -355,7 +355,7 @@ export const GUARD_EXCEPTIONS: Record<string, string> = {
   'app/api/webhooks/docusign/route.ts#GET':
     'liveness probe for DocuSign Connect; returns {ok:true} and reads nothing',
 
-  // ── platform_destined ───────────────────────────────────────────────────
+  // ── platform_admin ──────────────────────────────────────────────────────
   'app/api/admin/impersonation/route.ts#DELETE':
     'ends view-as: clearing the cookie can only reduce access; the end is logged against the signed ticket',
 

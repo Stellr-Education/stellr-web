@@ -182,7 +182,7 @@ async function requireAdmin(): Promise<null | UploadDenied> {
 }
 
 /** An admin, or Staff for a capability Staff holds: what the route claiming the upload takes. */
-async function requireUploadCapability(cap: 'competitions:write'): Promise<null | UploadDenied> {
+async function requireUploadCapability(cap: 'competitions:write' | 'members:write'): Promise<null | UploadDenied> {
   const { hasCapability } = await loadAuthz()
   return (await hasCapability(cap, { route: ROUTE })) ? null : deny('Forbidden')
 }
@@ -414,11 +414,13 @@ export const UPLOAD_PURPOSES: Record<UploadPurpose, PurposeSpec> = {
     },
   },
 
-  // A member's teaching license photo/scan, uploaded by an admin on their
+  // A member's teaching license photo/scan, uploaded by an admin or Staff on their
   // behalf (e.g. the teacher emailed a copy). Lands in the member's own folder
   // in the private bucket, exactly where their self-upload would, so the claim
   // route (/api/admin/members/[id]/license/document) can pin it to that prefix.
   // The member id is a uuid or nothing: it becomes the first path segment.
+  // members:write, as that claim route takes (S5 wave 9): Staff may enter a
+  // teaching license. Verifying it stays admin-only on the license route.
   'compliance-document-admin': {
     bucket: LICENSES_BUCKET,
     maxBytes: 10 * MB,
@@ -426,7 +428,7 @@ export const UPLOAD_PURPOSES: Record<UploadPurpose, PurposeSpec> = {
     formats: LICENSE_FORMATS,
     formatError: LICENSE_ERROR,
     async grant({ ctx, safeName }) {
-      const denied = await requireAdmin()
+      const denied = await requireUploadCapability('members:write')
       if (denied) return denied
       if (!ctx.memberId || !UUID_RE.test(ctx.memberId)) return deny('memberId required', 400)
       const { data: license } = await supabaseServer()
@@ -439,11 +441,12 @@ export const UPLOAD_PURPOSES: Record<UploadPurpose, PurposeSpec> = {
     },
   },
 
-  // A background check the member already holds, uploaded by an admin on their
-  // behalf. The document is mandatory and comes FIRST (the details are saved with
-  // it in one request), so unlike the license there is no row to require here.
+  // A background check the member already holds, uploaded by an admin or Staff on
+  // their behalf. The document is mandatory and comes FIRST (the details are saved
+  // with it in one request), so unlike the license there is no row to require here.
   // Lands in the member's bc/ folder; the claim (lib/external-background-check)
-  // pins to exactly that prefix.
+  // pins to exactly that prefix. members:write, as the external-check route's save
+  // takes (S5 wave 9); verifying, unverifying and removing stay clearance:verify.
   'external-bc-document-admin': {
     bucket: LICENSES_BUCKET,
     maxBytes: 10 * MB,
@@ -451,7 +454,7 @@ export const UPLOAD_PURPOSES: Record<UploadPurpose, PurposeSpec> = {
     formats: LICENSE_FORMATS,
     formatError: LICENSE_ERROR,
     async grant({ ctx, safeName }) {
-      const denied = await requireAdmin()
+      const denied = await requireUploadCapability('members:write')
       if (denied) return denied
       if (!ctx.memberId || !UUID_RE.test(ctx.memberId)) return deny('memberId required', 400)
       const { data: member } = await supabaseServer().from('members').select('id').eq('id', ctx.memberId).maybeSingle()

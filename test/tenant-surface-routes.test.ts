@@ -40,8 +40,10 @@ const REPO_ROOT = fileURLToPath(new URL('..', import.meta.url))
 // pages from B5 and the 16 from B5b. A new route changes these numbers, and that
 // change must come with its tenant-host decision.
 const MANIFEST_CLASS_COUNTS: Record<RouteClass, number> = {
-  platform_admin: 0,
-  platform_destined: 9,
+  // -7 platform_destined, +7 platform_admin: BF-15 (a), 21 Nov 2026 (deletion, deletion/preflight,
+  //   deletion-requests/[id], duties, impersonation, members/merge, privacy-requests/[id])
+  platform_admin: 7,
+  platform_destined: 2,
   // +1 tenant_crew, -1 stellr_only: admin registrations/[id]/payment-method (C16 follow-up)
   // +3 tenant_crew, -3 stellr_only: admin events/[slug]/{companies,offerings,merch/commit} (C18)
   // +7 tenant_crew, -7 stellr_only: admin events/[slug]/{credentials,badge-templates(+preview),badges,

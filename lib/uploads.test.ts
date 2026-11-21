@@ -218,7 +218,7 @@ describe('signUpload — artwork-default', () => {
   })
 })
 
-// An admin attaching a teacher's emailed license: admin-only, into that
+// An admin (or Staff, below) attaching a teacher's emailed license, into that
 // member's own folder, and only once the license details exist.
 describe('signUpload — compliance-document-admin', () => {
   const MEMBER = '3f2b8c1e-5d4a-4b6f-9e2d-7a1c0b9d8e6f'
@@ -260,6 +260,63 @@ describe('signUpload — compliance-document-admin', () => {
       purpose: 'compliance-document-admin', ctx: { memberId: MEMBER }, fileName: 'x.zip', fileSize: 10, contentType: 'application/zip',
     })
     expect(result).toMatchObject({ status: 415 })
+  })
+})
+
+// S5 wave 9: the two on-behalf compliance uploads take members:write, as the routes that
+// claim them do (/api/admin/members/[id]/license/document POST, /external-check save).
+// Staff may enter a teaching license or an uploaded background check (RUNBOOK-staff-role.md);
+// verifying, unverifying and removing stay admin-only on those routes.
+describe('signUpload — on-behalf compliance uploads take members:write', () => {
+  const MEMBER = '3f2b8c1e-5d4a-4b6f-9e2d-7a1c0b9d8e6f'
+  const asMember = () => authMock.mockResolvedValue({ userId: 'u-member', sessionClaims: { metadata: {} } })
+  const asEventManager = () => authMock.mockResolvedValue({ userId: 'u-em', sessionClaims: { metadata: { role: 'event_manager' } } })
+  const sign = (purpose: 'compliance-document-admin' | 'external-bc-document-admin') =>
+    signUpload({ purpose, ctx: { memberId: MEMBER }, fileName: 'scan.pdf', fileSize: 10, contentType: 'application/pdf' })
+  const PURPOSES_ON_BEHALF = ['compliance-document-admin', 'external-bc-document-admin'] as const
+
+  it.each(PURPOSES_ON_BEHALF)('%s signs for Staff into the member\'s folder', async (purpose) => {
+    asStaff()
+    licenseRow.current = { id: 'row' }
+    expect(await sign(purpose)).toEqual({ bucket: 'teacher-licenses', path: 'p', token: 't' })
+    const path = createSignedUploadUrl.mock.calls[0][0] as string
+    expect(path.startsWith(`${MEMBER}/`)).toBe(true)
+    if (purpose === 'external-bc-document-admin') expect(path).toMatch(new RegExp(`^${MEMBER}/bc/`))
+  })
+
+  it.each(PURPOSES_ON_BEHALF)('%s still signs for an admin', async (purpose) => {
+    asAdmin()
+    licenseRow.current = { id: 'row' }
+    expect(await sign(purpose)).toEqual({ bucket: 'teacher-licenses', path: 'p', token: 't' })
+  })
+
+  it.each(PURPOSES_ON_BEHALF)('%s refuses a plain member, an event manager and a visitor', async (purpose) => {
+    licenseRow.current = { id: 'row' }
+    for (const who of [asMember, asEventManager, asVisitor]) {
+      who()
+      expect(await sign(purpose), who.name).toEqual({ error: 'Forbidden', status: 403 })
+    }
+    expect(createSignedUploadUrl).not.toHaveBeenCalled()
+  })
+
+  it.each(PURPOSES_ON_BEHALF)('%s refuses Staff on a session with no second factor', async (purpose) => {
+    authMock.mockResolvedValue({ userId: 'u-staff', sessionClaims: { metadata: { role: 'staff' } }, factorVerificationAge: [0, -1] })
+    licenseRow.current = { id: 'row' }
+    expect(await sign(purpose)).toEqual({ error: 'Forbidden', status: 403 })
+    expect(createSignedUploadUrl).not.toHaveBeenCalled()
+  })
+
+  it('leaves every other admin-only kind refused to Staff', async () => {
+    asStaff()
+    licenseRow.current = { id: 'row' }
+    for (const [purpose, ctx, fileName, contentType] of [
+      ['admin-resource', {}, 'a.pdf', 'application/pdf'],
+      ['training-item', {}, 'a.pdf', 'application/pdf'],
+      ['training-cert-template', { moduleId: 'm1' }, 'a.pdf', 'application/pdf'],
+    ] as const) {
+      expect(await signUpload({ purpose, ctx, fileName, fileSize: 10, contentType }), purpose).toEqual({ error: 'Forbidden', status: 403 })
+    }
+    expect(createSignedUploadUrl).not.toHaveBeenCalled()
   })
 })
 

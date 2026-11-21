@@ -1,5 +1,5 @@
 import { auth } from '@clerk/nextjs/server'
-import { isStellrAdmin } from '@/lib/authz'
+import { assertPlatformAdmin } from '@/lib/authz'
 import { NextResponse } from 'next/server'
 import { executeDeletion, DeletionBlockedError } from '@/lib/deletion/execute'
 import { memberIdForClerkUser } from '@/lib/deletion/actor'
@@ -39,7 +39,7 @@ export const DELETE = withAudit(
 // remain; otherwise runs external cleanup + soft/hard delete.
 async function deleteEntity(req: Request) {
   const { userId } = await auth()
-  if (!(await isStellrAdmin({ route: '/api/admin/deletion' }))) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  if (!(await assertPlatformAdmin({ route: '/api/admin/deletion' })).ok) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
   const body = await req.json().catch(() => null)
   const entity = body?.entity as string | undefined

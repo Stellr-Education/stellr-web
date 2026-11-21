@@ -175,13 +175,14 @@ describe('route manifest: 100% classification', () => {
       if (f.startsWith('app/(stellr)/(admin)/')) expect(cls, f).toBe('stellr_only')
       // Every admin API is stellr_only until S5 converts it, except the one Sanity
       // calls with a shared secret and the platform-destined ones (C15), which keep
-      // stellr_only's guard, and those a slice has converted to tenant_crew (C16 on),
-      // which the tenant_crew table rule below and the staff personas then hold.
+      // stellr_only's guard, those a slice has converted to tenant_crew (C16 on),
+      // which the tenant_crew table rule below and the staff personas then hold, and
+      // the seven platform_admin ones (BF-15 (a), 21 Nov 2026), on assertPlatformAdmin.
       // test/idor/stellr-only-dispositions.test.ts pins the first list.
       if (f.startsWith('app/api/admin/') && f !== 'app/api/admin/sanity/event-sync/route.ts') {
-        expect(['stellr_only', 'platform_destined', 'tenant_crew'], f).toContain(cls)
+        expect(['stellr_only', 'platform_destined', 'platform_admin', 'tenant_crew'], f).toContain(cls)
       }
-      if (cls === 'platform_destined') expect(f.startsWith('app/api/admin/'), f).toBe(true)
+      if (cls === 'platform_destined' || cls === 'platform_admin') expect(f.startsWith('app/api/admin/'), f).toBe(true)
       if (cls === 'cron') expect(f.startsWith('app/api/cron/'), f).toBe(true)
       // Crawlers and unfurlers fetch metadata routes with no session.
       if (isMetadataFile(f)) expect(cls, f).toBe('public')

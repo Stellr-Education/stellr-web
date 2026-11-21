@@ -248,7 +248,9 @@ enforce mode (S4).
    `platform_admins`. Keep the dry-run output off the repo, because it lists
    account ids. Since S5, the admin screens and `scripts/set-admin.ts` keep these
    rows in step, and `--check` reports drift. Run it after any role change made
-   in the Clerk dashboard: see `docs/AUTHZ.md`.
+   in the Clerk dashboard: see `docs/AUTHZ.md`. **Production done 21 Nov 2026:**
+   the owner ran `--apply --platform-admins --production`; production's
+   `platform_admins` (2 platform admins) and Stellr memberships now match Clerk.
 4. **Fill in Stellr's tenant record:** the EIN and the legal entity name, if
    they differ from "Stellr Education":
    `UPDATE public.tenants SET ein = '..-.......', legal_name = '...' WHERE slug = 'stellr';`

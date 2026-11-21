@@ -194,8 +194,10 @@ describe('tenant-host routes: anonymous and participant, on host A naming a vali
       expect(cases.length, file).toBeGreaterThan(0)
       for (const direction of DIRECTIONS) expect(cases.some(([k, entry]) => k.includes(direction) && !isUnprovenEntry(entry)), `${file} ${direction}`).toBe(true)
     }
+    // Only a case named by its full key (the owner-accepted scholarship offer cases, 21 Nov 2026) may prove nothing here.
     for (const file of ['app/api/register/individual/route.ts', 'app/api/register/group/route.ts']) {
-      expect(Object.values(observed[file]).filter(isUnprovenEntry).length, `${file}: cases that proved nothing`).toBe(0)
+      const unnamed = Object.entries(observed[file]).filter(([k, entry]) => isUnprovenEntry(entry) && !TENANT_HOST_UNPROVEN[`${file} ${k}`])
+      expect(unnamed.map(([k]) => k), `${file}: cases that proved nothing`).toEqual([])
     }
   })
 

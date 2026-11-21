@@ -22,9 +22,14 @@ export const TENANT_HOST_ACCEPTED: Record<string, AcceptedHostOutcome> = {
 
 /**
  * Cases that prove nothing about a record because the route reads none for this caller.
- * Keyed `<route file> <METHOD> <persona>`, or `<route file> <METHOD>` for both people.
+ * Keyed `<route file> <METHOD> <persona>`, or `<route file> <METHOD>` for both people, or a
+ * full case key `<route file> <METHOD> <persona> <direction>[ <variant>]` for one case.
  * Any other unproven case fails: its fixture has to get it to the code that decides.
  */
+// #828's scholarship offer variant (owner decision, 21 Nov 2026, in chat): with tenant routing
+// on, the individual route refuses an offer link on a tenant's host before it reads one, so the
+// canary_to_stellr cases use no Canary value. Accepted as unproven, not failing.
+const SCHOLARSHIP_OFFER_UNPROVEN = 'owner accepted 21 Nov 2026: the suite cannot yet model a scholarship offer; not a leak'
 export const TENANT_HOST_UNPROVEN: Record<string, string> = {
   'app/api/check-in-desk/manifest/route.ts GET': 'A web app manifest: it echoes the slug into a URL and reads no record.',
   'app/api/check-in/route.ts DELETE': 'Clears the caller’s own cookie and reads no record.',
@@ -35,5 +40,7 @@ export const TENANT_HOST_UNPROVEN: Record<string, string> = {
   // BOUNCE (S5 wave 8): a live change link needs three rows in three states at once (the change
   // link_sent, its agreement live, the bounced signer autoresponded), which the one honey row
   // cannot hold. lib/esign/email-changes.test.ts ('answers a link only on its agreement tenant’s host') proves the host check directly.
+  'app/api/register/individual/route.ts POST anonymous canary_to_stellr scholarship_offer': SCHOLARSHIP_OFFER_UNPROVEN,
+  'app/api/register/individual/route.ts POST participant canary_to_stellr scholarship_offer': SCHOLARSHIP_OFFER_UNPROVEN,
   'app/api/sign/email/route.ts POST': 'A live link needs three rows in three states the one honey row cannot hold; lib/esign/email-changes.test.ts proves the host check.',
 }
