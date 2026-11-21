@@ -60,23 +60,27 @@ import { collectSources, initializerOf, isTestFile, parse, walkNodes } from './s
  *   symbol   a helper that C25 removes
  *   wrapper  a domain wrapper that stays, re-implemented over lib/authz
  * The other kinds are found by shape; see roleSites().
+ *
+ * `removed` marks a helper C25 has deleted (batch 4, 21 Nov 2026). It stays listed, so a
+ * helper put back under its old name and module counts again; test/authz-ratchet.test.ts
+ * checks the file no longer exports it, as it checks a live one still does.
  */
 export const LEGACY_IDIOMS = [
-  { id: 'isAdminClaims', kind: 'symbol', idiom: 1, file: 'lib/admin-auth.ts' },
-  { id: 'currentUserIsAdmin', kind: 'symbol', idiom: 2, file: 'lib/admin-auth.ts' },
-  { id: 'requireAdminPage', kind: 'symbol', idiom: 3, file: 'lib/admin-auth.ts' },
+  { id: 'isAdminClaims', kind: 'symbol', idiom: 1, file: 'lib/admin-auth.ts', removed: '2026-11-21' },
+  { id: 'currentUserIsAdmin', kind: 'symbol', idiom: 2, file: 'lib/admin-auth.ts', removed: '2026-11-21' },
+  { id: 'requireAdminPage', kind: 'symbol', idiom: 3, file: 'lib/admin-auth.ts', removed: '2026-11-21' },
   { id: 'pageRequireAdmin', kind: 'page_adapter', idiom: 3, swapFor: 'requireAdminPage' },
   { id: 'clerkRoleRead', kind: 'role_read', idiom: 4, also: [8, 10, 11] },
-  { id: 'requireEventAccess', kind: 'symbol', idiom: 6, file: 'lib/event-access.ts' },
+  { id: 'requireEventAccess', kind: 'symbol', idiom: 6, file: 'lib/event-access.ts', removed: '2026-11-21' },
   { id: 'requireScholarshipAdmin', kind: 'wrapper', idiom: 7, file: 'lib/scholarship-admin.ts' },
   { id: 'requireSurveyAdmin', kind: 'wrapper', idiom: 7, file: 'lib/survey/admin-auth.ts' },
   { id: 'canManageStoreCatalog', kind: 'wrapper', idiom: 7, file: 'lib/store/auth.ts' },
   { id: 'adminName', kind: 'wrapper', idiom: 7, file: 'app/api/admin/esign/templates/guard.ts' },
-  { id: 'hasAdminPortalAccess', kind: 'symbol', idiom: 8, file: 'lib/admin-auth.ts' },
-  { id: 'isEventManagerClaims', kind: 'symbol', idiom: 8, file: 'lib/admin-auth.ts' },
-  { id: 'currentUserHasScope', kind: 'symbol', idiom: 9, file: 'lib/admin-auth.ts' },
-  { id: 'isCrewRole', kind: 'symbol', idiom: 10, file: 'lib/admin-auth.ts' },
-  { id: 'CREW_CLERK_ROLES', kind: 'symbol', idiom: 10, file: 'lib/admin-auth.ts' },
+  { id: 'hasAdminPortalAccess', kind: 'symbol', idiom: 8, file: 'lib/admin-auth.ts', removed: '2026-11-21' },
+  { id: 'isEventManagerClaims', kind: 'symbol', idiom: 8, file: 'lib/admin-auth.ts', removed: '2026-11-21' },
+  { id: 'currentUserHasScope', kind: 'symbol', idiom: 9, file: 'lib/admin-auth.ts', removed: '2026-11-21' },
+  { id: 'isCrewRole', kind: 'symbol', idiom: 10, file: 'lib/admin-auth.ts', removed: '2026-11-21' },
+  { id: 'CREW_CLERK_ROLES', kind: 'symbol', idiom: 10, file: 'lib/admin-auth.ts', removed: '2026-11-21' },
   { id: 'portalRoleList', kind: 'role_list', idiom: 10 },
   { id: 'roleTableRead', kind: 'role_table', idiom: 12, also: [9, 10] },
 ]

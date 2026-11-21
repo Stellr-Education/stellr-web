@@ -3,7 +3,9 @@ import { redirect } from 'next/navigation'
 import { supabaseServer } from '@/lib/supabase'
 import { getAllEvents, getAllCampaigns } from '@/lib/events/repo'
 import { type StellarEvent } from '@/lib/sanity'
-import { requireEventAccess } from '@/lib/event-access'
+import { hasCapability, requireEventAccess } from '@/lib/authz'
+import { eventAccessCovers } from '@/lib/authz/decide'
+import { STELLR_TENANT_ID } from '@/lib/tenancy/constants'
 
 export const metadata = { title: 'Admin — Events' }
 export const dynamic = 'force-dynamic'
@@ -67,8 +69,13 @@ function registrationPill(event: StellarEvent, isCampaign: boolean): { label: st
 }
 
 export default async function AdminEventsPage() {
-  const access = await requireEventAccess()
+  const access = await requireEventAccess(undefined, { route: '/admin/competitions' })
   if (!access.ok) redirect(access.status === 401 ? '/sign-in' : '/account')
+  // An admin and Staff (owner decision, 21 Nov 2026) see every event; an event manager
+  // only their own. Staff is not an admin, so the default artwork link follows the
+  // capability its page and API take.
+  const seesEveryEvent = access.assignedSlugs === null
+  const canEditArtworkDefaults = access.isAdmin || (await hasCapability('competitions:write', { route: '/admin/competitions' }))
 
   const [events, campaigns] = await Promise.all([
     getAllEvents() as Promise<StellarEvent[] | null>,
@@ -77,11 +84,12 @@ export default async function AdminEventsPage() {
 
   // Event Managers only see events they've been assigned to.
   // Documents without a slug (unfinished CMS drafts) are skipped entirely.
+  // The CMS holds Stellr's events alone, and lib/authz's answer covers one tenant's events
+  // (docs/AUTHZ.md, item 12), so each is checked as a Stellr event: on any other tenant's
+  // host this lists nothing, even for an answer covering every event there.
   const visible = (list: { slug?: { current?: string } | null }[] | null) =>
     (list ?? []).filter(
-      (e) =>
-        e.slug?.current &&
-        (access.assignedSlugs === null || access.assignedSlugs.includes(e.slug.current))
+      (e) => !!e.slug?.current && eventAccessCovers(access, { eventSlug: e.slug.current, tenantId: STELLR_TENANT_ID })
     )
   const visibleEvents = visible(events) as StellarEvent[]
   const visibleCampaigns = visible(campaigns) as CampaignEvent[]
@@ -116,13 +124,13 @@ export default async function AdminEventsPage() {
           </p>
           <h1 className="mt-1 font-heading text-ds-h2 text-brand-blue-dark">Events</h1>
           <p className="text-sm text-brand-muted-soft mt-0.5">
-            {access.isAdmin
+            {seesEveryEvent
               ? 'All events and campaigns from the CMS'
               : 'Events you are assigned to manage'}
           </p>
         </div>
         <div className="flex flex-wrap gap-2 sm:shrink-0 sm:justify-end">
-          {access.isAdmin && (
+          {canEditArtworkDefaults && (
             <Link
               href="/admin/competitions/artwork"
               className="rounded-lg border border-primary px-3 py-1.5 text-sm font-medium text-primary"
@@ -144,7 +152,7 @@ export default async function AdminEventsPage() {
           <h2 className="text-sm font-semibold text-brand-muted">{label}</h2>
           {items.length === 0 ? (
             <p className="text-sm text-brand-muted-soft bg-white rounded-xl border border-brand-border px-4 py-6">
-              {access.isAdmin
+              {seesEveryEvent
                 ? `No ${label.toLowerCase()} found in the CMS.`
                 : `No assigned ${label.toLowerCase()}. Ask an administrator to assign you.`}
             </p>

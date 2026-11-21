@@ -10,9 +10,8 @@
 import { NextResponse } from 'next/server'
 import { auth } from '@clerk/nextjs/server'
 import { supabaseServer } from '@/lib/supabase'
-import { currentUserIsAdmin } from '@/lib/admin-auth'
 import { STELLR_TENANT_ID } from '@/lib/tenancy/constants'
-import { assertPlatformAdmin, currentTenantId, requireEventAccess } from '@/lib/authz'
+import { assertPlatformAdmin, currentTenantId, isStellrAdmin, requireEventAccess } from '@/lib/authz'
 import { loadScoped } from '@/lib/tenancy/load-scoped'
 import { makeScope, type ScopeContext } from '@/lib/tenancy/scope-context'
 
@@ -59,7 +58,7 @@ export const ownerChecked = {
 /** Admin guard first: the stellr_only shape. */
 export const adminGuarded = {
   async GET(_req: Request, { params }: Ctx) {
-    if (!(await currentUserIsAdmin())) return NextResponse.json({ error: 'Forbidden' }, { status: 403 }) // CANARY:admin-guard
+    if (!(await isStellrAdmin())) return NextResponse.json({ error: 'Forbidden' }, { status: 403 }) // CANARY:admin-guard
     const { id } = await params
     const { data } = await supabaseServer().from('members').select('*').eq('id', id).maybeSingle()
     return NextResponse.json({ member: data })

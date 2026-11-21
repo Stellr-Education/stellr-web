@@ -22,7 +22,6 @@ const { calls, respond, getEventRoster, access } = vi.hoisted(() => ({
   access: { current: null as unknown },
 }))
 
-vi.mock('@/lib/event-access', () => ({ requireEventAccess: async () => access.current }))
 // C19c: the route asks lib/authz requireEventRoute; it answers for the caller access.current describes.
 vi.mock('@/lib/authz', async () => {
   const { eventRouteFromAccess } = await import('@/test/fixtures/event-route')

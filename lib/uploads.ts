@@ -1,4 +1,3 @@
-import { auth } from '@clerk/nextjs/server'
 import { supabaseServer } from '@/lib/supabase'
 import {
   RESOURCES_BUCKET, communityWriteBlock, getCurrentMember, type CommunityMember, type CommunityWrite,
@@ -7,7 +6,6 @@ import { assertNotImpersonating } from '@/lib/impersonation'
 import { getSpaceForMember } from '@/lib/spaces'
 import { getMemberCampaignRegistration } from '@/lib/campaign-registrations'
 import { memberManagesContainer } from '@/lib/resource-upload'
-import { requireEventAccess } from '@/lib/event-access'
 import { AWARD_TYPES } from '@/lib/event-awards'
 import { BADGE_FORMATS } from '@/lib/badge-layout'
 import { isArtworkTheme } from '@/lib/artwork-theme'
@@ -170,10 +168,33 @@ export const spaceAttachmentPrefix = (spaceId: string, memberId: string) =>
 /** Likewise for container contributions, beside the admin catalogue's resources/<time>-<name>. */
 export const contributionPrefix = (memberId: string) => `resources/members/${memberId}/`
 
+// lib/authz loads on first use, not at the top: lib/authz is server-only, and this module
+// also serves members' own uploads (test/authz-load-closure.test.ts holds the shape).
+// Members' kinds below never call it, so their answers do not change (S5 C25 batch 4).
+let authzModule: Promise<typeof import('@/lib/authz')> | undefined
+const loadAuthz = () => (authzModule ??= import('@/lib/authz'))
+const ROUTE = 'lib/uploads'
+
+/** A Stellr admin (lib/authz isStellrAdmin; under AUTHZ_SOURCE=clerk the Clerk admin claim, as before). */
 async function requireAdmin(): Promise<null | UploadDenied> {
-  const { sessionClaims } = await auth()
-  const role = (sessionClaims?.metadata as { role?: string } | undefined)?.role
-  return role === 'admin' ? null : deny('Forbidden')
+  const { isStellrAdmin } = await loadAuthz()
+  return (await isStellrAdmin({ route: ROUTE })) ? null : deny('Forbidden')
+}
+
+/** An admin, or Staff for a capability Staff holds: what the route claiming the upload takes. */
+async function requireUploadCapability(cap: 'competitions:write'): Promise<null | UploadDenied> {
+  const { hasCapability } = await loadAuthz()
+  return (await hasCapability(cap, { route: ROUTE })) ? null : deny('Forbidden')
+}
+
+/**
+ * The event gate, lib/authz requireEventAccess: the event's managers, and an admin or
+ * Staff on every Stellr event (owner decision, 21 Nov 2026). Before, Staff got 403 here.
+ */
+async function requireEventUpload(slug: string): Promise<null | UploadDenied> {
+  const { requireEventAccess } = await loadAuthz()
+  const access = await requireEventAccess(slug, { route: ROUTE })
+  return access.ok ? null : deny('Forbidden', access.status)
 }
 
 /** Refused because the caller has not finished /account/onboarding. */
@@ -330,15 +351,16 @@ export const UPLOAD_PURPOSES: Record<UploadPurpose, PurposeSpec> = {
       if (!ctx.slug || !ctx.kind) return deny('slug and kind required', 400)
       // Event managers upload their own event's artwork, so this is the event
       // gate, not the admin one (the claiming route already used it).
-      const access = await requireEventAccess(ctx.slug)
-      if (!access.ok) return deny('Forbidden', access.status)
+      const denied = await requireEventUpload(ctx.slug)
+      if (denied) return denied
       if (!EVENT_ARTWORK_KINDS.includes(ctx.kind)) return deny('Unknown artwork kind', 400)
       return { path: `event-artwork/${ctx.slug}/${ctx.kind}-${Date.now()}-${safeName}` }
     },
   },
 
   // A theme's default certificate or badge artwork (lib/artwork-defaults.ts),
-  // which every event of that theme inherits — so admins only, not event managers.
+  // which every event of that theme inherits — so admins and Staff (competitions:write,
+  // as the artwork-defaults routes that claim it), not event managers.
   'artwork-default': {
     bucket: RESOURCES_BUCKET,
     maxBytes: 10 * MB,
@@ -346,7 +368,7 @@ export const UPLOAD_PURPOSES: Record<UploadPurpose, PurposeSpec> = {
     formats: ARTWORK,
     formatError: ARTWORK_ERROR,
     async grant({ ctx, safeName }) {
-      const denied = await requireAdmin()
+      const denied = await requireUploadCapability('competitions:write')
       if (denied) return denied
       if (!isArtworkTheme(ctx.theme) || !ctx.kind) return deny('theme and kind required', 400)
       if (!EVENT_ARTWORK_KINDS.includes(ctx.kind)) return deny('Unknown artwork kind', 400)
@@ -355,7 +377,8 @@ export const UPLOAD_PURPOSES: Record<UploadPurpose, PurposeSpec> = {
   },
 
   // The educator PD certificate artwork, front or back (lib/pd-certificate-store).
-  // Staged here, then copied to its page (front/back) by /api/admin/pd-certificate.
+  // Staged here, then copied to its page (front/back) by /api/admin/pd-certificate,
+  // which takes competitions:write: admins and Staff.
   'pd-certificate-artwork': {
     bucket: RESOURCES_BUCKET,
     maxBytes: 10 * MB,
@@ -363,7 +386,7 @@ export const UPLOAD_PURPOSES: Record<UploadPurpose, PurposeSpec> = {
     formats: ARTWORK,
     formatError: ARTWORK_ERROR,
     async grant({ safeName }) {
-      const denied = await requireAdmin()
+      const denied = await requireUploadCapability('competitions:write')
       return denied ?? { path: `pd-certificate/staged-${Date.now()}-${safeName}` }
     },
   },
@@ -385,8 +408,8 @@ export const UPLOAD_PURPOSES: Record<UploadPurpose, PurposeSpec> = {
     formatError: 'That file doesn’t look like a PDF, Office, OpenDocument, Keynote, image, CSV or calendar file.',
     async grant({ ctx, safeName }) {
       if (!ctx.slug) return deny('slug required', 400)
-      const access = await requireEventAccess(ctx.slug)
-      if (!access.ok) return deny('Forbidden', access.status)
+      const denied = await requireEventUpload(ctx.slug)
+      if (denied) return denied
       return { path: `event-email/${ctx.slug}/${Date.now()}-${safeName}` }
     },
   },

@@ -2,7 +2,7 @@ import Link from 'next/link'
 import { redirect, notFound } from 'next/navigation'
 import { getEventBySlug } from '@/lib/events/repo'
 import { type StellarEvent } from '@/lib/sanity'
-import { requireEventAccess } from '@/lib/event-access'
+import { requireEventAccess } from '@/lib/authz'
 import { supabaseServer } from '@/lib/supabase'
 import { formatDate } from '@/lib/utils'
 import CheckInPoster from '@/components/admin/CheckInPoster'
@@ -13,7 +13,7 @@ export const dynamic = 'force-dynamic'
 export default async function CheckInPosterPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params
 
-  const access = await requireEventAccess(slug)
+  const access = await requireEventAccess(slug, { route: '/admin/competitions/[slug]/check-in/poster' })
   if (!access.ok) redirect(access.status === 401 ? '/sign-in' : '/admin/competitions')
 
   const event = (await getEventBySlug(slug)) as StellarEvent | null

@@ -74,9 +74,22 @@ describe('legacy-idiom ratchet', () => {
 
   it('every listed helper is exported from the file named, so a typo cannot read as 0', () => {
     for (const idiom of LEGACY_IDIOMS) {
-      if (!idiom.file) continue
+      if (!idiom.file || idiom.removed) continue
       const src = readFileSync(idiom.file, 'utf8')
       expect(exportedNames(idiom.file, src), idiom.id).toContain(idiom.id)
+    }
+  })
+
+  it('a helper marked removed (C25 batch 4) is gone from its file, and the file may be gone too', () => {
+    const removed = LEGACY_IDIOMS.filter((i: { removed?: string }) => i.removed)
+    expect(removed.map((i: { id: string }) => i.id).sort()).toEqual([
+      'CREW_CLERK_ROLES', 'currentUserHasScope', 'currentUserIsAdmin', 'hasAdminPortalAccess', 'isAdminClaims',
+      'isCrewRole', 'isEventManagerClaims', 'requireAdminPage', 'requireEventAccess',
+    ])
+    for (const idiom of removed) {
+      const file = idiom.file as string
+      if (!existsSync(file)) continue
+      expect(exportedNames(file, readFileSync(file, 'utf8')), idiom.id).not.toContain(idiom.id)
     }
   })
 
