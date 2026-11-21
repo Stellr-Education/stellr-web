@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { currentUser } from '@clerk/nextjs/server'
-import { currentUserIsAdmin } from '@/lib/admin-auth'
+import { isStellrAdmin } from '@/lib/authz'
 import { loadMemberDigest } from '@/lib/admin-digest'
 import { renderDigestEmail } from '@/lib/admin-digest-email'
 import { appUrl } from '@/lib/email-campaigns'
@@ -24,7 +24,7 @@ export const POST = withAudit(
 )
 
 async function sendDigest() {
-  if (!(await currentUserIsAdmin())) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  if (!(await isStellrAdmin({ route: '/api/admin/digest/send' }))) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
   const user = await currentUser().catch(() => null)
   const to = user?.primaryEmailAddress?.emailAddress
