@@ -515,7 +515,7 @@
     },
     "app/api/admin/event-managers/route.ts": {
       "class": "convert",
-      "reason": "auto: touches tenant or event-scoped tables; tables: event_manager_assignments"
+      "reason": "auto: reaches tables it does not name (dynamic .from, rpc, or a client passed to a helper); review before converting"
     },
     "app/api/admin/event-participations/[id]/route.ts": {
       "class": "convert",
@@ -831,7 +831,7 @@
     },
     "app/api/admin/scholarships/[id]/refund/route.ts": {
       "class": "convert",
-      "reason": "auto: touches tenant or event-scoped tables; tables: scholarship_applications"
+      "reason": "auto: reaches tables it does not name (dynamic .from, rpc, or a client passed to a helper); review before converting"
     },
     "app/api/admin/scholarships/[id]/resend/route.ts": {
       "class": "convert",
@@ -839,7 +839,7 @@
     },
     "app/api/admin/scholarships/[id]/route.ts": {
       "class": "convert",
-      "reason": "auto: touches tenant or event-scoped tables; tables: scholarship_applications"
+      "reason": "auto: reaches tables it does not name (dynamic .from, rpc, or a client passed to a helper); review before converting"
     },
     "app/api/admin/schools/[id]/route.ts": {
       "class": "platform",

@@ -52,7 +52,8 @@ const MANIFEST_CLASS_COUNTS: Record<RouteClass, number> = {
   // +1 tenant_crew: admin events/[slug]/addons/bookings (event add-ons staff tools, 17 Nov)
   // +2 tenant_crew, -2 stellr_only: admin events/[slug]/awards and awards/issue (C19b, S5 wave 8)
   // +1 tenant_crew, -1 stellr_only: admin events/[slug]/check-in, the desk (C19c, S5 wave 8)
-  tenant_crew: 55,
+  // +8 tenant_crew, -8 stellr_only: admin scholarships/[id] and its six actions (C20) and event-managers (C21), S5 wave 9
+  tenant_crew: 63,
   // +2 on 17 Nov 2026: members/addons/[registrationId] and account/extras/[registrationId] (event add-ons)
   participant: 134,
   // +6 on 16 Nov 2026: the Classroom Qualifier hub, its two window pages, the library and the teacher stories list and detail.
@@ -63,7 +64,8 @@ const MANIFEST_CLASS_COUNTS: Record<RouteClass, number> = {
   cron: 24,
   // -1 on 14 Nov 2026: the embedded Sanity Studio page left the app for Sanity's hosting.
   // -7 on 16 Nov 2026: C19a (see tenant_crew).
-  stellr_only: 153,
+  // -8 on 20 Nov 2026: C20 and C21 (see tenant_crew).
+  stellr_only: 145,
 }
 // +3 on 9 Nov 2026: members/compliance/external-check (participant) and the
 // admin members/[id]/event-manager and members/[id]/external-check (stellr_only).

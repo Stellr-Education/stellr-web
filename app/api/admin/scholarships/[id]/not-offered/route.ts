@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { supabaseServer } from '@/lib/supabase'
+import { requireEventCrew } from '@/lib/authz'
 import { loadStellrScholarship, requireScholarshipAdmin } from '@/lib/scholarship-admin'
 import { markNotOffered } from '@/lib/scholarship-offer'
 import { withAudit } from '@/lib/audit/route'
@@ -17,14 +18,16 @@ export const POST = withAudit(
 
 // POST /api/admin/scholarships/[id]/not-offered — closes an application
 // without an offer. No email goes to the applicant (owner, 2 Oct 2026).
-// Stellr's applications only (C20b, lib/scholarship-admin.ts).
+// Stellr's applications only (C20b; tenant_crew since C20, lib/scholarship-admin.ts).
 async function notOffered(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const reviewer = await requireScholarshipAdmin()
   if (!reviewer) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  const crew = await requireEventCrew({ route: ROUTE })
+  if (!crew.ok) return NextResponse.json({ error: 'Forbidden' }, { status: crew.status })
   const { id } = await params
-  const db = supabaseServer()
-  const loaded = await loadStellrScholarship(db, id, { label: ROUTE })
+  const loaded = await loadStellrScholarship(crew, supabaseServer(), id, { label: ROUTE })
   if (!loaded.ok) return loaded.response
+  const { db } = loaded
   noteAuditSubject(req, { userId: reviewer.clerkUserId, tenantId: STELLR_TENANT_ID, id, eventSlug: loaded.row.event_slug ?? undefined })
 
   const result = await markNotOffered(db, id, reviewer)

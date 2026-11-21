@@ -18,7 +18,9 @@ import { DISPOSITION_REGISTER_STATUS, STELLR_ONLY_DISPOSITIONS, dispositionCount
 // all, to tenant_crew with the Stellr-only option (stellrOnlyEvent).
 // C19b moved awards and awards/issue the same way.
 // C19c moved the admin check-in desk the same way.
-const MAX_TENANT_DESTINED_STELLR_ONLY = 8
+// C20 moved the seven scholarships/[id] routes and C21 event-managers to tenant_crew,
+// Stellr-only for other tenants (S5 wave 9). None is left.
+const MAX_TENANT_DESTINED_STELLR_ONLY = 0
 
 // platform_destined routes stay listed: the owner's choice for each is still to come.
 const stellrOnly = idorTargets().filter((t) => t.cls === 'stellr_only' || t.cls === 'platform_destined').map((t) => t.file)
