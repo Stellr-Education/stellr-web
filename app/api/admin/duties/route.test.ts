@@ -14,7 +14,8 @@ const logActivity = vi.fn()
 const captureRequestError = vi.fn()
 
 vi.mock('@clerk/nextjs/server', () => ({
-  auth: async () => ({ sessionClaims: { metadata: { role: 'admin' } } }),
+  // lib/authz refuses claims with no user, as real Clerk never sends them.
+  auth: async () => ({ userId: 'user_admin_placeholder', sessionClaims: { metadata: { role: 'admin' } } }),
 }))
 vi.mock('@/lib/community', () => ({ getSignedInMember: async () => ({ id: 'admin1' }) }))
 vi.mock('@/lib/activity-log', () => ({

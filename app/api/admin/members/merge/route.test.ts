@@ -48,7 +48,6 @@ vi.mock('@clerk/nextjs/server', () => ({
     emailAddresses: { createEmailAddress, updateEmailAddress, deleteEmailAddress },
   }),
 }))
-vi.mock('@/lib/admin-auth', () => ({ currentUserIsAdmin: async () => true }))
 vi.mock('@/lib/activity-log', () => ({
   actorFromAuth: async () => ({ actorMemberId: null, actorLabel: 'admin' }),
   logActivity,
@@ -58,7 +57,7 @@ vi.mock('@/lib/audit/route', () => ({ withAudit: (_spec: unknown, handler: unkno
 const loadTargetClerkRole = vi.fn(async (..._a: unknown[]) => ({ exists: true, role: undefined as unknown }))
 const isCrewTargetOrUnknown = vi.fn(async (..._a: unknown[]): Promise<boolean | null> => false)
 vi.mock('@/lib/authz/principal', () => ({ loadTargetClerkRole }))
-vi.mock('@/lib/authz', () => ({ isCrewTargetOrUnknown }))
+vi.mock('@/lib/authz', () => ({ isCrewTargetOrUnknown, isStellrAdmin: async () => true }))
 vi.mock('@/lib/docusign', () => ({ voidEnvelope: vi.fn() }))
 vi.mock('@/lib/stripe', () => ({ stripeClient: () => null }))
 vi.mock('@/lib/supabase', () => ({
