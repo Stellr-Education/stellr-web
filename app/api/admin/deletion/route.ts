@@ -1,6 +1,6 @@
 import { auth } from '@clerk/nextjs/server'
+import { isStellrAdmin } from '@/lib/authz'
 import { NextResponse } from 'next/server'
-import { isAdminClaims } from '@/lib/admin-auth'
 import { executeDeletion, DeletionBlockedError } from '@/lib/deletion/execute'
 import { memberIdForClerkUser } from '@/lib/deletion/actor'
 import { getEntityDef } from '@/lib/deletion/registry'
@@ -38,8 +38,8 @@ export const DELETE = withAudit(
 // Central admin delete. Blocks (409) with the dependent list when linked records
 // remain; otherwise runs external cleanup + soft/hard delete.
 async function deleteEntity(req: Request) {
-  const { userId, sessionClaims } = await auth()
-  if (!isAdminClaims(sessionClaims)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  const { userId } = await auth()
+  if (!(await isStellrAdmin({ route: '/api/admin/deletion' }))) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
   const body = await req.json().catch(() => null)
   const entity = body?.entity as string | undefined

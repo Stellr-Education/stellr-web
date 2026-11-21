@@ -1,15 +1,13 @@
-import { auth } from '@clerk/nextjs/server'
+import { isStellrAdmin } from '@/lib/authz'
 import { NextResponse } from 'next/server'
 import { supabaseServer } from '@/lib/supabase'
-import { isAdminClaims } from '@/lib/admin-auth'
 
 // GET /api/admin/access/conflicts — the redundancy audit for the Rules-tab
 // Conflicts panel: members who are both on-roster and a manager of the same
 // object (access_redundancy_audit view, migration 125).
 
 export async function GET() {
-  const { sessionClaims } = await auth()
-  if (!isAdminClaims(sessionClaims)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  if (!(await isStellrAdmin({ route: '/api/admin/access/conflicts' }))) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
   const db = supabaseServer()
   const { data, error } = await db

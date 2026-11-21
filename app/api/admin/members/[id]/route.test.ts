@@ -23,8 +23,7 @@ const { state } = vi.hoisted(() => ({
 }))
 
 vi.mock('@clerk/nextjs/server', () => ({ auth: async () => ({ sessionClaims: {} }) }))
-vi.mock('@/lib/authz', () => ({ hasCapability: async () => true }))
-vi.mock('@/lib/admin-auth', () => ({ isAdminClaims: () => true }))
+vi.mock('@/lib/authz', () => ({ hasCapability: async () => true, isStellrAdmin: async () => true }))
 vi.mock('@/lib/esign/retention', () => ({ startRetentionClock: async () => {} }))
 vi.mock('@/lib/field-crypto-shadow', () => ({ shadowSyncFields: () => {} }))
 vi.mock('@/lib/activity-log', () => ({

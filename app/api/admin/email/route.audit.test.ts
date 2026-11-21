@@ -34,8 +34,7 @@ vi.mock('@/lib/audit/platform', async (orig) => ({
   },
 }))
 vi.mock('@clerk/nextjs/server', () => ({ auth: async () => ({ userId: CALLER, sessionClaims: {} }) }))
-vi.mock('@/lib/admin-auth', () => ({ isAdminClaims: () => true }))
-vi.mock('@/lib/authz', () => ({ hasCapability: async () => true }))
+vi.mock('@/lib/authz', () => ({ hasCapability: async () => true, isStellrAdmin: async () => true }))
 vi.mock('@/lib/supabase', () => ({ supabaseServer: () => h.db.client }))
 vi.mock('@/lib/community', () => ({ getSignedInMember: async () => ({ id: 'm-admin' }), tiptapToPlainText: () => '' }))
 vi.mock('@/lib/email', () => ({

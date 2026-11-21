@@ -49,7 +49,7 @@ vi.mock('@clerk/nextjs/server', () => ({
   currentUser: async () => ({ primaryEmailAddress: { emailAddress: 'admin@example.test' } }),
 }))
 vi.mock('@/lib/admin-auth', () => ({ isAdminClaims: () => true, currentUserIsAdmin: async () => true }))
-vi.mock('@/lib/authz', () => ({ hasCapability: async () => true }))
+vi.mock('@/lib/authz', () => ({ hasCapability: async () => true, isStellrAdmin: async () => true }))
 vi.mock('@/lib/supabase', () => ({ supabaseServer: () => h.db.client }))
 vi.mock('@/lib/activity-log', () => ({ actorFromAuth: async () => ({ actorType: 'admin', actorMemberId: 'm-admin', actorLabel: 'Admin' }), logActivity: async () => {} }))
 vi.mock('@/lib/esign/retention', () => ({ startRetentionClock: async () => {} }))
