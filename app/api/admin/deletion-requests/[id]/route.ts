@@ -1,7 +1,7 @@
 import { auth } from '@clerk/nextjs/server'
+import { isStellrAdmin } from '@/lib/authz'
 import { NextResponse } from 'next/server'
 import { supabaseServer } from '@/lib/supabase'
-import { isAdminClaims } from '@/lib/admin-auth'
 import { executeDeletion, DeletionBlockedError } from '@/lib/deletion/execute'
 import { memberIdForClerkUser } from '@/lib/deletion/actor'
 import { notifyMember } from '@/lib/notify'
@@ -56,8 +56,8 @@ export const PATCH = withAudit(
 // Approving runs the actual deletion; a still-blocked item returns 409 so the
 // admin clears the blockers first (the request stays pending).
 async function reviewDeletionRequest(req: Request, { params }: { params: Promise<{ id: string }> }) {
-  const { userId, sessionClaims } = await auth()
-  if (!isAdminClaims(sessionClaims)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  const { userId } = await auth()
+  if (!(await isStellrAdmin({ route: '/api/admin/deletion-requests/[id]' }))) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
   const { id } = await params
   const body = await req.json().catch(() => null)

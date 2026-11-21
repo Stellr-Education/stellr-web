@@ -1,4 +1,4 @@
-import { auth } from '@clerk/nextjs/server'
+import { isStellrAdmin } from '@/lib/authz'
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import { supabaseServer } from '@/lib/supabase'
@@ -11,7 +11,6 @@ import {
 } from '@/lib/access-objects'
 import { getSignedInMember } from '@/lib/community'
 import { getAllEvents, getAllCampaigns } from '@/lib/events/repo'
-import { isAdminClaims } from '@/lib/admin-auth'
 import { withAudit } from '@/lib/audit/route'
 import { adminAuditSubject } from '@/lib/audit/route-subject'
 import { noteAccessObject } from '../../../audit'
@@ -33,8 +32,7 @@ const CONTENT_TYPE_TO_OBJECT: Record<string, AccessObjectType> = {
 }
 
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
-  const { sessionClaims } = await auth()
-  if (!isAdminClaims(sessionClaims)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  if (!(await isStellrAdmin({ route: '/api/admin/access/objects/[id]/contents' }))) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
   const { id } = await params
   const object = await resolveAccessObject(decodeURIComponent(id))
@@ -176,8 +174,7 @@ export const DELETE = withAudit(
 )
 
 async function attachContent(req: Request, { params }: Ctx) {
-  const { sessionClaims } = await auth()
-  if (!isAdminClaims(sessionClaims)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  if (!(await isStellrAdmin({ route: '/api/admin/access/objects/[id]/contents' }))) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
   const { id } = await params
   const object = await resolveAccessObject(decodeURIComponent(id))
@@ -246,8 +243,7 @@ const deleteSchema = z.object({
 })
 
 async function detachContent(req: Request, { params }: Ctx) {
-  const { sessionClaims } = await auth()
-  if (!isAdminClaims(sessionClaims)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  if (!(await isStellrAdmin({ route: '/api/admin/access/objects/[id]/contents' }))) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
   const { id } = await params
   const object = await resolveAccessObject(decodeURIComponent(id))

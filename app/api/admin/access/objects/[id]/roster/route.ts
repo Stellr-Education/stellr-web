@@ -1,4 +1,4 @@
-import { auth } from '@clerk/nextjs/server'
+import { isStellrAdmin } from '@/lib/authz'
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import { supabaseServer } from '@/lib/supabase'
@@ -6,7 +6,6 @@ import { resolveAccessObject, type AccessObject } from '@/lib/access-objects'
 import { getEventRoster } from '@/lib/event-admin'
 import { checkSingletonRoleAvailable } from '@/lib/object-roles'
 import { roleAllowedForBracket, ROLE_LABELS, MANAGE_ROLES, type MemberRole } from '@/lib/member-roles'
-import { isAdminClaims } from '@/lib/admin-auth'
 import { withAudit } from '@/lib/audit/route'
 import { adminAuditSubject } from '@/lib/audit/route-subject'
 import { noteAccessObject } from '../../../audit'
@@ -26,8 +25,7 @@ async function resolve(id: string): Promise<AccessObject | null> {
 }
 
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
-  const { sessionClaims } = await auth()
-  if (!isAdminClaims(sessionClaims)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  if (!(await isStellrAdmin({ route: '/api/admin/access/objects/[id]/roster' }))) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
   const { id } = await params
   const object = await resolve(id)
@@ -75,8 +73,7 @@ export const DELETE = withAudit(
 )
 
 async function addToRoster(req: Request, { params }: Ctx) {
-  const { sessionClaims } = await auth()
-  if (!isAdminClaims(sessionClaims)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  if (!(await isStellrAdmin({ route: '/api/admin/access/objects/[id]/roster' }))) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
   const { id } = await params
   const object = await resolve(id)
@@ -176,8 +173,7 @@ async function addToRoster(req: Request, { params }: Ctx) {
 const deleteSchema = z.object({ memberId: z.guid() })
 
 async function removeFromRoster(req: Request, { params }: Ctx) {
-  const { sessionClaims } = await auth()
-  if (!isAdminClaims(sessionClaims)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  if (!(await isStellrAdmin({ route: '/api/admin/access/objects/[id]/roster' }))) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
   const { id } = await params
   const object = await resolve(id)

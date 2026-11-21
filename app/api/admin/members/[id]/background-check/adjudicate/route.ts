@@ -1,7 +1,6 @@
 import { NextResponse } from 'next/server'
-import { auth } from '@clerk/nextjs/server'
+import { isStellrAdmin } from '@/lib/authz'
 import { supabaseServer } from '@/lib/supabase'
-import { isAdminClaims } from '@/lib/admin-auth'
 import { actorFromAuth, logActivity } from '@/lib/activity-log'
 import { BC_VALIDITY_YEARS } from '@/lib/compliance'
 import { recheckEventManagerClearance } from '@/lib/event-manager'
@@ -32,8 +31,7 @@ export const POST = withAudit(
 )
 
 async function adjudicate(req: Request, { params }: Ctx) {
-  const { sessionClaims } = await auth()
-  if (!isAdminClaims(sessionClaims)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  if (!(await isStellrAdmin({ route: '/api/admin/members/[id]/background-check/adjudicate' }))) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
   const { id } = await params
   const body = (await req.json().catch(() => null)) as

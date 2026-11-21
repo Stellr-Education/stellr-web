@@ -1,8 +1,7 @@
-import { auth } from '@clerk/nextjs/server'
+import { isStellrAdmin } from '@/lib/authz'
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import { supabaseServer } from '@/lib/supabase'
-import { isAdminClaims } from '@/lib/admin-auth'
 import { storableId, withAudit } from '@/lib/audit/route'
 import { adminAuditSubject, noteAuditSubject } from '@/lib/audit/route-subject'
 
@@ -41,8 +40,7 @@ export const DELETE = withAudit(
 )
 
 async function updateCampaign(req: Request, { params }: Ctx) {
-  const { sessionClaims } = await auth()
-  if (!isAdminClaims(sessionClaims)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  if (!(await isStellrAdmin({ route: '/api/admin/email/campaigns/[id]' }))) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   const { id } = await params
 
   const parsed = patchSchema.safeParse(await req.json().catch(() => null))
@@ -99,8 +97,7 @@ async function updateCampaign(req: Request, { params }: Ctx) {
 
 // DELETE /api/admin/email/campaigns/[id] — archive (soft). Keeps the send ledger.
 async function archiveCampaign(req: Request, { params }: Ctx) {
-  const { sessionClaims } = await auth()
-  if (!isAdminClaims(sessionClaims)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  if (!(await isStellrAdmin({ route: '/api/admin/email/campaigns/[id]' }))) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   const { id } = await params
   noteAuditSubject(req, { id: storableId(id) })
 

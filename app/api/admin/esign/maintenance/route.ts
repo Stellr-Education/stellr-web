@@ -1,8 +1,8 @@
 import { auth } from '@clerk/nextjs/server'
+import { isStellrAdmin } from '@/lib/authz'
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { supabaseServer } from '@/lib/supabase'
-import { isAdminClaims } from '@/lib/admin-auth'
 import { startCronRun } from '@/lib/cron-runs'
 import { ALL_STEPS, runEsignMaintenance, type MaintenanceStep } from '@/lib/esign/maintenance'
 import { withAudit } from '@/lib/audit/route'
@@ -38,8 +38,8 @@ export const POST = withAudit(
 )
 
 async function runMaintenance(req: NextRequest) {
-  const { userId, sessionClaims } = await auth()
-  if (!userId || !isAdminClaims(sessionClaims)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  const { userId } = await auth()
+  if (!userId || !(await isStellrAdmin({ route: '/api/admin/esign/maintenance' }))) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
   const parsed = bodySchema.safeParse(await req.json().catch(() => ({})))
   if (!parsed.success) return NextResponse.json({ error: 'Invalid request' }, { status: 400 })

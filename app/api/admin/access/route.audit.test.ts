@@ -48,7 +48,7 @@ vi.mock('@/lib/events/mirror', () => ({
   },
 }))
 vi.mock('@clerk/nextjs/server', () => ({ auth: async () => ({ userId: CALLER, sessionClaims: { metadata: { role: 'admin' } } }) }))
-vi.mock('@/lib/admin-auth', () => ({ isAdminClaims: () => true }))
+vi.mock('@/lib/authz', () => ({ isStellrAdmin: async () => true }))
 // The roster removal filters member_roles with not('role', 'in', …), which the fake does
 // not read, so member_roles answers every query with no error and no rows.
 vi.mock('@/lib/supabase', () => ({

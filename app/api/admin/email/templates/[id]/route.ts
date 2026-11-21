@@ -1,8 +1,7 @@
-import { auth } from '@clerk/nextjs/server'
+import { isStellrAdmin } from '@/lib/authz'
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import { supabaseServer } from '@/lib/supabase'
-import { isAdminClaims } from '@/lib/admin-auth'
 import { storableId, withAudit } from '@/lib/audit/route'
 import { adminAuditSubject, noteAuditSubject } from '@/lib/audit/route-subject'
 import { unknownTokens } from '@/lib/email-tokens'
@@ -29,8 +28,7 @@ export const DELETE = withAudit(
 
 // PATCH /api/admin/email/templates/[id] — edit a template.
 async function updateTemplate(req: Request, { params }: Ctx) {
-  const { sessionClaims } = await auth()
-  if (!isAdminClaims(sessionClaims)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  if (!(await isStellrAdmin({ route: '/api/admin/email/templates/[id]' }))) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   const { id } = await params
 
   const parsed = patchSchema.safeParse(await req.json().catch(() => null))
@@ -57,8 +55,7 @@ async function updateTemplate(req: Request, { params }: Ctx) {
 // DELETE /api/admin/email/templates/[id] — soft-delete (archive). Blocked if a
 // non-archived campaign still references it (FK is RESTRICT anyway).
 async function archiveTemplate(req: Request, { params }: Ctx) {
-  const { sessionClaims } = await auth()
-  if (!isAdminClaims(sessionClaims)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  if (!(await isStellrAdmin({ route: '/api/admin/email/templates/[id]' }))) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   const { id } = await params
   noteAuditSubject(req, { id: storableId(id) })
 

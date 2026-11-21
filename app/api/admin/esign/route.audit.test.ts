@@ -34,7 +34,7 @@ vi.mock('@clerk/nextjs/server', () => ({
   auth: async () => ({ userId: CALLER, sessionClaims: {} }),
   currentUser: async () => ({ firstName: 'Placeholder', lastName: 'Admin' }),
 }))
-vi.mock('@/lib/admin-auth', () => ({ isAdminClaims: () => true }))
+vi.mock('@/lib/authz', () => ({ isStellrAdmin: async () => true }))
 vi.mock('@/lib/supabase', () => ({ supabaseServer: () => ({}) }))
 vi.mock('@/lib/cron-runs', () => ({ startCronRun: async () => ({ fail: () => {}, finish: async () => {} }) }))
 vi.mock('@/lib/esign/maintenance', () => ({

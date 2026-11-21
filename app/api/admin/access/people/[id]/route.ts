@@ -1,11 +1,10 @@
-import { auth } from '@clerk/nextjs/server'
+import { isStellrAdmin } from '@/lib/authz'
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import { supabaseServer } from '@/lib/supabase'
 import { getMemberAccessSummary } from '@/lib/member-access'
 import { addGlobalRole, getGlobalRoleNames, ROLE_LABELS, ROLES_BY_BRACKET, type MemberRole } from '@/lib/member-roles'
 import { TIERS_BY_BRACKET, type AgeBracket } from '@/lib/tiers'
-import { isAdminClaims } from '@/lib/admin-auth'
 import { actorFromAuth, logActivity } from '@/lib/activity-log'
 import { storableId, withAudit } from '@/lib/audit/route'
 import { adminAuditSubject, noteAuditSubject } from '@/lib/audit/route-subject'
@@ -16,8 +15,7 @@ import { adminAuditSubject, noteAuditSubject } from '@/lib/audit/route-subject'
 // role chips; tier chips write through the existing memberships routes.
 
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
-  const { sessionClaims } = await auth()
-  if (!isAdminClaims(sessionClaims)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  if (!(await isStellrAdmin({ route: '/api/admin/access/people/[id]' }))) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
   const { id } = await params
   const db = supabaseServer()
@@ -73,8 +71,7 @@ export const DELETE = withAudit(
 )
 
 async function grantRole(req: Request, { params }: Ctx) {
-  const { sessionClaims } = await auth()
-  if (!isAdminClaims(sessionClaims)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  if (!(await isStellrAdmin({ route: '/api/admin/access/people/[id]' }))) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
   const { id } = await params
   const parsed = roleSchema.safeParse(await req.json().catch(() => null))
@@ -100,8 +97,7 @@ async function grantRole(req: Request, { params }: Ctx) {
 }
 
 async function revokeRole(req: Request, { params }: Ctx) {
-  const { sessionClaims } = await auth()
-  if (!isAdminClaims(sessionClaims)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  if (!(await isStellrAdmin({ route: '/api/admin/access/people/[id]' }))) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
   const { id } = await params
   const parsed = roleSchema.safeParse(await req.json().catch(() => null))

@@ -1,8 +1,7 @@
-import { auth } from '@clerk/nextjs/server'
+import { isStellrAdmin } from '@/lib/authz'
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import { supabaseServer } from '@/lib/supabase'
-import { isAdminClaims } from '@/lib/admin-auth'
 import { withAudit } from '@/lib/audit/route'
 import { adminAuditSubject, noteAuditSubject } from '@/lib/audit/route-subject'
 
@@ -11,8 +10,7 @@ import { adminAuditSubject, noteAuditSubject } from '@/lib/audit/route-subject'
 // and by every attach endpoint (via lib/access-objects attachAllowed).
 
 export async function GET() {
-  const { sessionClaims } = await auth()
-  if (!isAdminClaims(sessionClaims)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  if (!(await isStellrAdmin({ route: '/api/admin/access/relations' }))) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
   const db = supabaseServer()
   const { data, error } = await db
@@ -40,8 +38,7 @@ export const PATCH = withAudit(
 )
 
 async function setRelation(req: Request) {
-  const { sessionClaims } = await auth()
-  if (!isAdminClaims(sessionClaims)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  if (!(await isStellrAdmin({ route: '/api/admin/access/relations' }))) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
   const parsed = patchSchema.safeParse(await req.json().catch(() => null))
   if (!parsed.success) return NextResponse.json({ error: 'Invalid request' }, { status: 400 })
