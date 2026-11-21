@@ -43,12 +43,13 @@
 // which fails until a person replaces it with the reason it is safe.
 import './mocks'
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { idorTargets, crewTargets, type IdorTarget } from '@/lib/security/idor-targets'
 import { ROUTE_MANIFEST } from '@/lib/security/route-manifest'
+import { honeytokenFor } from '@/lib/testing/honeytokens'
 import { followBodyHelpers } from './body-helpers'
-import { applyEnv, CASE_FIXTURES, fixtureFor, HELD_BACK_FIXTURES } from './case-fixtures'
-import { FAILING_OUTCOMES, installNetworkGuard, routeAuditProblems, runIdorCase, runCrewTarget, targetInput, type CaseResult, type Outcome } from './harness'
+import { applyEnv, CASE_FIXTURES, fixtureFor, HELD_BACK_FIXTURES, type CaseFixture } from './case-fixtures'
+import { FAILING_OUTCOMES, harness, honeyEventFor, installNetworkGuard, routeAuditProblems, runIdorCase, runCrewTarget, targetInput, type CaseResult, type Outcome } from './harness'
 import { printReportedOracles, sealReportedOracles, type ReportedOracles } from './reported-oracles'
 
 process.env.NEXT_PUBLIC_SUPABASE_URL = 'http://supabase.idor.invalid'
@@ -59,8 +60,14 @@ process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_idorharness'
 process.env.HUBSPOT_PORTAL_ID = 'idor-harness-portal'
 // lib/sanity.ts builds no client without a project id, so outcomes cannot depend
 // on the machine's environment. What that leaves unmodelled: a route that looks
-// an event up finds none, whatever the slug.
+// an event up finds none, whatever the slug, unless the case's fixture sets `event`
+// (the register routes). Then host B's open event answers its slug, as in
+// test/idor/tenant-host-routes.test.ts, and is gone in the differential's run.
 delete process.env.NEXT_PUBLIC_SANITY_PROJECT_ID
+vi.mock('@/lib/sanity', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  getEventBySlug: async (slug: string) => (harness.fixture?.event ? honeyEventFor(slug) : null),
+}))
 
 const SNAPSHOT_FILE = 'test/idor/idor-snapshot.json'
 const UPDATE = process.env.IDOR_UPDATE_SNAPSHOT === '1'
@@ -76,16 +83,16 @@ const MIN_TARGETS = 215
 // non-id body fields with plausible values to get past validation; what is
 // left is pinned in the snapshot as `unexercised` and capped here, so the
 // number can only go down. Lower it when a route starts being exercised.
-// test/idor/case-fixtures.ts gets the rest through. Of the 5 left, 4 are held back
-// there, because getting through shows a write carrying a Canary value, and
-// register/individual is Lane A's (it needs an event this suite does not model;
-// test/idor/tenant-host-routes.test.ts, which does, gets it to one).
-const MAX_UNEXERCISED = 5
+// test/idor/case-fixtures.ts gets the rest through: 21 Nov 2026, none is left.
+// The community writes and onboarding's school link are accepted with a reason and
+// their exact writes pinned; register/individual reaches host B's event, which a
+// fixture can model.
+const MAX_UNEXERCISED = 0
 
 // Cases that ended in a 5xx: the harness could not model the path, so they
-// prove nothing either. Same rule. Of the 3 left, 2 are held back in the same
-// place and register/group is Lane A's, for the same reason.
-const MAX_ERROR = 3
+// prove nothing either. Same rule. The 1 left is store/checkout, held back in
+// test/idor/case-fixtures.ts (C4-F5) until the owner decides on the store catalogue.
+const MAX_ERROR = 1
 
 type MethodEntry = Outcome | { outcome: Outcome; accepted: string }
 interface SnapshotTarget {
@@ -191,17 +198,39 @@ describe('cross-tenant / IDOR: tenant-A participant naming tenant-B honeytokens'
         console.log(`${t.file}\n${Object.values(results).map(describeResult).join('\n')}`)
       }
       checkFixtureReachedTheId(t, results)
+      checkPinnedWrites(t, results)
       checkAudits(t, results)
       if (UPDATE) return
       checkTarget(t, results)
     })
   }
 
-  it('models no Sanity event: getEventBySlug answers null for any slug', async () => {
+  it('models no Sanity event outside a fixture that asks: getEventBySlug answers null for any slug', async () => {
     const { client, getEventBySlug } = await import('@/lib/sanity')
     expect(client).toBeNull()
+    expect(harness.fixture).toBeUndefined()
     expect(await getEventBySlug('any-slug')).toBeNull()
+    expect(await getEventBySlug(String(honeytokenFor('event_slug')))).toBeNull()
+    const askers = Object.entries(CASE_FIXTURES).filter(([, f]) => f.event).map(([file]) => file).sort()
+    expect(askers).toEqual(['app/api/register/group/route.ts', 'app/api/register/individual/route.ts'])
   })
+
+  // A fixture that models host B's event must reach the route's own event check: a refusal
+  // that used the event, and no other way through.
+  for (const [file, f] of Object.entries(CASE_FIXTURES)) {
+    if (!f.event) continue
+    it(`${file}: host B's event is looked up and refused`, async () => {
+      const target = targets.find((t) => t.file === file) as IdorTarget
+      const restoreEnv = applyEnv(f.env)
+      const mod = (await import(`../../${file}`).finally(restoreEnv)) as Record<string, unknown>
+      for (const m of target.methods) {
+        const r = await runIdorCase(mod, targetInput(target), m, 'participant', `event: ${file}`)
+        expect(r.outcome, describeResult(r)).toBe('refused')
+        expect(r.touched, describeResult(r)).toBe(true)
+        expect(r.reportedOracle, describeResult(r)).toBeUndefined()
+      }
+    })
+  }
 
   it('ran one case per id-bearing route (count gate) and the snapshot lists exactly those routes', () => {
     expect(ran).toBe(targets.length)
@@ -270,19 +299,35 @@ describe('open IDOR findings: fixtures held back until the route is fixed', () =
       expect(r.writes.map((w) => w.table), fixedHint).toEqual(expect.arrayContaining(held.writes))
     })
 
-    if (!held.refusedWhen) continue
-    it(`${held.method} ${file}: the route's own rule refuses when the row does not pass it`, async () => {
-      const target = targets.find((t) => t.file === file) as IdorTarget
-      const restoreEnv = applyEnv(held.fixture.env)
-      const mod = (await import(`../../${file}`).finally(restoreEnv)) as Record<string, unknown>
-      const fixture = { ...held.fixture, honey: { ...held.fixture.honey, ...held.refusedWhen } }
-      const r = await runIdorCase(mod, { ...targetInput(target), fixture }, held.method, 'participant', `refused: ${file}`)
-      expect(r.outcome, describeResult(r)).toBe('refused')
-      expect(r.touched, describeResult(r)).toBe(true)
-      expect(r.writes, describeResult(r)).toEqual([])
-    })
+    if (held.refusedWhen) itRefusesWhen(file, held.method, held.fixture, held.refusedWhen)
   }
 })
+
+// An accepted write is accepted for a row the caller may reach. The route's own access rule
+// is pinned apart: the same case, with the honey row failing that rule, is refused and writes
+// nothing.
+describe("accepted writes: the route's own rule still refuses a row that fails it", () => {
+  for (const [file, fixture] of Object.entries(CASE_FIXTURES)) {
+    if (!fixture.refusedWhen) continue
+    const target = targets.find((t) => t.file === file) as IdorTarget
+    for (const method of target.methods) {
+      if (fixtureFor(fixture, method)) itRefusesWhen(file, method, fixture, fixture.refusedWhen)
+    }
+  }
+})
+
+function itRefusesWhen(file: string, method: string, base: CaseFixture, refusedWhen: Record<string, unknown>) {
+  it(`${method} ${file}: the route's own rule refuses when the row does not pass it`, async () => {
+    const target = targets.find((t) => t.file === file) as IdorTarget
+    const restoreEnv = applyEnv(base.env)
+    const mod = (await import(`../../${file}`).finally(restoreEnv)) as Record<string, unknown>
+    const fixture = { ...base, honey: { ...base.honey, ...refusedWhen } }
+    const r = await runIdorCase(mod, { ...targetInput(target), fixture }, method, 'participant', `refused: ${file}`)
+    expect(r.outcome, describeResult(r)).toBe('refused')
+    expect(r.touched, describeResult(r)).toBe(true)
+    expect(r.writes, describeResult(r)).toEqual([])
+  })
+}
 
 /**
  * A fixture exists to get the id to the code that decides. A refusal with no
@@ -295,6 +340,22 @@ function checkFixtureReachedTheId(t: IdorTarget, results: Record<string, CaseRes
     const fixture = fixtureFor(CASE_FIXTURES[t.file], method)
     if (!fixture || r.outcome !== 'refused' || r.touched) continue
     expect(fixture.refusesWithoutQuery, `${t.file}\n${describeResult(r)}\nthe fixture got a refusal without using the id: this case proves nothing`).toBeDefined()
+  }
+}
+
+/**
+ * An accepted honey_write covers the writes its reason names and no other. A fixture that
+ * gets a case to one names those tables in `writes`; a fixture without `writes` may not
+ * get a case to a honey_write at all.
+ */
+function checkPinnedWrites(t: IdorTarget, results: Record<string, CaseResult>) {
+  for (const [method, r] of Object.entries(results)) {
+    const fixture = fixtureFor(CASE_FIXTURES[t.file], method)
+    if (!fixture) continue
+    const tables = [...new Set(r.writes.map((w) => w.table))].sort()
+    const detail = `${t.file}\n${describeResult(r)}`
+    if (fixture.writes) expect(tables, `${detail}\nthe writes differ from the fixture's \`writes\`: review the accepted reason`).toEqual([...fixture.writes].sort())
+    else if (r.outcome === 'honey_write') expect.fail(`${detail}\na fixture got this case to a Canary write: name the writes in \`writes\` with a reviewed reason, or hold it back`)
   }
 }
 

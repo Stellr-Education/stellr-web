@@ -17,7 +17,7 @@ import { ROUTE_MANIFEST } from '@/lib/security/route-manifest'
 import { HONEYTOKENS } from '@/lib/testing/honeytokens'
 import { allowedTenantFiles } from '@/lib/tenancy/tenant-surface'
 import { capRegressions, isFailingEntry, isUnprovenEntry } from '../../scripts/tenant-host-cap.mjs'
-import { CASE_FIXTURES, HELD_BACK_FIXTURES, type CaseFixture } from './case-fixtures'
+import { CASE_FIXTURES, HELD_BACK_FIXTURES, REGISTRANT, REGISTRANT_EMAIL, type CaseFixture } from './case-fixtures'
 import { TENANT_A_PARTICIPANT, type CaseResult } from './harness'
 import { printReportedOracles, sealReportedOracles } from './reported-oracles'
 
@@ -101,18 +101,9 @@ const linkFixture: CaseFixture = {
 
 // A person's details that pass the form's checks, on an address nobody else holds, so what
 // the case tests is the event: the honey row answers an email of its own as "already there".
-const PERSON_EMAIL = 'registrant@tenant-a.invalid'
-const PERSON = {
-  first_name: 'Tenant',
-  last_name: 'Registrant',
-  date_of_birth: '2000-01-01',
-  phone: '0000000000',
-  gender: 'prefer_not_to_say',
-  t_shirt_size: 'M',
-  age_bracket: 'adult',
-  event_role: 'teacher',
-  school_name: 'Tenant A School',
-}
+// Shared with the generated suite (test/idor/case-fixtures.ts), which sends the same body.
+const PERSON_EMAIL = REGISTRANT_EMAIL
+const PERSON = REGISTRANT
 
 /** Host B's event, by slug. An offer or school of host B's would be a second record under test. */
 const individualFixture: CaseFixture = {
@@ -131,25 +122,6 @@ const individualOfferFixture: CaseFixture = {
   omitInputs: ['school_id'],
   honeyTokens: [OFFER_TOKEN],
   honey: { status: 'offered', percent_off: 100 },
-}
-
-const groupFixture: CaseFixture = {
-  reason: 'a group needs an organiser object, a student count and the school terms before the event is looked up',
-  body: {
-    teacher: { ...PERSON, email: PERSON_EMAIL },
-    teacher_poc: null,
-    registrant_role: 'teacher',
-    adult_count: 1,
-    student_count: 2,
-    total_participants: 3,
-    details_method: 'email_link',
-    // The event has no Stripe price, and card or invoice would stop on that, not on whose event it is.
-    payment_method: 'none',
-    member_pays_individually: false,
-    additional_adults: [],
-    students: [],
-    school_dpa_agreed: true,
-  },
 }
 
 /** The participant holds the role this route asks for. Only the event is another tenant's. */
@@ -262,7 +234,8 @@ const FIXTURES: Record<string, () => CaseFixture> = {
   'app/api/credentials/[number]/visibility/route.ts': () => hostChecked({ reason: 'the consent check past the owner check reads a grade as text', honey: { grade: '10' } }),
   'app/api/register/individual/route.ts': () => hostChecked(individualFixture),
   'app/api/register/group-join/route.ts': () => hostChecked(),
-  'app/api/register/group/route.ts': () => hostChecked(groupFixture),
+  // The generated suite's fixture (test/idor/case-fixtures.ts) carries the group body.
+  'app/api/register/group/route.ts': () => hostChecked(),
   'app/api/volunteer/interest/route.ts': () => hostChecked(volunteerFixture),
   'app/api/survey/event/[slug]/link/route.ts': () => hostChecked(surveyLinkFixture),
   'app/api/email/unsubscribe/route.ts': () => hostChecked(),

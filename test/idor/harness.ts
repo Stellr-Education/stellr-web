@@ -63,7 +63,7 @@ import { vi } from 'vitest'
 import { isCataloguedAction } from '@/lib/audit/actions'
 import { auditHandlers } from '@/lib/security/audit-coverage'
 import { GUARD_EXCEPTIONS } from '@/lib/security/route-guards'
-import { CANARY_TENANT, HONEYTOKENS, honeytokenFor, isCanaryId, scanForHoneytokens, type HoneytokenHit } from '@/lib/testing/honeytokens'
+import { CANARY_TENANT, HONEYTOKEN_MARKER, HONEYTOKENS, honeytokenFor, isCanaryId, scanForHoneytokens, type HoneytokenHit } from '@/lib/testing/honeytokens'
 import { STELLR_TENANT_ID } from '@/lib/tenancy/constants'
 import { TENANT_ID_HEADER, TENANT_SLUG_HEADER } from '@/lib/tenancy/host'
 import type { IdorTarget } from '@/lib/security/idor-targets'
@@ -543,6 +543,29 @@ async function recordOutboundBody(url: string, input: RequestInfo | URL, init?: 
   const hits = scanForHoneytokens(text, { sent: harness.sent })
   if (hits.length) {
     harness.db.writes.push({ table: `fetch:${new URL(url).host}`, op: 'fetch', detail: `request body carries the Canary value ${hits[0].value}` })
+  }
+}
+
+/**
+ * Host B's open event, as lib/sanity's getEventBySlug answers a slug that names it: null
+ * for any other slug, and in the differential's run with the honey row gone. The
+ * tenant-host suite answers with it always; the generated suite only for a case whose
+ * fixture sets `event` (test/idor/case-fixtures.ts).
+ */
+export function honeyEventFor(slug: string) {
+  if (harness.db.honeyAbsent || !String(slug).toUpperCase().includes(HONEYTOKEN_MARKER)) return null
+  return {
+    _id: HONEYTOKENS.sanityId,
+    title: HONEYTOKENS.personName,
+    slug: { current: slug },
+    type: 'competition',
+    date: '2099-06-01',
+    endDate: '2099-06-02',
+    setting: 'in_person',
+    registrationOpen: true,
+    gradeMin: 7,
+    gradeMax: 12,
+    capacity: 100,
   }
 }
 

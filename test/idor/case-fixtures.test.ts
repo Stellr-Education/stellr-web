@@ -80,6 +80,18 @@ describe('the fixture lists', () => {
     }
   })
 
+  it('leave out a generated input only where another one is what the case tests', () => {
+    // register/individual: host B's event is under test; the offer link is a second record,
+    // which the tenant-host suite's offer variant tests (test/idor/tenant-host-targets.ts).
+    const allowed: Record<string, string[]> = { 'app/api/register/individual/route.ts': ['scholarship_token'] }
+    for (const [file, f] of fixtures) expect(f.omitInputs ?? [], file).toEqual(allowed[file] ?? [])
+  })
+
+  it('model host B\'s event only for the routes that register for one', () => {
+    const askers = fixtures.filter(([, f]) => f.event).map(([file]) => file).sort()
+    expect(askers).toEqual(['app/api/register/group/route.ts', 'app/api/register/individual/route.ts'])
+  })
+
   it('replace an id input only where it names no tenant record', () => {
     for (const [file, f] of fixtures) {
       // pageSlug: a key of the static landing pages (getLandingPage).

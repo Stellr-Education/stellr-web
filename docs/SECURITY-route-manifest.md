@@ -107,9 +107,9 @@ The route manifest says *who* may call a route. The IDOR suite checks *which rec
 | `honey_write` | a write touched or referenced a Canary row, or an `rpc()` got a Canary value (its SQL is not modelled) | fails, unless the snapshot records a reviewed reason |
 | `oracle` | a 2xx whose status or body changes when the Canary row is removed (a second, differential run): an existence oracle such as `{ exists: !!row }` | fails, unless the snapshot records a reviewed reason |
 | `refused` | 4xx, a redirect, `notFound()` | passes |
-| `unexercised` | 400, 405, 413, 415 or 422 and no Canary value ever reached the database: validation refused before the id was used, so the case proved nothing | pinned in the snapshot and capped (`MAX_UNEXERCISED`, 5 since wave 1, #528; lower it, never raise it) |
+| `unexercised` | 400, 405, 413, 415 or 422 and no Canary value ever reached the database: validation refused before the id was used, so the case proved nothing | pinned in the snapshot and capped (`MAX_UNEXERCISED`, 5 since wave 1, #528; 0 since S5 wave 9; never raise it) |
 | `ok` | 2xx with none of tenant B's data, no honey write, and the same response without the Canary row | passes |
-| `error` | 5xx, a throw, or no answer in 5 s (the harness could not model the path) | pinned in the snapshot and capped (`MAX_ERROR`, 3) |
+| `error` | 5xx, a throw, or no answer in 5 s (the harness could not model the path) | pinned in the snapshot and capped (`MAX_ERROR`, 1 since S5 wave 9: `store/checkout`, held back as `C4-F5`) |
 
 On top of that, the **participant-refusal rule**, by class:
 
