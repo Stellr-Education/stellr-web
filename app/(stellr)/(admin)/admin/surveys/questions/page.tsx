@@ -8,6 +8,7 @@ import { normaliseDefinition, ROLES, versionName, type Question, type Respondent
 import { fillTemplate } from '@/lib/survey/branching'
 import { answerFormat, branchCounts, describeShowIf, pageTitle, skipNote, TYPE_LABELS } from '@/lib/survey/describe'
 import { formatDateShort } from '@/lib/utils'
+import { stellrRows } from '@/lib/tenancy/stellr-scope'
 
 // /admin/surveys/questions — the questions each survey version asks, per
 // respondent path, read-only. Published versions are frozen (the database
@@ -38,7 +39,7 @@ export default async function SurveyQuestionsPage({ searchParams }: { searchPara
   const db = supabaseServer()
   const [{ data: defs }, { data: dists }] = await Promise.all([
     db.from('survey_definitions').select('id, key, version, title, status, published_at, definition').order('key').order('version', { ascending: false }),
-    db.from('survey_distributions').select('definition_id'),
+    stellrRows(db.from('survey_distributions').select('definition_id')),
   ])
   const rows = (defs ?? []) as DefinitionRow[]
   const usedBy = new Map<string, number>()

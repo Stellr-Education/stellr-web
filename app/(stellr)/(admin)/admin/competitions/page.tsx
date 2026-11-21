@@ -6,6 +6,7 @@ import { type StellarEvent } from '@/lib/sanity'
 import { hasCapability, requireEventAccess } from '@/lib/authz'
 import { eventAccessCovers } from '@/lib/authz/decide'
 import { STELLR_TENANT_ID } from '@/lib/tenancy/constants'
+import { stellrRows } from '@/lib/tenancy/stellr-scope'
 
 export const metadata = { title: 'Admin — Events' }
 export const dynamic = 'force-dynamic'
@@ -99,9 +100,9 @@ export default async function AdminEventsPage() {
   const slugs = [...visibleEvents, ...visibleCampaigns].map((e) => e.slug.current)
   const counts = new Map<string, number>()
   if (slugs.length > 0) {
-    const { data: regs } = await db
+    const { data: regs } = await stellrRows(db
       .from('registrations')
-      .select('event_slug, participants(count)')
+      .select('event_slug, participants(count)'))
       .in('event_slug', slugs)
       .neq('status', 'withdrawn')
     for (const reg of regs ?? []) {

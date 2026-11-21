@@ -4,6 +4,7 @@ import { z } from 'zod'
 import { supabaseServer } from '@/lib/supabase'
 import { isStellrAdmin } from '@/lib/authz'
 import { withAudit } from '@/lib/audit/route'
+import { stellrRows } from '@/lib/tenancy/stellr-scope'
 
 export const dynamic = 'force-dynamic'
 
@@ -21,7 +22,7 @@ export async function GET() {
   const db = supabaseServer()
   const [settings, modules] = await Promise.all([
     db.from('staff_role_settings').select('training_module_id, updated_at').eq('id', true).maybeSingle(),
-    db.from('training_modules').select('id, title').order('title'),
+    stellrRows(db.from('training_modules').select('id, title')).order('title'),
   ])
   if (settings.error || modules.error) return NextResponse.json({ error: 'Could not load the Staff settings.' }, { status: 500 })
   return NextResponse.json({

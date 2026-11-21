@@ -18,14 +18,17 @@
 // and the network stays closed (`fetch` answers only the URLs a fixture names).
 // test/idor/case-fixtures.test.ts holds these rules as allow-lists.
 //
-// A fixture that reaches a Canary write is not accepted into the snapshot. It
-// goes in HELD_BACK_FIXTURES, and the route stays pinned as it was until its owner
-// fixes it.
+// A fixture that reaches a Canary write is not accepted into the snapshot unless the
+// write is shown to be harmless: the snapshot then carries the reviewed reason, and
+// `writes` here names exactly the tables the case may write, so a new write on the same
+// route still fails. A write that is not harmless goes in HELD_BACK_FIXTURES, and the
+// route stays pinned as it was until its owner fixes it.
 //
-// Not here: register/group and register/individual. This suite models no Sanity event,
-// so a fixture would only move them to a 404 no id caused. They stay pinned for Lane A.
-// test/idor/tenant-host-targets.ts has the bodies that reach the event, where a slug
-// does answer.
+// register/group and register/individual: this suite models no Sanity event, except for
+// a fixture that sets `event`. Then host B's open event answers its slug, as in
+// test/idor/tenant-host-routes.test.ts, so the case reaches the route's own event check
+// instead of a 404 no id caused. The bodies are shared with
+// test/idor/tenant-host-targets.ts, so both suites send the same registration.
 
 export interface CaseFixture {
   /** What the route stopped on without this fixture. */
@@ -54,6 +57,24 @@ export interface CaseFixture {
    * used no Canary value fails test/idor/idor-routes.test.ts.
    */
   refusesWithoutQuery?: string
+  /**
+   * Host B's open event answers its slug (test/idor/idor-routes.test.ts mocks lib/sanity
+   * for this case only), so a registration reaches the route's event check. Without it the
+   * generated suite models no event. The tenant-host suite always models one.
+   */
+  event?: boolean
+  /**
+   * For a case whose snapshot entry accepts a honey_write: exactly the tables (or Stripe
+   * calls) it writes with a Canary value. test/idor/idor-routes.test.ts fails when the set
+   * differs, so the accepted reason covers these writes and no other.
+   */
+  writes?: readonly string[]
+  /**
+   * Honey columns that make the route's own access rule refuse. idor-routes.test.ts proves
+   * the case then comes back `refused` with no write, so that rule is pinned apart from the
+   * accepted outcome.
+   */
+  refusedWhen?: Record<string, unknown>
   /** Further values the honey row's token columns answer to (a valid link's hash). Tenant-host cases only. */
   honeyTokens?: readonly string[]
   /** Cookies the request carries (a signing session). Tenant-host cases only. */
@@ -66,8 +87,8 @@ export interface CaseFixture {
   omitOrigin?: boolean
   /**
    * Generated body inputs to leave out, where another one is what the case tests (a
-   * registration for host B's event, with no offer or school of host B's). Tenant-host
-   * cases only.
+   * registration for host B's event, with no offer or school of host B's). In the generated
+   * suite only where test/idor/case-fixtures.test.ts allows it.
    */
   omitInputs?: readonly string[]
   /**
@@ -85,6 +106,65 @@ const SIGNING_ENV = { ASSET_LINK_SECRET: DUMMY_SECRET }
 const STRIPE_CHECKOUT = { env: STRIPE_ENV, member: STRIPE_MEMBER, stripe: true }
 /** HubSpot's forms endpoint, the one lead-capture write that needs no token. */
 const hubspotForms = (url: string) => (url.startsWith('https://api.hsforms.com/') ? Response.json({ inlineMessage: 'ok' }) : undefined)
+
+// A person's details that pass the registration form's checks, on an address nobody else
+// holds. Shared with test/idor/tenant-host-targets.ts.
+export const REGISTRANT_EMAIL = 'registrant@tenant-a.invalid'
+export const REGISTRANT = {
+  first_name: 'Tenant',
+  last_name: 'Registrant',
+  date_of_birth: '2000-01-01',
+  phone: '0000000000',
+  gender: 'prefer_not_to_say',
+  t_shirt_size: 'M',
+  age_bracket: 'adult',
+  event_role: 'teacher',
+  school_name: 'Tenant A School',
+}
+
+/** The group form's required shape, with no payment: the event has no Stripe price. */
+export const GROUP_REGISTRATION_BODY = {
+  teacher: { ...REGISTRANT, email: REGISTRANT_EMAIL },
+  teacher_poc: null,
+  registrant_role: 'teacher',
+  adult_count: 1,
+  student_count: 2,
+  total_participants: 3,
+  details_method: 'email_link',
+  // The event has no Stripe price, and card or invoice would stop on that, not on whose event it is.
+  payment_method: 'none',
+  member_pays_individually: false,
+  additional_adults: [],
+  students: [],
+  school_dpa_agreed: true,
+}
+
+// The caller's own Membership Agreement, signed today, so onboarding does not issue one.
+// Issuing one fails here (signing is not configured) and alerts the Stellr duty holders,
+// whom the honey admin_duties row stands in for: a write about the caller, not the school.
+const SIGNED_TODAY = new Date().toISOString()
+const CALLER_AGREEMENT_ON_FILE = {
+  agreements: [
+    {
+      id: '00000000-0000-4000-8000-00000000a003',
+      member_id: '00000000-0000-4000-8000-00000000a001',
+      status: 'completed',
+      envelope_type: 'adult',
+      completed_at: SIGNED_TODAY,
+      agreement_version: null,
+    },
+  ],
+}
+
+// B9 (migration 20261106234759_community_stellr_only_check.sql): community and training
+// are Stellr's, held by the database. Every post hangs off a Space
+// (community_posts.space_id is NOT NULL), every comment off a post, and
+// community_spaces_stellr_only, community_resources_stellr_only and
+// mentoring_cohorts_stellr_only allow only Stellr's tenant or NULL. So no post, comment,
+// resource or cohort is another tenant's, and the S5 host allow-list keeps community
+// routes off tenant hosts. The honey row stands in for a real Stellr row the member can see.
+const B9_COMMUNITY = 'B9 holds community on Stellr, so the honey row is a Stellr row the member can see'
+const CANARY_OPEN_SPACE_POST = { status: 'published', is_archived: false, access_type: 'open' }
 
 const STAFF_NO_SCHOLARSHIPS =
   'deciding on a scholarship is admin-only (owner, 2 Oct 2026): Staff do not hold scholarships:write, so requireScholarshipAdmin refuses Staff before the application is read (C20)'
@@ -279,6 +359,63 @@ export const CASE_FIXTURES: Record<string, CaseFixture> = {
     env: { HUBSPOT_FORM_EVENT_NOTIFY: 'idor-harness-form' },
     fetch: hubspotForms,
   },
+
+  // ── host B's event: the registration reaches the route's own event check ───
+  'app/api/register/individual/route.ts': {
+    reason:
+      "host B's event answers its slug, so the event check decides; the offer link is left out (an offer is a second record, which the tenant-host suite's offer variant tests, and a Canary value fails the link's format first)",
+    event: true,
+    body: { ...REGISTRANT },
+    omitInputs: ['scholarship_token'],
+  },
+  'app/api/register/group/route.ts': {
+    reason: "a group needs an organiser object, a student count and the school terms before host B's event is looked up",
+    event: true,
+    body: GROUP_REGISTRATION_BODY,
+  },
+
+  // ── harmless writes, accepted in the snapshot with a reason ────────────────
+  // Formerly held back as C4-F1, C4-F2 and C4-F3, until B9 kept community on Stellr.
+  'app/api/community/flag/route.ts': {
+    reason: `contentType is a zod enum, and only a published post in a live Space goes on to the access check; ${B9_COMMUNITY}`,
+    honey: CANARY_OPEN_SPACE_POST,
+    body: { contentType: 'post' },
+    writes: ['community_flags'],
+    refusedWhen: { access_type: 'private' },
+  },
+  'app/api/community/reactions/route.ts': {
+    reason: `targetType is a zod enum, and only a published post in a live Space goes on to the access check; ${B9_COMMUNITY}`,
+    honey: CANARY_OPEN_SPACE_POST,
+    body: { targetType: 'post' },
+    writes: ['community_reactions'],
+    refusedWhen: { access_type: 'private' },
+  },
+  'app/api/community/mentoring/register/route.ts': {
+    reason: `Stripe unset answers 503 on the paid path, after the cohort is read; ${B9_COMMUNITY}`,
+    ...STRIPE_CHECKOUT,
+    writes: ['stripe.checkout.sessions.create'],
+    refusedWhen: { lifecycle: 'archived' },
+  },
+  // Formerly held back as C4-F6. public.schools is the tenantless school directory.
+  'app/api/members/onboarding/route.ts': {
+    reason:
+      "the date of birth, role and contact fields are validated before school_id is used; the caller's own agreement is on file, so the case tests the school link and not the signing-failure alert",
+    callerRows: CALLER_AGREEMENT_ON_FILE,
+    body: {
+      event_role: 'teacher',
+      age_bracket: 'adult',
+      date_of_birth: '1980-01-01',
+      gender: 'prefer_not_to_say',
+      phone: '5550100',
+      grade: '10',
+      tshirt_size: 'M',
+      ec_first_name: 'Idor',
+      ec_last_name: 'Contact',
+      ec_phone: '5550101',
+      ec_relationship: 'Parent',
+    },
+    writes: ['member_schools'],
+  },
 }
 
 /**
@@ -303,72 +440,17 @@ export interface HeldBackFixture {
   refusedWhen?: Record<string, unknown>
 }
 
-// C4-F1, C4-F2, C4-F3: the routes follow what the member can see, and refuse a
-// private Space or an archived cohort. An open Space and an open cohort are open to
-// every member, and no tenant column tells a Canary row from a real one. These stay
-// held back until B9 keeps community on Stellr.
-const CANARY_OPEN_SPACE_POST = { status: 'published', is_archived: false, access_type: 'open' }
-
 export const HELD_BACK_FIXTURES: Record<string, HeldBackFixture> = {
-  'app/api/community/flag/route.ts': {
-    method: 'POST',
-    ref: 'C4-F1',
-    writes: ['community_flags'],
-    refusedWhen: { access_type: 'private' },
-    fixture: {
-      reason: 'contentType is a zod enum, and only a published post in a live Space goes on to the access check',
-      honey: CANARY_OPEN_SPACE_POST,
-      body: { contentType: 'post' },
-    },
-  },
-  'app/api/community/reactions/route.ts': {
-    method: 'POST',
-    ref: 'C4-F2',
-    writes: ['community_reactions'],
-    refusedWhen: { access_type: 'private' },
-    fixture: {
-      reason: 'targetType is a zod enum, and only a published post in a live Space goes on to the access check',
-      honey: CANARY_OPEN_SPACE_POST,
-      body: { targetType: 'post' },
-    },
-  },
-  'app/api/community/mentoring/register/route.ts': {
-    method: 'POST',
-    ref: 'C4-F3',
-    writes: ['stripe.checkout.sessions.create'],
-    refusedWhen: { lifecycle: 'archived' },
-    fixture: { reason: 'Stripe unset answers 503 on the paid path, after the cohort is read', ...STRIPE_CHECKOUT },
-  },
   // Still held. The route already orders only an active variant of an active product
   // (pinned in its route.test.ts). The honey row is both, and the catalogue has no
   // tenant column, so no check can tell it from a real one until the owner decides
-  // whether the catalogue gets a tenant or this outcome is accepted with a reason.
+  // whether the catalogue gets a tenant or this outcome is accepted with a reason
+  // (docs/S5-DECISION-BACKFILL-DRAFT.md BF-33, open).
   'app/api/store/checkout/route.ts': {
     method: 'POST',
     ref: 'C4-F5',
     writes: ['store_order_items'],
     fixture: { reason: 'Stripe unset answers 503 before the variants are read', ...STRIPE_CHECKOUT },
-  },
-  'app/api/members/onboarding/route.ts': {
-    method: 'POST',
-    ref: 'C4-F6',
-    writes: ['member_schools', 'community_notifications'],
-    fixture: {
-      reason: 'the date of birth, role and contact fields are validated before school_id is used',
-      body: {
-        event_role: 'teacher',
-        age_bracket: 'adult',
-        date_of_birth: '1980-01-01',
-        gender: 'prefer_not_to_say',
-        phone: '5550100',
-        grade: '10',
-        tshirt_size: 'M',
-        ec_first_name: 'Idor',
-        ec_last_name: 'Contact',
-        ec_phone: '5550101',
-        ec_relationship: 'Parent',
-      },
-    },
   },
 }
 

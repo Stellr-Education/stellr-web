@@ -5,6 +5,7 @@ import { allRows } from '@/lib/db'
 import { MemberLink, SchoolLink } from '@/components/admin/RecordLinks'
 import { resolveSchoolIds } from '@/lib/school-ids'
 import { MEDIA_STATUS_LABEL, mediaDoNotUseList, mediaReasonDetail, type MediaStatus } from '@/lib/survey/media'
+import { stellrRows } from '@/lib/tenancy/stellr-scope'
 
 // /admin/media — the media do-not-use list (privacy runbook Part C). Check it
 // before using any event photo, video, name or student work in promotion.
@@ -35,9 +36,9 @@ export default async function MediaDoNotUsePage({ searchParams }: { searchParams
     mediaDoNotUseList(db, { eventSlug, includeOk }),
     allRows<{ event_slug: string | null; event_title: string | null; created_at: string }>(
       (from, to) =>
-        db
+        stellrRows(db
           .from('registrations')
-          .select('event_slug, event_title, created_at')
+          .select('event_slug, event_title, created_at'))
           .order('created_at', { ascending: false })
           .range(from, to),
       'media page event list',
