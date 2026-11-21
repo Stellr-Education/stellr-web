@@ -2,6 +2,9 @@ import { supabaseServer } from '@/lib/supabase'
 import { openLink } from '@/lib/esign/native/flow'
 import { requestTenant } from '@/lib/tenancy/request-tenant'
 import { clearSessionCookie, invalidLink, json, readJson, sameOrigin, setSessionCookie, throttle } from '@/lib/esign/native/http'
+import { withAudit } from '@/lib/audit/route'
+import { noteAuditSubject } from '@/lib/audit/route-subject'
+import { noteSigner, signerEvent } from '../audit'
 
 // POST /api/sign/session — exchange the emailed signing link for a session.
 //
@@ -13,7 +16,7 @@ import { clearSessionCookie, invalidLink, json, readJson, sameOrigin, setSession
 // For a document about a child the signer first confirms the child's year of
 // birth, so a link sent to a mistyped address shows a stranger nothing.
 
-export async function POST(req: Request) {
+export const POST = withAudit(({ args: [req] }: { args: [Request] }) => ({ action: 'esign.signer.session_open' as const, ...signerEvent(req) }), async (req: Request) => {
   const limited = await throttle(req, 'session', 20)
   if (limited) return limited
   if (!sameOrigin(req)) return json({ error: 'Forbidden' }, 403)
@@ -29,6 +32,9 @@ export async function POST(req: Request) {
   // kept a single cookie and overwrote it; do not restore that.) The
   // clearSessionCookie calls below only wipe the legacy unscoped cookie.
   const state = await openLink(supabaseServer(), body.token, { birthYear, hostTenantId: (await requestTenant()).tenantId })
+  // Every answer but a refused link is recorded; only a ready session names its recipient.
+  noteAuditSubject(req, { detail: { link_state: state.kind } })
+  if (state.kind === 'ready') noteSigner(req, state)
   switch (state.kind) {
     case 'invalid':
       return clearSessionCookie(invalidLink())
@@ -44,4 +50,4 @@ export async function POST(req: Request) {
       // session instead of overwriting this one.
       return setSessionCookie(json({ state: 'ready', ref: state.recipient.id }), state.session, state.recipient.id)
   }
-}
+})

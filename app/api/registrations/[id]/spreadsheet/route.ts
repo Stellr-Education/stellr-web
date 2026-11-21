@@ -9,6 +9,9 @@ import { JWT } from 'google-auth-library'
 import { impersonatedMemberId } from '@/lib/impersonation'
 import { GRADES, GENDERS, T_SHIRT_SIZES, DIETARY, EMERGENCY_RELATIONSHIPS } from '@/lib/registration-constants'
 import { displayGrade } from '@/lib/member-enums'
+import { rowTenant } from '@/lib/registration/event-context'
+import { withAudit } from '@/lib/audit/route'
+import { auditSubject, noteAuditSubject } from '@/lib/audit/route-subject'
 
 function getAuth() {
   const email = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL
@@ -72,10 +75,18 @@ function greyCell(sheetId: number, rowIndex: number, startCol: number, endCol: n
   }
 }
 
-export async function GET(
-  _req: NextRequest,
+// The first open creates the group's Google Sheet and stores its id. withAudit records
+// every answer but a 4xx (docs/TENANCY-S5.md, C7), the redirect to an existing sheet
+// included, on the group's own chain, noted once the caller passed.
+const auditSpec = ({ args: [req] }: { args: [Request, unknown] }) => {
+  const { tenant, target, metadata } = auditSubject(req, 'registrations')
+  return { action: 'registration.roster.sheet_open' as const, actor: { session: true } as const, tenant, target, metadata }
+}
+
+export const GET = withAudit(auditSpec, async (
+  req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
-) {
+) => {
   try {
     const { id } = await params
     if (!isGoogleSheetsConfigured()) {
@@ -93,7 +104,7 @@ export async function GET(
 
     const { data: registration, error: regErr } = await db
       .from('registrations')
-      .select('id, event_title, school_name, teacher_email, teacher_member_id, teacher_poc_email, type, spreadsheet_id')
+      .select('id, event_title, school_name, teacher_email, teacher_member_id, teacher_poc_email, type, spreadsheet_id, tenant_id')
       .eq('id', id)
       .maybeSingle()
 
@@ -110,6 +121,7 @@ export async function GET(
       teacher_email: string | null; teacher_member_id: string | null
       teacher_poc_email: string | null
       type: string; spreadsheet_id: string | null
+      tenant_id?: string | null
     }
 
     if (reg.type !== 'group') {
@@ -134,6 +146,7 @@ export async function GET(
     if (!m || !ownsTeam(m, reg)) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
+    noteAuditSubject(req, { tenantId: rowTenant(reg.tenant_id), id: reg.id, detail: { sheet_created: !reg.spreadsheet_id } })
 
     // Return existing sheet URL rather than creating a new one each time
     if (reg.spreadsheet_id) {
@@ -301,7 +314,7 @@ export async function GET(
       { status: 500 }
     )
   }
-}
+})
 
 function colLetter(n: number): string {
   let result = ''

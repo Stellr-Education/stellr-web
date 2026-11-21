@@ -7,13 +7,24 @@ import { isDetailsHiddenFrom, organiserViewOfParticipant } from '@/lib/team-link
 import { requestTenant } from '@/lib/tenancy/request-tenant'
 import { rowTenant } from '@/lib/registration/event-context'
 import { withoutTenantId } from '@/lib/registration/roster-context'
+import { withAudit } from '@/lib/audit/route'
+import { auditSubject, noteAuditSubject } from '@/lib/audit/route-subject'
 
 // GET /api/members/teams/[id] — full team detail with participants
 // An admin holding a view-as ticket reads it as the viewed member.
-export async function GET(
-  _req: NextRequest,
+//
+// The view can write: an organiser who opens it with no live join token mints one. So
+// withAudit records every answer but a 4xx (docs/TENANCY-S5.md, C7), on the group's own
+// chain, noted once the caller passed, with whether a token was minted.
+const readAuditSpec = ({ args: [req] }: { args: [Request, unknown] }) => {
+  const { tenant, target, metadata } = auditSubject(req, 'registrations')
+  return { action: 'registration.team.open' as const, actor: { session: true } as const, tenant, target, metadata }
+}
+
+export const GET = withAudit(readAuditSpec, async (
+  req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
-) {
+) => {
   const { id } = await params
   const db = supabaseServer()
 
@@ -63,6 +74,7 @@ export async function GET(
     console.warn('[teams/id] Access denied', { registrationId: id, memberId: member.id })
     return NextResponse.json({ error: 'You do not have access to this team' }, { status: 403 })
   }
+  noteAuditSubject(req, { tenantId: rowTenant(registration.tenant_id), id: registration.id as string, detail: { organiser: owns } })
 
   // A participant who does not manage the group sees who is on it and nothing
   // else. This response used to return every participant row in full — dates
@@ -153,6 +165,7 @@ export async function GET(
     if (mintError) {
       console.error('[teams/id] Join token mint error (non-fatal):', mintError)
     } else {
+      noteAuditSubject(req, { detail: { join_token_minted: true } })
       joinUrl = `${siteUrl}/register/${regAny.event_slug}/join/${freshToken}`
     }
   }
@@ -195,4 +208,4 @@ export async function GET(
   // tenant_id was read for the check above, and stays on the server.
   const { tenant_id: _tenantId, ...answered } = registration as Record<string, unknown>
   return NextResponse.json({ registration: { ...answered, participants, joinUrl, docusignEnvelopes, viewerRole }, watchActive })
-}
+})
