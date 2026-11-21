@@ -1,8 +1,7 @@
-import { hasCapability, isStellrAdmin } from '@/lib/authz'
+import { authz, hasCapability, isStellrAdmin } from '@/lib/authz'
 import { logRecordAccess } from '@/lib/record-access-log'
 import { supabaseServer } from '@/lib/supabase'
 import { notFound } from 'next/navigation'
-import { requireAdminPage } from '@/lib/admin-auth'
 import { AdminMemberDetail } from '@/components/admin/AdminMemberDetail'
 import { externalCheckValidUntil, loadComplianceForMember } from '@/lib/compliance'
 import { isKnownMinorOn, isMinorOn } from '@/lib/age'
@@ -24,7 +23,7 @@ export default async function AdminMemberPage({
 }: {
   params: Promise<{ id: string }>
 }) {
-  await requireAdminPage()
+  await authz.page.requireCapability('portal:read', { route: '/admin/members/[id]' })
   const { id } = await params
   const db = supabaseServer()
 

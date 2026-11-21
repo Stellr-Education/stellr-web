@@ -7,7 +7,7 @@ import {
   type VolunteerTrainingProgress,
 } from '@/lib/volunteer'
 import { VolunteersConsole, type VolunteerConsoleRow, type AssignableEvent } from '@/components/admin/VolunteersConsole'
-import { requireAdminPage } from '@/lib/admin-auth'
+import { authz } from '@/lib/authz'
 
 export const metadata = { title: 'Admin — Volunteers' }
 export const dynamic = 'force-dynamic'
@@ -17,7 +17,7 @@ export const dynamic = 'force-dynamic'
 // training, and event assignments in one table. Actions are advisory-gated only
 // (warn-don't-block).
 export default async function VolunteersAdminPage() {
-  await requireAdminPage()
+  await authz.page.requireCapability('portal:read', { route: '/admin/members/volunteers' })
   const db = supabaseServer()
 
   // Events + campaigns a volunteer can be assigned to (a volunteer may cover

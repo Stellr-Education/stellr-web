@@ -1,12 +1,12 @@
 import { getComplianceAudit } from '@/lib/compliance-admin'
 import { ComplianceAuditTable } from '@/components/admin/ComplianceAuditTable'
 import { ComplianceSyncButton } from '@/components/admin/ComplianceSyncButton'
-import { requireAdminPage } from '@/lib/admin-auth'
+import { authz } from '@/lib/authz'
 
 export const metadata = { title: 'Admin — Background Checks' }
 
 export default async function ComplianceAuditPage() {
-  await requireAdminPage()
+  await authz.page.requireCapability('portal:read', { route: '/admin/compliance' })
   const audit = await getComplianceAudit()
 
   return (

@@ -2,13 +2,13 @@ import Link from 'next/link'
 import { ArrowLeft } from 'lucide-react'
 import { ProductForm } from '@/components/admin/store/ProductForm'
 import { StoreNav } from '../StoreNav'
-import { requireAdminPage } from '@/lib/admin-auth'
+import { authz } from '@/lib/authz'
 
 export const metadata = { title: 'Admin — New product' }
 export const dynamic = 'force-dynamic'
 
 export default async function NewProductPage() {
-  await requireAdminPage()
+  await authz.page.requireCapability('portal:read', { route: '/admin/store/new' })
   return (
     <div>
       <Link href="/admin/store" className="mb-3 inline-flex items-center gap-1 text-sm text-brand-muted-soft hover:text-brand-blue-dark">

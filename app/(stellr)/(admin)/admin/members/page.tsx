@@ -1,7 +1,7 @@
 import Link from 'next/link'
 import { supabaseServer } from '@/lib/supabase'
 import { MemberTable, type MemberRow } from '@/components/admin/MemberTable'
-import { requireAdminPage } from '@/lib/admin-auth'
+import { authz } from '@/lib/authz'
 import {
   activeMemberFilterCount,
   applyMemberFilters,
@@ -18,7 +18,7 @@ export default async function AdminMembersPage({
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>
 }) {
-  await requireAdminPage()
+  await authz.page.requireCapability('portal:read', { route: '/admin/members' })
   const params = await searchParams
   const filters = parseMemberFilters(params)
   const page = Math.max(1, parseInt(String(params.page ?? '1'), 10) || 1)
