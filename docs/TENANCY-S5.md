@@ -1099,7 +1099,7 @@ S5 finishes when all of these hold. Each names its proof.
   - guardian consent on tenant events: **settled 10 Nov 2026** (see [Owner decisions wave 5 raised](#owner-decisions-wave-5-raised)) and built in A16 behind `TENANT_GUARDIAN_CONSENT_ENABLED`; what remains is under [Owner decisions wave 6 raised](#owner-decisions-wave-6-raised);
   - **the tenant email share: settled 9 Nov 2026.** The owner chose one shared pool, until the move to SES: tenants' event mail counts against the same daily counter in `lib/email-budget.ts` as Stellr's, under the same rules, with no per-tenant allowance. Transactional mail is never refused by the counter, and the transactional reserve keeps bulk mail out, not any one sender. B14 builds on that. The risk the owner accepted: one busy tenant can reach Resend's own daily limit, after which Resend rejects mail for every sender, Stellr included;
   - cron fairness;
-  - audit exemptions for anonymous writes;
+  - audit exemptions for anonymous writes: **settled 21 Nov 2026.** The owner approved the eight proposed (`contact`, `subscribe`, `lp-lead`, `white-paper`, `join-network`, `host-event`, `asset-request`, `csp-report`), each with its reason in `AUDIT_EXEMPTIONS`; `cq-lead` audits;
   - the audit gate's `OPERATIONAL_WRITERS` list (`lib/security/audit-coverage.ts`), a second exemption route, and in it the sign-in consent gate: `childAwaitingConsent` and `childAwaitingConsentBlock` record through the activity log, and whether they also need a platform audit event;
   - the disposition register (51 / 9 / 55 / 16);
   - the refusal copy for under-minimum registrants: **settled 10 Nov 2026** (see [Owner decisions wave 5 raised](#owner-decisions-wave-5-raised));

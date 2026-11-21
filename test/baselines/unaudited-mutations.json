@@ -3,22 +3,13 @@
   "measuredBy": 2,
   "totals": {
     "mutatingHandlers": 302,
-    "unauditedMutations": 8,
+    "unauditedMutations": 0,
     "cronHandlers": 24,
     "unauditedCrons": 0,
     "getMutations": 21,
     "unauditedGetMutations": 0
   },
-  "mutations": [
-    "app/api/asset-request/route.ts#POST",
-    "app/api/contact/route.ts#POST",
-    "app/api/csp-report/route.ts#POST",
-    "app/api/host-event/route.ts#POST",
-    "app/api/join-network/route.ts#POST",
-    "app/api/lp-lead/route.ts#POST",
-    "app/api/subscribe/route.ts#POST",
-    "app/api/white-paper/route.ts#POST"
-  ],
+  "mutations": [],
   "crons": [],
   "getMutations": []
 }
