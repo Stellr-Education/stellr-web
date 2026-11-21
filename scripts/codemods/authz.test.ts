@@ -363,15 +363,17 @@ describe('authz codemod: what stays', () => {
     expect(out.manual.map((m) => m.why).join()).toMatch(/outside the admin surface/)
   })
 
-  it('holds lib/store/auth.ts, and names the member route it waits on', () => {
+  it('releases lib/store/auth.ts once sampling is decided (owner, 21 Nov 2026): its legacy snapshot converts in place', () => {
+    expect(HELD_WRAPPERS).toEqual({})
+    expect(isAdminSurface('lib/store/auth.ts')).toBe(true)
     const src = readFileSync(WRAPPER_FIXTURES['lib/store/auth.ts'], 'utf8')
     const out = transformSource('lib/store/auth.ts', src)
-    expect(out.src).toBe(src)
-    expect(out.converted).toEqual([])
-    expect(out.manual.map((m) => m.why).join()).toMatch(/store\/returns.*sampling decision/)
+    expect(out.src).not.toBe(src)
+    expect(out.converted.length).toBeGreaterThan(0)
+    expect(out.manual).toEqual([])
   })
 
-  it('every wrapper it will convert serves staff only: a caller outside the surface means it belongs in HELD_WRAPPERS', () => {
+  it('a wrapper caller outside the surface is one a person has looked at: only the store returns route, which sampling now covers', () => {
     const sources: Map<string, string> = collectSources(process.cwd())
     const wrappers = (LEGACY_IDIOMS as { id: string; kind: string; file?: string }[]).filter((i) => i.kind === 'wrapper')
     const outside: string[] = []
@@ -388,9 +390,8 @@ describe('authz codemod: what stays', () => {
         }
       }
     }
-    expect(outside).toEqual([])
-    // The hold is still earned: the member route is why it is there.
-    expect(sources.get('app/api/store/returns/route.ts')).toContain('canManageStoreCatalog')
+    // A new caller serving members means a person checks it before the wrapper changes.
+    expect(outside).toEqual(['app/api/store/returns/route.ts -> canManageStoreCatalog'])
   })
 
   it('refuses a client component on the admin surface', () => {
@@ -434,7 +435,7 @@ describe('authz codemod: the static guard check still passes on the output', () 
 
 describe('authz codemod: T6, the wrappers in their own files, from a snapshot taken while they were legacy', () => {
   const WRAPPERS = (LEGACY_IDIOMS as { id: string; kind: string; file?: string }[]).filter((i) => i.kind === 'wrapper')
-  /** A held wrapper is rewritten as if it sat on the surface, so its proof is ready when the hold comes off. */
+  /** A held wrapper (none now) is rewritten as if it sat on the surface, so its proof is ready when the hold comes off. */
   const rewritten = (file: string, src: string) => transformSource(file in HELD_WRAPPERS ? 'app/api/admin/held/auth.ts' : file, src)
 
   it.each(WRAPPERS.map((w) => [w.id, w.file as string] as const))('%s: the snapshot is the live file, until a slice converts the live file', (_id, file) => {
@@ -703,7 +704,7 @@ describe('authz codemod: helpers', () => {
     expect(isAdminSurface('app/(stellr)/(admin)/admin/x/page.tsx')).toBe(true)
     expect(isAdminSurface('lib/scholarship-admin.ts')).toBe(true)
     expect(isAdminSurface('lib/survey/admin-auth.ts')).toBe(true)
-    expect(isAdminSurface('lib/store/auth.ts')).toBe(false)
+    expect(isAdminSurface('lib/store/auth.ts')).toBe(true) // released from HELD_WRAPPERS, 21 Nov 2026
     expect(isAdminSurface('lib/uploads.ts')).toBe(false)
     expect(isAdminSurface('app/api/community/x/route.ts')).toBe(false)
     expect(isAdminSurface('app/(stellr)/(member)/layout.tsx')).toBe(false)

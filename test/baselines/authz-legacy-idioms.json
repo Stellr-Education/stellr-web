@@ -20,15 +20,15 @@
     "roleTableRead"
   ],
   "totals": {
-    "files": 14,
-    "sites": 28,
+    "files": 12,
+    "sites": 25,
     "byIdiom": {
       "CREW_CLERK_ROLES": 1,
       "clerkRoleRead": 2,
       "currentUserHasScope": 2,
       "currentUserIsAdmin": 1,
       "hasAdminPortalAccess": 1,
-      "isAdminClaims": 5,
+      "isAdminClaims": 2,
       "isCrewRole": 1,
       "isEventManagerClaims": 2,
       "requireAdminPage": 1,
@@ -58,9 +58,6 @@
     "app/(stellr)/(admin)/admin/competitions/page.tsx": {
       "requireEventAccess": 1
     },
-    "app/(stellr)/(member)/layout.tsx": {
-      "isAdminClaims": 1
-    },
     "components/layout/NavUserButton.tsx": {
       "clerkRoleRead": 1
     },
@@ -76,13 +73,9 @@
       "roleTableRead": 1
     },
     "lib/event-access.ts": {
-      "isAdminClaims": 1,
       "isEventManagerClaims": 1,
       "requireEventAccess": 1,
       "roleTableRead": 1
-    },
-    "lib/member-session.ts": {
-      "isAdminClaims": 1
     },
     "lib/training.ts": {
       "currentUserHasScope": 1

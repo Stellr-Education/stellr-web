@@ -51,6 +51,17 @@ describe('requireEventAccess', () => {
     }
   })
 
+  it('refuses Staff, as before: lib/authz requireEventAccess would let them in, this legacy form does not', async () => {
+    authMock.mockResolvedValue({ userId: 'u-staff', sessionClaims: { metadata: { role: 'staff' } }, factorVerificationAge: [0, 0] })
+    expect(await requireEventAccess('colorado')).toEqual({ ok: false, status: 403 })
+    expect(await requireEventAccess()).toEqual({ ok: false, status: 403 })
+  })
+
+  it('the admin answer keeps its legacy shape, with no tenantId (C25 batch 3B: the admin check is lib/authz isStellrAdmin)', async () => {
+    authMock.mockResolvedValue({ userId: 'u-admin', sessionClaims: { metadata: { role: 'admin' } } })
+    expect(await requireEventAccess()).toEqual({ ok: true, userId: 'u-admin', isAdmin: true, assignedSlugs: null })
+  })
+
   it('list access (no slug) hands back only the assigned slugs, never null (null = all events)', async () => {
     authMock.mockResolvedValue(em)
     const r = await requireEventAccess()
