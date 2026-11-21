@@ -27,6 +27,13 @@ import { relabelIssuedAward } from '@/lib/event-awards'
  * the scraper is not the owner, and a stale preview must not out a page that
  * has since been turned off. So does another tenant's credential (S5 A10a,
  * decision W7-10): the card is Stellr's.
+ *
+ * The title goes through relabelIssuedAward(), so a card shows an award's
+ * public name: since 21 Nov 2026 the Anita Gale and Dick Edwards awards appear
+ * as the Creative Vision Award and the Quiet Leadership Award. Next.js puts a
+ * hash of this file's contents in the og:image URL, so editing this file is
+ * what makes LinkedIn and other unfurlers fetch a fresh card rather than a
+ * cached one carrying an old title: edit it again when the wording changes.
  */
 export const runtime = 'edge'
 

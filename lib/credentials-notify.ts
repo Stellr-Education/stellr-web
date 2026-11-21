@@ -60,7 +60,8 @@ export async function sendCredentialIssuedEmail(
       recipientFirstName: to.firstName,
       guardianFirstName:  toGuardian ? to.guardianFirstName : null,
       // A renamed award goes out under its current label (resends included).
-      title:    relabelIssuedAward(row).title,
+      // The family's own email names the award in full, as the certificate does.
+      title:    relabelIssuedAward(row, 'certificate').title,
       issuer:   row.issuer,
       url:      credentialUrl(row.number),
       viewUrl:  familyCredentialUrl(row),
@@ -101,7 +102,7 @@ export async function applyGuardianOptOut(
       const mail = credentialsMadePrivateEmail({
         recipientFirstName: to.firstName,
         guardianFirstName:  toGuardian ? to.guardianFirstName : null,
-        titles: rows.map(r => relabelIssuedAward(r).title),
+        titles: rows.map(r => relabelIssuedAward(r, 'certificate').title),
       })
       await sendEmail({ to: address, cc: toGuardian && to.email ? [to.email] : undefined, ...mail })
     }
