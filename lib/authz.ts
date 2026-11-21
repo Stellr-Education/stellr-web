@@ -18,6 +18,9 @@
  *             members.id and route only (the repo is public: no names or
  *             emails). A failed postgres lookup is logged the same way; the
  *             Clerk answer always stands, so shadowing never denies anyone.
+ *             Every Clerk grant is compared; a Clerk denial only for the
+ *             sampled share AUTHZ_SHADOW_DENY_SAMPLE (default 0.05, owner
+ *             decision 21 Nov 2026, lib/authz/shadow-sample.ts).
  *   postgres  decides from the S3 tables. Any lookup error denies (fails
  *             closed).
  *
@@ -78,6 +81,7 @@ import {
   loadDutyScopes,
   loadTargetClerkRole,
 } from '@/lib/authz/principal'
+import { AUTHZ_SHADOW_DENY_SAMPLE_ENV, shadowDenySample, shadowRandom, shouldShadow } from '@/lib/authz/shadow-sample'
 
 export { currentTenantId } from '@/lib/authz/tenant'
 // proxy.ts must import this from '@/lib/authz/decide': this module is server-only.
@@ -142,6 +146,13 @@ async function staffGated(p: Principal): Promise<Principal> {
   if (!holdsStaffRole(p)) return p
   return (await sessionHasStaffSecondFactor()) ? p : withoutStaff(p)
 }
+
+/**
+ * The shadow sampling draw, one per request alongside the cached principal, so a
+ * request's denials are all compared or none are. A plain random number: nothing
+ * about the request or the person goes into it.
+ */
+const shadowDraw = cache((): number => shadowRandom())
 
 const clerkActor = cache(async (): Promise<Principal> => staffGated(await clerkSession()))
 const postgresActor = cache(async (): Promise<Principal> => staffGated(await postgresPrincipal()))
@@ -238,7 +249,8 @@ async function reportUnrecognisedSource(): Promise<void> {
 /**
  * Run `compute` under the configured source.
  *   clerk: as is. postgres: any error returns `deny`. shadow: the clerk
- *   answer, with the postgres answer compared and any mismatch or error logged.
+ *   answer, with the postgres answer compared and any mismatch or error logged:
+ *   always when Clerk grants, for the sampled share when it denies.
  */
 async function decide<T>(
   name: string,
@@ -261,6 +273,7 @@ async function decide<T>(
     }
   }
   const clerk = await compute('clerk')
+  if (!shouldShadow(clerk, shadowDraw(), shadowDenySample(process.env[AUTHZ_SHADOW_DENY_SAMPLE_ENV]))) return clerk
   try {
     const pg = await compute('postgres')
     if (!same(clerk, pg)) await logMismatch(name, `clerk=${summary(clerk)} postgres=${summary(pg)}`, opts, memberOf)

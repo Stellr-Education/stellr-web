@@ -1,11 +1,18 @@
 import { auth } from '@clerk/nextjs/server'
 import { supabaseServer } from '@/lib/supabase'
-import { isAdminClaims, isEventManagerClaims } from '@/lib/admin-auth'
+import { isEventManagerClaims } from '@/lib/admin-auth'
+import { isStellrAdmin } from '@/lib/authz'
 import { activeAssignmentFilter } from '@/lib/event-manager-active'
 
 // Per-event access control for the Events section of the admin portal.
 // Admins manage all events; Event Managers only events they're assigned to
 // via event_manager_assignments (PRD 6.7).
+//
+// The legacy form, kept for its callers until each moves to lib/authz
+// requireEventAccess (which adds tenantId, and lets Staff in). The admin check
+// is lib/authz isStellrAdmin (S5 C25 batch 3B): under AUTHZ_SOURCE=clerk it is
+// the same Clerk admin claim, so nobody's answer changes. Staff still get 403
+// here, and the event-manager check still reads the claim.
 
 async function getAssignedEventSlugs(clerkUserId: string): Promise<string[]> {
   const db = supabaseServer()
@@ -30,7 +37,7 @@ export async function requireEventAccess(eventSlug?: string): Promise<EventAcces
   const { userId, sessionClaims } = await auth()
   if (!userId) return { ok: false, status: 401 }
 
-  if (isAdminClaims(sessionClaims)) {
+  if (await isStellrAdmin({ route: 'lib/event-access' })) {
     return { ok: true, userId, isAdmin: true, assignedSlugs: null }
   }
 

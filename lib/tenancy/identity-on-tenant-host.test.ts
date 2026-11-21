@@ -87,7 +87,9 @@ describe('on a tenant host, with the proxy tenant headers present', () => {
     ['getSignedInMember', getSignedInMember],
   ])('%s still resolves the signed-in member', async (_name, helper) => {
     const member = await helper()
-    expect(h.authCalls).toBe(1)
+    // The member lookup reads the session, and so does its admin check (lib/authz
+    // isStellrAdmin, which caches its own session read per request; C25 batch 3B).
+    expect(h.authCalls).toBe(2)
     expect(member?.id).toBe(MEMBER.id)
     expect(member?.email).toBe(MEMBER.email)
   })

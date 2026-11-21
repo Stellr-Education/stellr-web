@@ -377,8 +377,7 @@ describe('T6: the real wrappers, from a snapshot of their legacy source, rewritt
   const FIXTURES_DIR = 'scripts/codemods/fixtures/authz'
   const wrappers: [string, string, string, (r: unknown) => unknown][] = [
     ['requireScholarshipAdmin', 'lib/scholarship-admin.ts', 'scholarship-admin', (r) => r],
-    // HELD_WRAPPERS holds this one, so it is rewritten under a path on the surface.
-    ['canManageStoreCatalog', 'app/api/admin/held/auth.ts', 'store-auth', (r) => r],
+    ['canManageStoreCatalog', 'lib/store/auth.ts', 'store-auth', (r) => r],
     ['requireSurveyAdmin', 'lib/survey/admin-auth.ts', 'survey-admin-auth', (r) => (r as { ok: boolean; userId?: string; response?: Response }).ok ? r : (r as { response: Response }).response],
     ['adminName', 'app/api/admin/esign/templates/guard.ts', 'esign-templates-guard', (r) => r],
   ]

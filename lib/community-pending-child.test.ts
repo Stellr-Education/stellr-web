@@ -16,7 +16,7 @@ const { state } = vi.hoisted(() => ({
 vi.mock('@clerk/nextjs/server', () => ({
   auth: async () => ({ userId: 'clerk-kid', sessionClaims: state.admin ? { metadata: { role: 'admin' } } : {} }),
 }))
-vi.mock('@/lib/admin-auth', () => ({ isAdminClaims: () => state.admin }))
+vi.mock('@/lib/authz', () => ({ isStellrAdmin: async () => state.admin }))
 vi.mock('@/lib/impersonation', () => ({ impersonatedMemberId: async () => state.viewAs }))
 vi.mock('@/lib/supabase', () => ({ supabaseServer: () => state.db!.client }))
 
