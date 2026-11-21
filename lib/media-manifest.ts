@@ -114,7 +114,6 @@ export const VIDEOS: Record<string, VideoAsset> = {
   'testimonial-allyson-rose': video('testimonial-allyson-rose', 'Allyson Rose — participant testimonial'),
   'testimonial-alvina-gakhokidze': video('testimonial-alvina-gakhokidze', 'Alvina Gakhokidze — former participant'),
   'testimonial-maureen-lancaster': video('testimonial-maureen-lancaster', 'Maureen Lancaster — Willcox Unified School District', 640),
-  'testimonial-sepp-sprietsma': video('testimonial-sepp-sprietsma', 'Joseph “Sepp” Sprietsma — College Career Pathways'),
   'testimonial-erin-henderson': video('testimonial-erin-henderson', 'Erin Henderson — Teacher, 2022'),
   'testimonial-tom-wilson': video('testimonial-tom-wilson', 'Tom Wilson — educator testimonial'),
 }

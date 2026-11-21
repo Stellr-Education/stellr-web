@@ -3,9 +3,8 @@ import { ArrowRight, Check } from 'lucide-react'
 import { Launch, Certificate, Team, Award, Global } from '@stellr/icons'
 import { Hero, Eyebrow, Button } from '@stellr/web-ui'
 import { AssetGate } from '@/components/sections/AssetGate'
-import { VideoTestimonial } from '@/components/sections/VideoTestimonial'
 import { WorkCard } from '@/components/sections/WorkCard'
-import { VIDEOS, QUOTES, COMPETITION } from '@/lib/media-manifest'
+import { QUOTES, COMPETITION } from '@/lib/media-manifest'
 
 export const metadata: Metadata = {
   alternates: { canonical: '/why-stellr' },
@@ -172,18 +171,6 @@ export default function WhyStellrPage() {
                 For educators &amp; schools
               </Button>
             </div>
-
-            {/* Video testimonial (moved here, under the CTA buttons) */}
-            <figure className="mt-8">
-              <VideoTestimonial
-                src={VIDEOS['testimonial-sepp-sprietsma'].src}
-                poster={VIDEOS['testimonial-sepp-sprietsma'].poster}
-                posterSrcSet={VIDEOS['testimonial-sepp-sprietsma'].posterSrcSet}
-                captionsSrc={VIDEOS['testimonial-sepp-sprietsma'].captions}
-                title={VIDEOS['testimonial-sepp-sprietsma'].title}
-              />
-              <figcaption className="mt-3 text-sm font-semibold text-ink">{VIDEOS['testimonial-sepp-sprietsma'].title}</figcaption>
-            </figure>
           </div>
 
           {/* Checklist card */}
