@@ -1,4 +1,5 @@
 import Stripe from 'stripe'
+import { devPriceMap, priceSwappingHttpClient } from './stripe-dev-prices'
 
 // The one Stripe client. Every route, lib module and script used to construct
 // its own `new Stripe(key, { apiVersion })`, which meant the API version lived
@@ -17,6 +18,14 @@ export const STRIPE_API_VERSION = '2026-09-30.endive' as const
 export function stripeClient(): Stripe | null {
   const key = process.env.STRIPE_SECRET_KEY
   if (!key) return null
+  // Dev and local only: live event prices swapped for test-mode copies (lib/stripe-dev-prices.ts).
+  const prices = devPriceMap()
+  if (prices) {
+    return new Stripe(key, {
+      apiVersion: STRIPE_API_VERSION,
+      httpClient: priceSwappingHttpClient(Stripe.createNodeHttpClient(), prices),
+    })
+  }
   return new Stripe(key, { apiVersion: STRIPE_API_VERSION })
 }
 
