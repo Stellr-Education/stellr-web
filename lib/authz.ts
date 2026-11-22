@@ -83,6 +83,7 @@ import {
   loadTargetClerkRole,
 } from '@/lib/authz/principal'
 import { AUTHZ_SHADOW_DENY_SAMPLE_ENV, shadowDenySample, shadowRandom, shouldShadow } from '@/lib/authz/shadow-sample'
+import { assertWritable } from '@/lib/authz/writable'
 
 export { currentTenantId } from '@/lib/authz/tenant'
 // proxy.ts must import this from '@/lib/authz/decide': this module is server-only.
@@ -101,12 +102,15 @@ export function getAuthzSource(): AuthzSource {
 }
 
 /**
- * S6 support mode placeholder. In S5 every principal is 'normal', so this
- * always passes; S6 makes it refuse every mutation in 'support_read'.
+ * S6-AW: assertWritable throws ReadOnlySupportSessionError (403,
+ * 'support_read_only') while a support-read session is active. It lives in
+ * lib/authz/writable.ts so withAudit (lib/audit/route.ts), the one place every
+ * admin mutation passes through, can call it without importing this
+ * server-only module. No support session exists until S6-SUP, so today it
+ * always passes, with no read.
  */
-export function assertWritable(_principal?: Principal): void {
-  // Intentionally empty in S5.
-}
+export { assertWritable }
+export { ReadOnlySupportSessionError, writeRefusal } from '@/lib/authz/writable'
 
 // ── Principals (cached per request) ────────────────────────────────────────
 
