@@ -329,7 +329,7 @@ export function defaultTenancyReport(): TenancyReport {
 // reports it beside the lock, and records a TENANCY readiness row whenever an active
 // non-owner tenant exists while one of these is not met.
 //
-// The set (owner decision T-32, docs/S5-DECISION-REGISTER.md):
+// The set (owner decision T-32, approved 22 Nov 2026; docs/S5-DECISION-REGISTER.md):
 //   authz_postgres      the clerk source knows only Stellr (docs/AUTHZ.md, precondition 11)
 //   loadscoped_enforce  converted routes refuse another tenant's rows (W7-14)
 //   derivation_enforce  an unmirrored event's row is refused, not stamped Stellr (A3)

@@ -1083,7 +1083,7 @@ Programme row `.32`, built 22 Nov 2026 (migration `20261122020000_tenancy_readin
 - **Afterwards, the health route watches it.** `GET /api/admin/health/integrations` returns `readiness`: `lock` (`open`, `closed` or `unavailable`), `activeOtherTenants`, `missing` (ids from the table) and `violation`. `violation` is true when another tenant is active while a switch is missing, for example after a switch is turned back off. Each read that finds one writes a `TENANCY readiness` row to `app_errors`, with no tenant named. The check runs on each health read; there is no separate startup hook.
 - **On `dev`,** the owner opens the lock before K9's canary tenant goes active (`WD-K9`). Each K9 flip can then be read against `missing`. `scripts/seed-two-tenants.ts --profile flow` refuses before any write while the lock is closed.
 - **Test fixtures** that insert another tenant open the lock inside their own rolled-back transaction (pgTAP), or open it and close it again around their run (`test/integration/readiness-lock.ts`).
-- **What the set is** is owner decision `T-32` (`docs/S5-DECISION-REGISTER.md`).
+- **What the set is** is owner decision `T-32` (`docs/S5-DECISION-REGISTER.md`), approved as built on 22 Nov 2026.
 
 ## Gates
 
