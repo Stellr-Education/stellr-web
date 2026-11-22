@@ -67,7 +67,7 @@ An entry that does not parse, names an undeclared area, gives a rate to `tenant`
 |---|---|---|
 | An event's company list, the count (with the settings row's `company_count`) and a company's rename | **Converted:** `readArea` and `writeArea` | C18, done |
 | A participant's move between companies | **Converted 22 Nov 2026:** `moveEventParticipant` through `writeArea`. The tenant path is one UPDATE confined in SQL to this event's participant and, if given, this event's company, under the tenant policies (`tenant_app` holds UPDATE on `participants`). The route still runs `findEventParticipant` and `findEventCompany` first | C18 leftover, done (`test/integration/two-tenant/events-config.int.test.ts`) |
-| Auto-Assign, `override` and `override_all` | Service path. A tenant's staff get `refuseOutsideStellr`'s 503, because they read team profiles, which tenant events do not take | Proposed: A10 (team profiles), with the slice that lets tenant events take them (see PR amendments, wave 4) |
+| Auto-Assign, `override` and `override_all` | **Converted 22 Nov 2026 (A10c, not yet merged):** the `team-profiles` area, below | A10c |
 | Store offerings and the merch batch | Service path through a `StellrOnlyDb`. A tenant's staff get `refuseOutsideStellr`'s 503, and another tenant's event answers 404 for everyone (below) | Proposed: C23 (store admin), or Stellr-only for good if the owner gives tenants no store |
 | The other configuration routes under `events/[slug]`: awards, badge and certificate templates, badges, certificates, check-in, credentials | `stellr_only` | C19 (`lib/security/stellr-only-dispositions.ts`) |
 
@@ -83,6 +83,16 @@ An entry that does not parse, names an undeclared area, gives a rate to `tenant`
 - **Who reaches it:** unchanged. A tenant's staff still get `refuseOutsideStellr`'s 503 on GET, POST and DELETE on every path. The names, the agreement and clearance pills and the assignments are Stellr's data, and since A10b a tenant's event takes no interest at all.
 - **Left on the service path:** assigning and removing (they write Stellr's mentoring containers, roles, Spaces and agreements, never `volunteer_event_interest`); the member's own "I'm interested" submit (`app/api/volunteer/interest`: a member acting for themselves, on Stellr's events only since A10b); the admin Volunteers console and the Friday digest (Stellr-wide, not event-scoped).
 - **No migration:** `tenant_app` already holds SELECT, INSERT, UPDATE and DELETE on `volunteer_event_interest`. `test/integration/two-tenant/volunteers.int.test.ts` proves isolation on both paths and the refusal of a cross-tenant write.
+### A10c: `team-profiles`
+
+`lib/team-profile/admin-data.ts` puts the event page's "Team profiles" plan (`loadCompanyPlan`, on the roster tab of `/admin/competitions/[slug]`), Auto-Assign, `override` and `override_all` (POST `app/api/admin/events/[slug]/companies`) behind the area switch, as `events-config` does. It closes the C18 leftovers (tracker row s5-programme.55).
+
+- **Service path:** today's queries, unchanged: `loadCompanyPlan`, `autoAssign`, `overrideOutstanding` and the participant update. With `TENANT_DB_AREAS` unset nothing opens a connection.
+- **Tenant path:** SQL through `tenantDb` under the tenant policies. The plan's reads run in one transaction, and Auto-Assign reads and writes in one. Every write is confined in SQL to this event's participants, and Auto-Assign's to this event's company.
+- **Where the tenant path differs.** `tenant_app` has no grant on `members`, `member_ethnicities` or `ethnicity_options` (shared identity, S7), so the member-profile ethnicity fallback is skipped and only the participant row's ethnicity is used. A student's experience counts only this tenant's events. Both feed the balancing, so on a Stellr event Auto-Assign and the best-fit suggestions can differ from the service path. Shadow compares each student on id, status, company, locked, overridden and submitted, and the companies, and drops the fields the tenant path cannot reproduce. The plan is one object, so a mismatch records `reason=content` with counts of 1.
+- **Who reaches it.** Stellr's staff as before, on every path. A tenant's staff get Auto-Assign and the overrides only while the area is in tenant mode (`team-profiles:tenant`). On the service and shadow paths they still get `refuseOutsideStellr`'s 503. Sending team profiles (`events/[slug]/team-profiles`) stays Stellr's.
+- **CI.** `test/integration/two-tenant/team-profiles.int.test.ts` in the `tenant-db` job; the scope step now covers `lib/team-profile/{admin-data,assign,override,store}.ts` and the event page.
+- **Flip order.** As `events-config`: `team-profiles:shadow:<low rate>` on `dev`, then `:1`, then `:tenant`. Read the `TENANTDB` rows in `app_errors` before each step.
 
 ### Stellr-only routes refuse another tenant's event (waves 6 and 7)
 

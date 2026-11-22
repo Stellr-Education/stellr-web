@@ -58,4 +58,10 @@ export const TENANT_DB_CALLERS: readonly string[] = [
   // is test/integration/two-tenant/volunteers.int.test.ts (through the kit and this module).
   'lib/events/admin-volunteers.ts',
   'lib/events/admin-volunteers.test.ts',
+  // The 'team-profiles' area (S5 A10c): the admin team-profile plan, Auto-Assign and the
+  // overrides, through readArea and writeArea. Its two-tenant test
+  // (test/integration/two-tenant/team-profiles.int.test.ts) reaches tenantDb only through the
+  // kit and this module, so it is not listed itself.
+  'lib/team-profile/admin-data.ts',
+  'lib/team-profile/admin-data.test.ts',
 ]

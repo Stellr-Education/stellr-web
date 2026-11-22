@@ -167,11 +167,25 @@ export async function formsComplete(
   people: Pick<Candidate, 'id' | 'date_of_birth' | 'event_slug'>[],
   eventDates: Map<string, string | null>,
 ) {
+  if (!people.length) return new Set<string>()
+  const data = await selectIn(db, 'agreements', 'participant_id, status', 'participant_id', people.map((p) => p.id))
+  return formsCompleteFrom(data, people, eventDates)
+}
+
+/**
+ * formsComplete's decision, from the agreements already read (`participant_id`,
+ * `status`). Pure: the team-profiles area's tenant path (lib/team-profile/admin-data.ts)
+ * reads the agreements through tenantDb and decides here, as the service path does.
+ */
+export function formsCompleteFrom(
+  agreements: readonly Record<string, unknown>[],
+  people: Pick<Candidate, 'id' | 'date_of_birth' | 'event_slug'>[],
+  eventDates: Map<string, string | null>,
+) {
   const done = new Set<string>()
   if (!people.length) return done
-  const data = await selectIn(db, 'agreements', 'participant_id, status', 'participant_id', people.map((p) => p.id))
   const hasEnvelope = new Set<string>()
-  for (const a of data) {
+  for (const a of agreements) {
     hasEnvelope.add(a.participant_id as string)
     if (a.status === 'completed') done.add(a.participant_id as string)
   }

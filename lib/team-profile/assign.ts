@@ -63,72 +63,46 @@ const gradeNumber = (g: string | null) => {
   return m ? Number(m[1]) : null
 }
 
-export async function loadCompanyPlan(db: SupabaseClient, slug: string, eventDate: string | null): Promise<CompanyPlan> {
-  const [{ data: companies, error: cErr }, { data: regs, error: rErr }, { data: profiles, error: pErr }] = await Promise.all([
-    db.from('event_companies').select('id, number, name').eq('event_slug', slug).order('number'),
-    db
-      .from('registrations')
-      .select('id, type, created_at, participants(id, member_id, first_name, last_name, event_role, gender, date_of_birth, grade, school_name, ethnicity, company_id, company_locked, team_profile_overridden_at, team_profile_overridden_by_name)')
-      .eq('event_slug', slug)
-      .neq('status', 'withdrawn'),
-    db
-      .from('team_profiles')
-      .select('participant_id, answers, submitted_at, last_sent_at, send_count, last_send_error')
-      .eq('event_slug', slug),
-  ])
-  if (cErr || rErr || pErr) throw new Error(`Loading company plan failed: ${(cErr ?? rErr ?? pErr)!.message}`)
+/** A registration's row with its participants embedded, as loadCompanyPlan reads it. */
+type Raw = Record<string, unknown>
 
-  const companyNumber = new Map((companies ?? []).map((c) => [c.id as string, c.number as number]))
-  const profileOf = new Map((profiles ?? []).map((p) => [p.participant_id as string, p]))
+/** One student participant beside its registration. */
+export interface PlanRow {
+  p: Raw
+  reg: Raw
+}
+
+/** The registrations' student participants (STUDENT_ROLES), in registration order. */
+export function studentRows(regs: readonly Raw[]): PlanRow[] {
+  const rows: PlanRow[] = []
+  for (const reg of regs) {
+    for (const p of (reg.participants as Raw[]) ?? []) {
+      if (STUDENT_ROLES.includes((p.event_role as string) ?? '')) rows.push({ p, reg })
+    }
+  }
+  return rows
+}
+
+/** What buildCompanyPlan needs, read by either path (lib/team-profile/admin-data.ts holds the tenant one). */
+export interface CompanyPlanSource {
+  companies: CompanyPlan['companies']
+  rows: PlanRow[]
+  profiles: readonly Raw[]
+  /** Per member: their confirmed registrations for OTHER events (slug, created_at). */
+  history: Map<string, { slug: string; at: string }[]>
+  /** Per member: the profile's ethnicities, for a participant row that has none. */
+  ethnicityByMember: Map<string, string[]>
+  /** Participants whose permission forms are complete. */
+  ready: Set<string>
+  eventDate: string | null
+}
+
+/** Pure: the plan from what was read. */
+export function buildCompanyPlan(src: CompanyPlanSource): CompanyPlan {
+  const { companies, rows, profiles, history, ethnicityByMember, ready, eventDate } = src
+  const companyNumber = new Map(companies.map((c) => [c.id, c.number]))
+  const profileOf = new Map(profiles.map((p) => [p.participant_id as string, p]))
   const on = eventDate ? onDate(eventDate) : undefined
-
-  type Raw = Record<string, unknown>
-  const rows: { p: Raw; reg: Raw }[] = []
-  for (const reg of regs ?? []) {
-    for (const p of ((reg as Raw).participants as Raw[]) ?? []) {
-      if (STUDENT_ROLES.includes((p.event_role as string) ?? '')) rows.push({ p, reg: reg as Raw })
-    }
-  }
-
-  // Experience: this member's confirmed registrations for OTHER events made
-  // before this registration.
-  const memberIds = [...new Set(rows.map((r) => r.p.member_id as string | null).filter((x): x is string => !!x))]
-  const history = new Map<string, { slug: string; at: string }[]>()
-  for (let i = 0; i < memberIds.length; i += 150) {
-    const { data } = await db
-      .from('participants')
-      .select('member_id, registrations!inner(event_slug, status, created_at)')
-      .in('member_id', memberIds.slice(i, i + 150))
-      .eq('registrations.status', 'confirmed')
-      .neq('registrations.event_slug', slug)
-    for (const h of data ?? []) {
-      const r = (Array.isArray(h.registrations) ? h.registrations[0] : h.registrations) as { event_slug: string; created_at: string }
-      const list = history.get(h.member_id as string) ?? []
-      list.push({ slug: r.event_slug, at: r.created_at })
-      history.set(h.member_id as string, list)
-    }
-  }
-
-  // Ethnicity: the participant row, else the member's profile.
-  const ethnicityByMember = new Map<string, string[]>()
-  const needEthnicity = rows.filter((r) => !((r.p.ethnicity as string[] | null)?.length) && r.p.member_id).map((r) => r.p.member_id as string)
-  for (let i = 0; i < needEthnicity.length; i += 150) {
-    const { data } = await db
-      .from('member_ethnicities')
-      .select('member_id, ethnicity_options(name)')
-      .in('member_id', needEthnicity.slice(i, i + 150))
-    for (const e of data ?? []) {
-      const opt = (Array.isArray(e.ethnicity_options) ? e.ethnicity_options[0] : e.ethnicity_options) as { name: string } | null
-      if (!opt?.name) continue
-      ethnicityByMember.set(e.member_id as string, [...(ethnicityByMember.get(e.member_id as string) ?? []), opt.name])
-    }
-  }
-
-  const ready = await formsComplete(
-    db,
-    rows.map((r) => ({ id: r.p.id as string, date_of_birth: r.p.date_of_birth as string | null, event_slug: slug })),
-    new Map([[slug, eventDate]]),
-  )
 
   const roster = rows.map((r) => ({
     participantId: r.p.id as string,
@@ -181,7 +155,7 @@ export async function loadCompanyPlan(db: SupabaseClient, slug: string, eventDat
     }
   })
 
-  const count = (companies ?? []).length
+  const count = companies.length
   const placed = students.filter((s) => s.companyNumber !== null)
   const unplaced = students.filter((s) => s.companyNumber === null)
   if (count > 0 && placed.length > 0 && unplaced.length > 0) {
@@ -193,7 +167,79 @@ export async function loadCompanyPlan(db: SupabaseClient, slug: string, eventDat
     for (const s of unplaced) s.suggestedCompany = suggestions.get(s.participantId) ?? null
   }
 
-  return { companies: (companies ?? []) as CompanyPlan['companies'], students }
+  return { companies, students }
+}
+
+/**
+ * The plan through the service-role client: the 'team-profiles' area's service path
+ * (lib/team-profile/admin-data.ts), whose queries are exactly today's.
+ */
+export async function loadCompanyPlan(db: SupabaseClient, slug: string, eventDate: string | null): Promise<CompanyPlan> {
+  const [{ data: companies, error: cErr }, { data: regs, error: rErr }, { data: profiles, error: pErr }] = await Promise.all([
+    db.from('event_companies').select('id, number, name').eq('event_slug', slug).order('number'),
+    db
+      .from('registrations')
+      .select('id, type, created_at, participants(id, member_id, first_name, last_name, event_role, gender, date_of_birth, grade, school_name, ethnicity, company_id, company_locked, team_profile_overridden_at, team_profile_overridden_by_name)')
+      .eq('event_slug', slug)
+      .neq('status', 'withdrawn'),
+    db
+      .from('team_profiles')
+      .select('participant_id, answers, submitted_at, last_sent_at, send_count, last_send_error')
+      .eq('event_slug', slug),
+  ])
+  if (cErr || rErr || pErr) throw new Error(`Loading company plan failed: ${(cErr ?? rErr ?? pErr)!.message}`)
+
+  const rows = studentRows((regs ?? []) as Raw[])
+
+  // Experience: this member's confirmed registrations for OTHER events made
+  // before this registration.
+  const memberIds = [...new Set(rows.map((r) => r.p.member_id as string | null).filter((x): x is string => !!x))]
+  const history = new Map<string, { slug: string; at: string }[]>()
+  for (let i = 0; i < memberIds.length; i += 150) {
+    const { data } = await db
+      .from('participants')
+      .select('member_id, registrations!inner(event_slug, status, created_at)')
+      .in('member_id', memberIds.slice(i, i + 150))
+      .eq('registrations.status', 'confirmed')
+      .neq('registrations.event_slug', slug)
+    for (const h of data ?? []) {
+      const r = (Array.isArray(h.registrations) ? h.registrations[0] : h.registrations) as { event_slug: string; created_at: string }
+      const list = history.get(h.member_id as string) ?? []
+      list.push({ slug: r.event_slug, at: r.created_at })
+      history.set(h.member_id as string, list)
+    }
+  }
+
+  // Ethnicity: the participant row, else the member's profile.
+  const ethnicityByMember = new Map<string, string[]>()
+  const needEthnicity = rows.filter((r) => !((r.p.ethnicity as string[] | null)?.length) && r.p.member_id).map((r) => r.p.member_id as string)
+  for (let i = 0; i < needEthnicity.length; i += 150) {
+    const { data } = await db
+      .from('member_ethnicities')
+      .select('member_id, ethnicity_options(name)')
+      .in('member_id', needEthnicity.slice(i, i + 150))
+    for (const e of data ?? []) {
+      const opt = (Array.isArray(e.ethnicity_options) ? e.ethnicity_options[0] : e.ethnicity_options) as { name: string } | null
+      if (!opt?.name) continue
+      ethnicityByMember.set(e.member_id as string, [...(ethnicityByMember.get(e.member_id as string) ?? []), opt.name])
+    }
+  }
+
+  const ready = await formsComplete(
+    db,
+    rows.map((r) => ({ id: r.p.id as string, date_of_birth: r.p.date_of_birth as string | null, event_slug: slug })),
+    new Map([[slug, eventDate]]),
+  )
+
+  return buildCompanyPlan({
+    companies: (companies ?? []) as CompanyPlan['companies'],
+    rows,
+    profiles: (profiles ?? []) as Raw[],
+    history,
+    ethnicityByMember,
+    ready,
+    eventDate,
+  })
 }
 
 export function toAssignable(s: PlanningStudent): AssignableStudent {
@@ -237,13 +283,17 @@ export function autoAssignGroups(students: PlanningStudent[]) {
   }
 }
 
+/** Where Auto-Assign puts each student it moves: company id (null: unassigned) to participant ids. */
+export interface AssignmentPlan {
+  byCompany: Map<string | null, string[]>
+  result: AutoAssignResult
+}
+
 /**
- * Auto-Assign: places every student who submitted a team profile or was
- * overridden, keeps hand-placed students where they are, and leaves everyone
- * else unassigned.
+ * Pure: Auto-Assign's moves for this plan. Throws AssignError when there are no
+ * companies or no one to place. Both paths write exactly these moves.
  */
-export async function autoAssign(db: SupabaseClient, slug: string, eventDate: string | null): Promise<AutoAssignResult> {
-  const plan = await loadCompanyPlan(db, slug, eventDate)
+export function planAssignment(plan: CompanyPlan): AssignmentPlan {
   if (plan.companies.length === 0) throw new AssignError('Set the number of companies first')
   const { locked, placed, pool } = autoAssignGroups(plan.students)
   if (placed.length === 0) {
@@ -259,6 +309,25 @@ export async function autoAssign(db: SupabaseClient, slug: string, eventDate: st
     byCompany.set(target, [...(byCompany.get(target) ?? []), s.participantId])
   }
   byCompany.set(null, [...(byCompany.get(null) ?? []), ...pool.map((s) => s.participantId)])
+  return {
+    byCompany,
+    result: {
+      assigned: placed.length,
+      overridden: placed.filter((s) => s.overridden !== null).length,
+      pooled: pool.length,
+      kept: locked.length,
+    },
+  }
+}
+
+/**
+ * Auto-Assign: places every student who submitted a team profile or was
+ * overridden, keeps hand-placed students where they are, and leaves everyone
+ * else unassigned. The 'team-profiles' area's service path (lib/team-profile/admin-data.ts).
+ */
+export async function autoAssign(db: SupabaseClient, slug: string, eventDate: string | null): Promise<AutoAssignResult> {
+  const plan = await loadCompanyPlan(db, slug, eventDate)
+  const { byCompany, result } = planAssignment(plan)
   for (const [companyId, ids] of byCompany) {
     for (let i = 0; i < ids.length; i += 150) {
       const { error } = await db
@@ -268,12 +337,7 @@ export async function autoAssign(db: SupabaseClient, slug: string, eventDate: st
       if (error) throw new Error(`Saving assignments failed: ${error.message}`)
     }
   }
-  return {
-    assigned: placed.length,
-    overridden: placed.filter((s) => s.overridden !== null).length,
-    pooled: pool.length,
-    kept: locked.length,
-  }
+  return result
 }
 
 export class AssignError extends Error {}

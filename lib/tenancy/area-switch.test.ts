@@ -178,7 +178,7 @@ describe('parseAreas', () => {
   })
 
   it('knows only the declared areas', () => {
-    expect(DATA_AREAS).toEqual(['events-config', 'events-read', 'volunteers'])
+    expect(DATA_AREAS).toEqual(['events-config', 'events-read', 'volunteers', 'team-profiles'])
   })
 })
 
