@@ -439,6 +439,8 @@ export function generate(registry = TABLE_REGISTRY, fixtures = FIXTURES) {
     '--    The Stellr-only checks are dropped for this rolled-back transaction: this matrix proves the row',
     '--    policies hold on those tables by themselves. community_stellr_only.test.sql proves the checks.',
     ...STELLR_ONLY_CHECKS.map((c) => `ALTER TABLE ${c.table} DROP CONSTRAINT ${c.constraint};`),
+    // S5 .32: the readiness lock opens for this rolled-back transaction, so the canary may be active.
+    "UPDATE public.tenancy_settings SET tenants_ready_at = now(), tenants_ready_note = 'pgTAP fixture (rolled back)';",
     `INSERT INTO public.tenants (id, slug, legal_name, display_name, country, payment_region, currency, time_zone)
   VALUES (${lit(B)}, 'iso-canary', 'Iso Canary Pty Ltd', 'Iso Canary', 'AU', 'AU', 'aud', 'Australia/Sydney');`,
   )

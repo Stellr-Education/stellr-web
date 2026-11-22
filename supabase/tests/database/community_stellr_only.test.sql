@@ -33,6 +33,9 @@ SELECT matches(pg_temp.definition('public.community_spaces', 'community_spaces_s
 
 -- ── Fixtures: a Stellr event and an event of another tenant ──────────────────
 
+-- S5 .32: open the readiness lock inside this rolled-back transaction, so the fixture
+-- tenants may be active (supabase/migrations/20261122020000_tenancy_readiness_lock.sql).
+UPDATE public.tenancy_settings SET tenants_ready_at = now(), tenants_ready_note = 'pgTAP fixture (rolled back)';
 INSERT INTO public.tenants (id, slug, legal_name, display_name, country, payment_region, currency, time_zone)
   VALUES ('11111111-1111-4111-8111-111111111111', 'b9-canary', 'B9 Canary Pty Ltd', 'B9 Canary', 'AU', 'AU', 'aud', 'Australia/Sydney');
 INSERT INTO public.events (tenant_id, slug, sanity_id, title, time_zone, country, currency, grade_system) VALUES

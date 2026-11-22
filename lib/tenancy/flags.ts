@@ -318,3 +318,77 @@ export function defaultTenancyReport(): TenancyReport {
     invalidCombinations: [],
   }
 }
+
+// ── The readiness lock (S5 programme row .32) ───────────────────────────────
+//
+// The database refuses an active tenant other than the platform owner until
+// tenancy_settings.tenants_ready_at is set (supabase/migrations/
+// 20261122020000_tenancy_readiness_lock.sql). The database cannot see these Vercel
+// variables, so the lock is an attestation, and this list is what the owner attests:
+// each switch in the state that isolates one tenant from another. The health route
+// reports it beside the lock, and records a TENANCY readiness row whenever an active
+// non-owner tenant exists while one of these is not met.
+//
+// The set (owner decision T-32, docs/S5-DECISION-REGISTER.md):
+//   authz_postgres      the clerk source knows only Stellr (docs/AUTHZ.md, precondition 11)
+//   loadscoped_enforce  converted routes refuse another tenant's rows (W7-14)
+//   derivation_enforce  an unmirrored event's row is refused, not stamped Stellr (A3)
+//   platform_audit      tenant activity lands on the tamper-evident chain
+//   guardian_consent    a minor at a tenant event waits on guardian consent, with its preconditions
+//   tenant_routing      tenant hosts resolve, with a usable zone suffix
+
+export interface IsolatingSwitch {
+  id: string
+  /** Variable names only (derivation_mode is the database setting). */
+  switches: readonly string[]
+  /** The isolating state, as fixed text. */
+  wants: string
+  met: (report: TenancyReport) => boolean
+}
+
+export const ISOLATING_SWITCHES: readonly IsolatingSwitch[] = [
+  { id: 'authz_postgres', switches: ['AUTHZ_SOURCE'], wants: 'postgres', met: (r) => r.authzSource.value === 'postgres' },
+  { id: 'loadscoped_enforce', switches: [LOADSCOPED_MODE_ENV], wants: 'enforce', met: (r) => r.loadScopedMode === 'enforce' },
+  { id: 'derivation_enforce', switches: ['tenancy_settings.derivation_mode'], wants: 'enforce', met: (r) => r.derivationMode === 'enforce' },
+  { id: 'platform_audit', switches: [AUDIT_FLAG], wants: 'on', met: (r) => r.platformAudit },
+  {
+    id: 'guardian_consent',
+    switches: [TENANT_GUARDIAN_CONSENT_FLAG, TENANT_EVENT_MAIL_FLAG],
+    wants: 'on, with its preconditions met',
+    met: (r) => r.guardianConsent && !r.invalidCombinations.some((c) => c.id === 'guardian_consent_not_ready'),
+  },
+  {
+    id: 'tenant_routing',
+    switches: [TENANT_ROUTING_FLAG, TENANT_HOST_SUFFIX_VAR],
+    wants: 'on, with a usable zone suffix',
+    met: (r) => r.routing.enabled && r.routing.suffixError === null,
+  },
+]
+
+/** One read of the lock and one count of active non-owner tenants. Either may fail. */
+export interface ReadinessLockRead {
+  readyAt: { failed: boolean; value: unknown }
+  activeOtherTenants: { failed: boolean; value: unknown }
+}
+
+export interface ReadinessReport {
+  /** tenancy_settings.tenants_ready_at: set, unset, or unavailable. Never the timestamp. */
+  lock: 'open' | 'closed' | 'unavailable'
+  activeOtherTenants: number | 'unavailable'
+  /** The isolating switches not in their isolating state, by id. */
+  missing: string[]
+  /**
+   * True when a tenant other than the owner is active while an isolating switch is not
+   * met. The database lock stops this at activation; it can still arise if a switch is
+   * turned back off afterwards.
+   */
+  violation: boolean
+}
+
+export function readinessReport(report: TenancyReport, read: ReadinessLockRead): ReadinessReport {
+  const lock = read.readyAt.failed ? 'unavailable' : read.readyAt.value ? 'open' : 'closed'
+  const n = read.activeOtherTenants.value
+  const activeOtherTenants = read.activeOtherTenants.failed || typeof n !== 'number' ? 'unavailable' : n
+  const missing = ISOLATING_SWITCHES.filter((s) => !s.met(report)).map((s) => s.id)
+  return { lock, activeOtherTenants, missing, violation: typeof activeOtherTenants === 'number' && activeOtherTenants > 0 && missing.length > 0 }
+}

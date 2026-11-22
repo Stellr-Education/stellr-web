@@ -18,6 +18,9 @@ SET LOCAL search_path = extensions, public;
 SELECT plan(71);
 
 -- Test tenants: A and B for normal chains, C and D for tampering.
+-- S5 .32: open the readiness lock inside this rolled-back transaction, so the fixture
+-- tenants may be active (supabase/migrations/20261122020000_tenancy_readiness_lock.sql).
+UPDATE public.tenancy_settings SET tenants_ready_at = now(), tenants_ready_note = 'pgTAP fixture (rolled back)';
 INSERT INTO public.tenants (id, slug, legal_name, display_name, country, payment_region, currency, time_zone) VALUES
   ('aaaaaaaa-0000-4000-8000-00000000000a', 'pgtap-audit-a', 'Audit A', 'Audit A', 'US', 'US', 'usd', 'America/Denver'),
   ('bbbbbbbb-0000-4000-8000-00000000000b', 'pgtap-audit-b', 'Audit B', 'Audit B', 'AU', 'AU', 'aud', 'Australia/Sydney'),

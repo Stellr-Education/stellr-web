@@ -534,6 +534,7 @@ ALTER TABLE public.community_resources DROP CONSTRAINT community_resources_stell
 ALTER TABLE public.community_spaces DROP CONSTRAINT community_spaces_stellr_only;
 ALTER TABLE public.mentoring_cohorts DROP CONSTRAINT mentoring_cohorts_stellr_only;
 ALTER TABLE public.training_modules DROP CONSTRAINT training_modules_stellr_only;
+UPDATE public.tenancy_settings SET tenants_ready_at = now(), tenants_ready_note = 'pgTAP fixture (rolled back)';
 INSERT INTO public.tenants (id, slug, legal_name, display_name, country, payment_region, currency, time_zone)
   VALUES ('c0ffee00-0000-4000-8000-0000000000b2', 'iso-canary', 'Iso Canary Pty Ltd', 'Iso Canary', 'AU', 'AU', 'aud', 'Australia/Sydney');
 INSERT INTO public.events (tenant_id, slug, sanity_id, title, starts_at, time_zone, country, currency, grade_system)

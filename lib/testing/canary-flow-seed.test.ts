@@ -258,6 +258,8 @@ function seedDb(extra: Record<string, object[]> = {}): FakeDb {
     event_manager_assignments: [{ id: 'a-stellr', clerk_user_id: 'user_stellr_crew', event_slug: STELLR_EVENT.slug, tenant_id: STELLR_TENANT_ID }],
     registrations: [{ id: 'r-stellr', event_slug: STELLR_EVENT.slug, tenant_id: STELLR_TENANT_ID }],
     event_participations: [],
+    // The readiness lock is open on the dev database before K9's canary goes active (S5 .32).
+    tenancy_settings: [{ id: true, tenants_ready_at: '2026-11-22T00:00:00Z' }],
     ...extra,
   })
 }
@@ -312,6 +314,13 @@ function applyDeps(db: FakeDb, opts: { clerk?: boolean; log?: string[] } = {}): 
 }
 
 describe('--apply', () => {
+  it('refuses before any write while the readiness lock is closed (S5 .32)', async () => {
+    const db = seedDb({ tenancy_settings: [{ id: true, tenants_ready_at: null }] })
+    const before = JSON.stringify(db.tables)
+    await expect(applyCanaryFlowSeed(plan(), applyDeps(db))).rejects.toThrow(/readiness lock is closed/)
+    expect(JSON.stringify(db.tables)).toBe(before)
+  })
+
   it('writes the tenant, host, mirror row and personas, the assignment after the mirror row, and leaves Stellr alone', async () => {
     const db = seedDb()
     const stellrBefore = JSON.stringify({ t: db.table('tenants')[0], e: db.table('events')[0], r: db.table('registrations') })
