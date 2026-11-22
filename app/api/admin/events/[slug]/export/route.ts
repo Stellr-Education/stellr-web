@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { withAudit } from '@/lib/audit/route'
 import { requireEventRoute } from '@/lib/authz'
+import { requireStepUp } from '@/lib/authz/step-up'
 import { getEventRoster } from '@/lib/event-admin'
 import { toCsv } from '@/lib/csv'
 import { extrasByParticipant } from '@/lib/addons/admin'
@@ -30,6 +31,8 @@ async function exportRoster(_req: Request, { params }: { params: Promise<{ slug:
   const { slug } = await params
   const crew = await requireEventRoute(slug, { route: '/api/admin/events/[slug]/export' })
   if (!crew.ok) return crew.response
+  const stepUp = await requireStepUp()
+  if (stepUp) return stepUp
 
   const roster = await getEventRoster(slug, undefined, { tenant: enforcedTenantFilter(crew.scope, 'registrations') })
   const stellr = isStellrScope(crew.scope)

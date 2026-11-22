@@ -5,6 +5,7 @@ import { Download, Loader2 } from 'lucide-react'
 import { Badge, Button, Choice, Field, Input, Select } from '@stellr/web-ui'
 import { formatAddonPrice } from '@/lib/addons/rules'
 import { LINE_STATUS_LABEL } from '@/lib/addons/labels'
+import { StepUpDownloadLink } from '@/components/admin/step-up'
 
 interface Line {
   id: string
@@ -160,9 +161,9 @@ export function EventAddonBookings({ eventSlug, addons }: { eventSlug: string; a
                   {live.length} booked · {formatAddonPrice(paidCents, ls[0].currency)} settled · {formatAddonPrice(owedCents, ls[0].currency)} unpaid
                 </p>
               </div>
-              <a href={`${base}?format=csv&addonId=${addonId}`} className="inline-flex items-center gap-1 text-sm font-medium text-primary-deep hover:underline">
+              <StepUpDownloadLink href={`${base}?format=csv&addonId=${addonId}`} className="inline-flex items-center gap-1 text-sm font-medium text-primary-deep hover:underline">
                 <Download className="h-4 w-4" aria-hidden /> Export list
-              </a>
+              </StepUpDownloadLink>
             </header>
             <ul className="divide-y divide-line">
               {ls.map((l) => (

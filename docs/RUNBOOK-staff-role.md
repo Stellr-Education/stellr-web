@@ -22,6 +22,8 @@ Code: `lib/staff.ts` (grants), `lib/authz/capabilities.ts` (what Staff may do), 
 2. **Choose the Staff training module.** On any member page, under Staff → "Staff training module (for everyone)". It is an Academy module; every published lesson in it must be completed. Until one is chosen, nobody can activate.
 3. **MFA in Clerk.** Staff turn on two-step verification on their own account page. Nothing to configure: Staff can't activate without it.
 
+   **Blocked on production (finding, 21 Nov 2026).** Production Clerk is on the Free plan, and MFA cannot be enabled on it: the change is refused with `unsupported_subscription_plan_features`. With MFA off on the instance nobody can turn on two-step verification, so the MFA prerequisite (`lib/staff.ts`) cannot be met and **nobody can activate Staff on production** until Clerk Pro is bought and MFA is enabled. The same applies to `ADMIN_MFA_ENFORCE` (`docs/ENV-MATRIX.md`), which must stay off until then. Recorded with S6-Q1 in `docs/PLAN-S6-DRAFT.md`.
+
 ## Granting Staff
 
 1. Open the person's member page. They need an email address and, to activate, a Stellr login and a date of birth showing 18+.

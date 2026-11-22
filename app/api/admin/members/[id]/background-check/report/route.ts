@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { hasCapability } from '@/lib/authz'
+import { requireStepUp } from '@/lib/authz/step-up'
 import { auth } from '@clerk/nextjs/server'
 import { supabaseServer } from '@/lib/supabase'
 import { getBackgroundProvider, ReportPdfUnavailableError } from '@/lib/background-provider'
@@ -16,6 +17,8 @@ export const dynamic = 'force-dynamic'
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { sessionClaims } = await auth()
   if (!(await hasCapability('export'))) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  const stepUp = await requireStepUp()
+  if (stepUp) return stepUp
 
   const { id } = await params
   const db = supabaseServer()

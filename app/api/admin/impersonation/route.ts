@@ -2,6 +2,7 @@ import { auth } from '@clerk/nextjs/server'
 import { cookies } from 'next/headers'
 import { NextResponse } from 'next/server'
 import { assertPlatformAdmin, isViewAsTargetCrew } from '@/lib/authz'
+import { requireStepUp } from '@/lib/authz/step-up'
 import { supabaseServer } from '@/lib/supabase'
 import { logActivityOrThrow, actorFromAuth, type Actor } from '@/lib/activity-log'
 import {
@@ -137,6 +138,9 @@ async function callerClerkId(): Promise<string | null> {
 export async function POST(req: Request) {
   const { userId } = await auth()
   if (!userId || !(await assertPlatformAdmin({ route: '/api/admin/impersonation' })).ok) return refuse(403, 'Forbidden')
+  // F4: a fresh sign-in factor to start one (ADMIN_STEP_UP_ENFORCE). Ending one (DELETE) is never gated.
+  const stepUp = await requireStepUp()
+  if (stepUp) return stepUp
 
   // No dedicated signing secret means no unforgeable ticket. Say so plainly
   // rather than falling back to some other key.

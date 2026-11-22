@@ -322,7 +322,6 @@ export const AUDIT_ACTIONS = [
   'event.check_in.desk_action',
   // Self check-in at the door by event code (app/api/check-in): nobody is signed in.
   'event.check_in.self_check_in',
-  'event.check_in.self_forget',
 
   // Scholarships admin, Stellr-only in release 1 (C20b): app/api/admin/scholarships/[id]/**
   'scholarship.notes.update',

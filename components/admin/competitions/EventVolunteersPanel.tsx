@@ -5,6 +5,7 @@ import { X, UserCheck, FileDown } from 'lucide-react'
 import { Collapsible } from '@stellr/web-ui'
 import { MemberLink } from '@/components/admin/RecordLinks'
 import MemberPicker, { type PickedMember } from '@/components/admin/MemberPicker'
+import { StepUpDownloadLink } from '@/components/admin/step-up'
 
 interface VolunteerRow {
   memberId: string
@@ -169,14 +170,14 @@ export function EventVolunteersPanel({ slug, isAdmin }: { slug: string; isAdmin:
             m,
             <>
               {m.compliance === 'valid_bc' && (
-                <a
+                <StepUpDownloadLink
                   href={`/api/admin/events/${slug}/background-reports?member=${m.memberId}`}
                   aria-label={isAdmin ? `Download ${name(m)}'s Checkr report` : `Download ${name(m)}'s clearance summary`}
                   title={isAdmin ? 'Checkr report (PDF)' : 'Clearance summary (PDF)'}
                   className="text-brand-muted-soft hover:text-brand-blue"
                 >
                   <FileDown className="h-4 w-4" />
-                </a>
+                </StepUpDownloadLink>
               )}
               <button
                 onClick={() => post('DELETE', m.memberId)}

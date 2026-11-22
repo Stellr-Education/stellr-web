@@ -34,6 +34,7 @@
 //   })
 //   await kit.cleanup()
 
+import { openReadinessLock } from '../readiness-lock'
 import postgres from 'postgres'
 import { expect } from 'vitest'
 import { compareRows, type CompareOptions } from '@/lib/tenancy/area-switch'
@@ -122,6 +123,7 @@ export async function openTwoTenantKit(): Promise<TwoTenantKit> {
 
   const [{ n }] = await admin<{ n: number }[]>`SELECT count(*)::int AS n FROM public.tenants WHERE id = ${stellr.id}`
   if (n !== 1) throw new Error("Stellr's tenant row is missing: the database was not built from the migrations")
+  const closeReadinessLock = await openReadinessLock(admin)
   await admin`
     INSERT INTO public.tenants (id, slug, legal_name, display_name, country, payment_region, currency, time_zone)
     VALUES (${CANARY_TENANT_ID}, 'iso-canary', 'Iso Canary Pty Ltd', 'Iso Canary', 'AU', 'AU', 'aud', 'Australia/Sydney')
@@ -204,6 +206,7 @@ export async function openTwoTenantKit(): Promise<TwoTenantKit> {
       }
       await admin`DELETE FROM public.events WHERE slug = ANY(${slugs}::text[])`.catch(() => {})
       await admin`DELETE FROM public.tenants WHERE id = ${CANARY_TENANT_ID}`.catch(() => {})
+      await closeReadinessLock().catch(() => {})
       await endTenantDrivers().catch(() => {})
       await admin.end({ timeout: 5 }).catch(() => {})
     },

@@ -110,7 +110,9 @@ async function seed(): Promise<void> {
   // The documents take the mirror row's dates, which the seed takes from its own
   // clock. Planned on either side of it: if Denver's day turned in between, stop.
   const before = planCanaryFlowSeed({ zone })
-  runScript(['scripts/seed-two-tenants.ts', '--profile', 'flow', '--zone', zone, '--apply', '--clerk-lookup'])
+  // The readiness lock (S5 .32) refuses a live second tenant until it is attested. This job's
+  // database is the throwaway local stack, so the seed opens it here (on dev the owner does).
+  runScript(['scripts/seed-two-tenants.ts', '--profile', 'flow', '--zone', zone, '--apply', '--clerk-lookup', '--ci-open-readiness-lock'])
   runScript(['scripts/seed-two-tenants.ts', '--profile', 'flow', '--zone', zone, '--check'])
   const after = planCanaryFlowSeed({ zone })
   if (before.event.starts_at !== after.event.starts_at) throw new Error("the day turned during the seed, so the event's dates are not certain; re-run the job")

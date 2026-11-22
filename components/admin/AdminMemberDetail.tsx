@@ -26,6 +26,7 @@ import { MemberStaffRole } from '@/components/admin/MemberStaffRole'
 import { PERSONAL_EMAIL_LABEL, SCHOOL_EMAIL_LABEL, showsSchoolEmail } from '@/lib/member-email'
 import { graduationYearRange } from '@/lib/graduation-year'
 import { MemberPaymentsPanel, type MemberPayment } from './MemberPaymentsPanel'
+import { useStepUpFetch } from '@/components/admin/use-step-up-fetch'
 
 interface Member {
   id: string
@@ -160,6 +161,8 @@ function label(val: string) {
 
 export function AdminMemberDetail({ member, tiers, schools, ethnicityOptions, allergyOptions, registrations, sessions, membershipId, activity, compliance, agreement, scholarships, surveys, canManageEventManager = false, viewerIsAdmin = true, payments = [] }: Props) {
   const router = useRouter()
+  // F4: starting view-as can ask for a re-verification (ADMIN_STEP_UP_ENFORCE).
+  const stepUpFetch = useStepUpFetch()
   const [enteringPortal, setEnteringPortal] = useState(false)
   const [inviteSentAt, setInviteSentAt] = useState(member.account_invite_sent_at)
   const [inviting, setInviting] = useState(false)
@@ -250,7 +253,7 @@ export function AdminMemberDetail({ member, tiers, schools, ethnicityOptions, al
   async function handleEnterPortalAs() {
     setEnteringPortal(true)
     try {
-      const res = await fetch('/api/admin/impersonation', {
+      const res = await stepUpFetch('/api/admin/impersonation', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ memberId: member.id }),
