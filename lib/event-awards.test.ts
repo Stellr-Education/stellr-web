@@ -5,6 +5,8 @@ import {
   EVENT_AWARDS,
   INDIVIDUAL_AWARD_TYPES,
   PUBLIC_AWARDS,
+  PUBLIC_NAME_AWARD_TYPES,
+  credentialAwardLabel,
   assignmentConflict,
   awardCredentialTitle,
   isAssignedAwardType,
@@ -48,7 +50,9 @@ describe('award catalogue', () => {
 
   it('titles award credentials with the award then the event', () => {
     expect(awardCredentialTitle('anita_gale', 'Colorado Space Design Challenge'))
-      .toBe('Anita Gale Award for Creative Vision — Colorado Space Design Challenge')
+      .toBe('Creative Vision Award — Colorado Space Design Challenge')
+    expect(awardCredentialTitle('dick_edwards', 'Colorado Space Design Challenge'))
+      .toBe('Quiet Leadership Award — Colorado Space Design Challenge')
     expect(awardCredentialTitle('norm_chaffee', 'Colorado Space Design Challenge'))
       .toBe('Norm Chaffee Award for Engineering Excellence — Colorado Space Design Challenge')
   })
@@ -79,8 +83,15 @@ describe('relabelIssuedAward', () => {
   // awards are shown with their current label. Stand-in wording only here.
   const issued = { award_type: 'dick_edwards', award: 'Earlier Wording for Quiet Leadership', title: 'Earlier Wording for Quiet Leadership — Colorado Space Design Challenge' }
 
-  it('shows the current label in the award and in front of the event', () => {
+  it('shows the public name in the award and in front of the event', () => {
     expect(relabelIssuedAward(issued)).toMatchObject({
+      award: 'Quiet Leadership Award',
+      title: 'Quiet Leadership Award — Colorado Space Design Challenge',
+    })
+  })
+
+  it('shows the full label on the certificate', () => {
+    expect(relabelIssuedAward(issued, 'certificate')).toMatchObject({
       award: 'Dick Edwards Award for Quiet Leadership',
       title: 'Dick Edwards Award for Quiet Leadership — Colorado Space Design Challenge',
     })
@@ -175,5 +186,32 @@ describe('replacedSpecialist', () => {
   it('ignores other companies and non-specialist awards', () => {
     expect(replacedSpecialist([a('anita_gale', 'p1', 'co-2')], a('anita_gale', 'p2', 'co-1'))).toBeNull()
     expect(replacedSpecialist([a('overall_champion', 'p1')], a('overall_champion', 'p2'))).toBeNull()
+  })
+})
+
+describe('awards named after a person, on a public credential', () => {
+  it('are Anita Gale and Dick Edwards only; Norm Chaffee keeps his name', () => {
+    expect([...PUBLIC_NAME_AWARD_TYPES].sort()).toEqual(['anita_gale', 'dick_edwards'])
+    expect(credentialAwardLabel('norm_chaffee')).toBe('Norm Chaffee Award for Engineering Excellence')
+    expect(credentialAwardLabel('overall_champion')).toBe('Overall Event Champions')
+    expect(credentialAwardLabel('participation')).toBe('Certificate of Participation')
+  })
+
+  it('use the same short names as the public site', () => {
+    for (const t of PUBLIC_NAME_AWARD_TYPES) {
+      expect(credentialAwardLabel(t)).toBe(PUBLIC_AWARDS.find((p) => p.type === t)!.name)
+    }
+  })
+
+  // Retrospective: a credential issued before 21 Nov 2026 stores the full name.
+  it.each([
+    ['anita_gale', 'Anita Gale Award for Creative Vision', 'Creative Vision Award'],
+    ['dick_edwards', 'Dick Edwards Award for Quiet Leadership', 'Quiet Leadership Award'],
+  ])('take the person\'s name off a %s credential issued with it', (award_type, full, short) => {
+    const stored = { award_type, award: full, title: `${full} — Colorado Space Design Challenge` }
+    const shown = relabelIssuedAward(stored)
+    expect(shown).toMatchObject({ award: short, title: `${short} — Colorado Space Design Challenge` })
+    expect(JSON.stringify(shown)).not.toMatch(/Anita|Gale|Dick|Edwards/)
+    expect(relabelIssuedAward(stored, 'certificate')).toMatchObject({ award: full, title: stored.title })
   })
 })

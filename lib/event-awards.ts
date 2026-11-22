@@ -6,10 +6,12 @@
 // assigned by an admin or event manager (event_award_assignments), then issued
 // as credentials.
 // Labels are the full names, matching the certificate artwork word for word —
-// one vocabulary on the print, the credential page and LinkedIn — except for an
-// award renamed after its artwork was made (ARTWORK_SUPERSEDED_AWARD_TYPES),
-// which prints on the default design until new artwork is uploaded. The public
-// site uses the short names in PUBLIC_AWARDS instead.
+// the print, the admin screens and the winner's emails — except for an award
+// renamed after its artwork was made (ARTWORK_SUPERSEDED_AWARD_TYPES), which
+// prints on the default design until new artwork is uploaded. The public site
+// uses the short names in PUBLIC_AWARDS instead, and so does anything public
+// about a credential for an award named after a person (PUBLIC_NAME_AWARD_TYPES):
+// the credential page, its share card and the LinkedIn entry.
 //
 // Pure: imported by client components and route handlers alike.
 
@@ -105,10 +107,34 @@ export interface PublicAward {
   summerCamp: boolean
 }
 
+/** The short, public name of each decided award. */
+export const PUBLIC_AWARD_NAMES: Record<AssignedAwardType, string> = {
+  overall_champion: 'Champions Award',
+  norm_chaffee: 'Engineering Excellence Award',
+  anita_gale: 'Creative Vision Award',
+  dick_edwards: 'Quiet Leadership Award',
+}
+
+/**
+ * Awards whose credential carries the public name, not the full one (David,
+ * 21 Nov 2026). The full names honour Anita Gale and Dick Edwards; they stay
+ * on the certificate, the admin screens and the winner's own emails, but a
+ * public credential, its share card and the LinkedIn entry say "Creative
+ * Vision Award" and "Quiet Leadership Award" — as /competitions already does.
+ * Norm Chaffee keeps his name on the credential, deliberately.
+ */
+export const PUBLIC_NAME_AWARD_TYPES: readonly AssignedAwardType[] = ['anita_gale', 'dick_edwards']
+
+/** The award's name on a credential: the public name for an award in
+ *  PUBLIC_NAME_AWARD_TYPES, else the full label. */
+export function credentialAwardLabel(t: AwardType): string {
+  return isAssignedAwardType(t) && PUBLIC_NAME_AWARD_TYPES.includes(t) ? PUBLIC_AWARD_NAMES[t] : EVENT_AWARDS[t].label
+}
+
 export const PUBLIC_AWARDS: PublicAward[] = [
   {
     type: 'anita_gale',
-    name: 'Creative Vision Award',
+    name: PUBLIC_AWARD_NAMES.anita_gale,
     decidedBy: 'mentors',
     count: 'One per company',
     summary: 'For the student whose vision shaped their company’s design.',
@@ -119,7 +145,7 @@ export const PUBLIC_AWARDS: PublicAward[] = [
   },
   {
     type: 'dick_edwards',
-    name: 'Quiet Leadership Award',
+    name: PUBLIC_AWARD_NAMES.dick_edwards,
     decidedBy: 'mentors',
     count: 'One per company',
     summary: 'For the student who kept their team pushing to excel, without looking for credit.',
@@ -130,7 +156,7 @@ export const PUBLIC_AWARDS: PublicAward[] = [
   },
   {
     type: 'overall_champion',
-    name: 'Champions Award',
+    name: PUBLIC_AWARD_NAMES.overall_champion,
     decidedBy: 'judges',
     count: 'One company',
     summary: 'Every member of the company with the winning design.',
@@ -141,7 +167,7 @@ export const PUBLIC_AWARDS: PublicAward[] = [
   },
   {
     type: 'norm_chaffee',
-    name: 'Engineering Excellence Award',
+    name: PUBLIC_AWARD_NAMES.norm_chaffee,
     decidedBy: 'mentors',
     count: 'Several, from the winning company',
     summary: 'For the standout engineers in the winning company.',
@@ -159,7 +185,9 @@ export const PUBLIC_AWARDS: PublicAward[] = [
  * ("<label> — <event>") — so issued rows keep the wording they were issued
  * with, and every surface that shows a credential passes it through
  * relabelIssuedAward(). The stored rows are never rewritten. The award type
- * keys themselves are internal and never shown.
+ * keys themselves are internal and never shown. Anita Gale and Dick Edwards
+ * credentials issued before 21 Nov 2026 store the full name; this is what
+ * takes it off their public page, share card and LinkedIn button.
  */
 export const RELABELLED_AWARD_TYPES: readonly AwardType[] = ['overall_champion', 'anita_gale', 'dick_edwards', 'norm_chaffee']
 
@@ -185,11 +213,19 @@ export function theAward(t: AwardType): string {
 /**
  * The credential as it should be shown: for a renamed award, the current label
  * in `award` and in front of the event in `title`. Anything else unchanged.
+ *
+ * `public` (the default) is every surface anyone but the winner's family can
+ * see — the credential page and its meta, the share card, the wallet, the
+ * LinkedIn links — and uses credentialAwardLabel(). `certificate` is the full
+ * label, for the certificate PDF and the winner's own emails.
  */
-export function relabelIssuedAward<T extends { award_type?: string | null; award?: string | null; title: string }>(row: T): T {
+export function relabelIssuedAward<T extends { award_type?: string | null; award?: string | null; title: string }>(
+  row: T,
+  use: 'public' | 'certificate' = 'public',
+): T {
   const t = row.award_type
   if (!isAwardType(t) || !RELABELLED_AWARD_TYPES.includes(t)) return row
-  const label = EVENT_AWARDS[t].label
+  const label = use === 'certificate' ? EVENT_AWARDS[t].label : credentialAwardLabel(t)
   const sep = row.title.indexOf(' — ')
   return { ...row, award: label, title: sep >= 0 ? `${label}${row.title.slice(sep)}` : label }
 }
@@ -221,7 +257,7 @@ export function isIndividual(t: AwardType): boolean {
 
 /** Credential title — the name on LinkedIn. Participation keeps its own. */
 export function awardCredentialTitle(t: AssignedAwardType, eventTitle: string): string {
-  return `${EVENT_AWARDS[t].label} — ${eventTitle}`
+  return `${credentialAwardLabel(t)} — ${eventTitle}`
 }
 
 // ── Assignment rules ─────────────────────────────────────────────────────────
