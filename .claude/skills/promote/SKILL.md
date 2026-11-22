@@ -180,7 +180,7 @@ show one with `target: production` and `githubCommitSha` = the merge SHA. The
 shell equivalent is the commit status:
 
 ```bash
-gh api repos/aussie-spaceman/stellr-web/commits/<merge-sha>/status \
+gh api repos/Stellr-Education/stellr-web/commits/<merge-sha>/status \
   --jq '.statuses[] | select(.context=="Vercel – stellr-web") | "\(.state) \(.description)"'
 ```
 
