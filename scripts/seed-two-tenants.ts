@@ -146,6 +146,15 @@ async function main() {
   if (!stellr) throw new Error('Stellr tenant row missing: apply migration 20261104100000 first')
 
   const others = plan.tenants.filter((t) => t.id !== STELLR_TENANT_ID)
+  // The readiness lock (S5 .32): the database refuses another active tenant while
+  // tenancy_settings.tenants_ready_at is NULL. Say so before any write.
+  if (others.some((t) => (t.status ?? 'active') === 'active')) {
+    const { data: lock, error: lockErr } = await db.from('tenancy_settings').select('tenants_ready_at').eq('id', true).maybeSingle()
+    if (lockErr) throw new Error(`reading tenancy_settings: ${lockErr.message}`)
+    if (!(lock as { tenants_ready_at: string | null } | null)?.tenants_ready_at) {
+      throw new Error('refusing: the readiness lock is closed on this database (tenancy_settings.tenants_ready_at is NULL). The owner attests readiness first: docs/TENANCY-S5.md, "The readiness lock"')
+    }
+  }
   for (const [table, rows, onConflict] of [
     ['tenants', others, 'id'],
     ['tenant_domains', plan.tenant_domains, 'host'],
