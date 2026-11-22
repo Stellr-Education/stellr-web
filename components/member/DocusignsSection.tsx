@@ -129,7 +129,7 @@ function getExpiryInfo(completedAt: string, type: string, version: string | null
 }
 
 const URGENCY_CLS: Record<string, string> = {
-  ok:      'text-green-600',
+  ok:      'text-enviro-green-text', // token green: green-600 was 3.3:1 on white (axe)
   soon:    'text-brand-gold-ink font-medium',
   expired: 'text-red-600 font-medium',
 }
