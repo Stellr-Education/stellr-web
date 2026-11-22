@@ -207,6 +207,8 @@ export const TENANT_SURFACE_DENY: readonly TenantSurfaceRule[] = [
   { match: 'app/api/stripe/webhook/route.ts', reason: 'Stripe calls the platform host only' },
   // Event add-ons are Stellr's events only until tenant add-ons (docs/PLAN-event-add-ons-2026-11-17.md).
   { match: 'app/(stellr)/(member)/account/extras/', reason: "event add-ons: Stellr's events only" },
+  // F4 part B (ADMIN_MFA_ENFORCE): where the admin portal sends an admin with no second factor.
+  { match: 'app/(stellr)/(member)/account/two-step/', reason: "the admin portal's two-step prompt: the admin portal stays off tenant hosts" },
   { match: 'app/(stellr)/(flow)/register/[slug]/addons/', reason: "event add-ons: Stellr's events only" },
   { match: 'app/api/register/addons-pay/route.ts', reason: "event add-ons: Stellr's events only" },
   { match: 'app/api/printful/webhook/route.ts', reason: 'Printful calls the platform host only' },

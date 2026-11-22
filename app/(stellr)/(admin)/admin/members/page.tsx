@@ -10,6 +10,7 @@ import {
   memberFilterParams,
   parseMemberFilters,
 } from '@/lib/admin-member-filters'
+import { StepUpDownloadLink } from '@/components/admin/step-up'
 
 export const metadata = { title: 'Admin — Members' }
 
@@ -71,12 +72,12 @@ export default async function AdminMembersPage({
           >
             + Add member
           </Link>
-          <a
+          <StepUpDownloadLink
             href={`/api/admin/members/export${exportQuery ? `?${exportQuery}` : ''}`}
             className="inline-flex min-h-11 items-center bg-white border border-brand-border text-brand-muted px-4 rounded-lg text-sm font-medium hover:bg-brand-canvas"
           >
             {activeMemberFilterCount(filters) > 0 ? 'Export filtered CSV' : 'Export CSV'}
-          </a>
+          </StepUpDownloadLink>
         </div>
       </div>
 

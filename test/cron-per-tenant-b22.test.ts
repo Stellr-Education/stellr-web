@@ -111,7 +111,8 @@ function billingDb(invoices: Reg[], shares: Reg[], opts: DbOptions = {}) {
   const regs = new Map([...invoices, ...shares].map((r) => [r.id, r]))
   const sweep = (call: ChainCall, rows: Reg[]) => {
     if (call.filters.some((f) => f.method === 'neq' && f.args[0] === 'tenant_id')) {
-      return opts.heldReadError ? { data: null, error: { message: 'held read failed' } } : { data: rows.filter((r) => !isStellr(r)), error: null }
+      // The held counts are head reads: a count, no rows.
+      return opts.heldReadError ? { data: null, error: { message: 'held read failed' } } : { data: null, error: null, count: rows.filter((r) => !isStellr(r)).length }
     }
     const scoped = !opts.ignoreTenantFilter && call.filters.some((f) => f.method === 'or' && f.args[0] === STELLR_OR_NULL)
     return { data: (scoped ? rows.filter(isStellr) : rows).map((r) => pick(r, call.columns)), error: null }
@@ -179,8 +180,7 @@ async function runRoute() {
 /** The sweeps the route ran before B22, exactly as it called them. */
 async function runBefore(db: unknown, stripe: Stripe) {
   vi.resetModules()
-  const { syncDueGroupInvoices } = await import('@/lib/group-billing')
-  const { settleDueShares } = await import('@/lib/teacher-share')
+  const { syncDueGroupInvoices, settleDueShares } = await import('@/lib/billing-sweeps')
   const tally = await syncDueGroupInvoices(db as never, stripe)
   const shares = await settleDueShares(db as never, stripe)
   return { ...tally, ...Object.fromEntries(Object.entries(shares).map(([k, v]) => [`share_${k}`, v])) }
@@ -237,13 +237,14 @@ describe('group-invoice-sync, Stellr alone', () => {
     h.stripe = fakeStripe().stripe
     await runRoute()
     const sweeps = fake.calls.filter(isSweep)
-    expect(sweeps.map((c) => c.columns)).toEqual(['id, tenant_id', 'id, event_slug, tenant_id', 'id, tenant_id', 'id, tenant_id'])
+    expect(sweeps.map((c) => c.columns)).toEqual(['id, tenant_id', 'id, event_slug, tenant_id', 'id', 'id'])
+    expect(sweeps.map((c) => c.head ?? false)).toEqual([false, false, true, true])
     // Stellr's two passes: Stellr's rows (NULL counts as Stellr), 50 at most, as before.
     for (const c of sweeps.slice(0, 2)) {
       expect(c.filters).toContainEqual({ method: 'or', args: [STELLR_OR_NULL] })
       expect(c.filters).toContainEqual({ method: 'limit', args: [50] })
     }
-    // The held counts: another tenant's id only.
+    // The held counts: another tenant's id only, counted without fetching a row.
     for (const c of sweeps.slice(2)) {
       expect(c.filters).toContainEqual({ method: 'not', args: ['tenant_id', 'is', null] })
       expect(c.filters).toContainEqual({ method: 'neq', args: ['tenant_id', STELLR_TENANT_ID] })
@@ -363,10 +364,11 @@ describe('group-invoice-sync matches lib/cron-scope.ts', () => {
 
   it('takes the tenant from the rows only, never from the request', () => {
     expect(code).not.toMatch(/headers|host|tenantFrom|resolveTenant/i)
-    expect(code).toContain('partitionByTenant')
   })
 
-  it('no longer calls the unpartitioned sweeps', () => {
-    expect(code).not.toMatch(/syncDueGroupInvoices|settleDueShares/)
+  it('calls the lib sweeps only with the job’s tenant', () => {
+    const calls = code.match(/(syncDueGroupInvoices|settleDueShares)\(db, stripe, \{[^}]*/g) ?? []
+    expect(calls).toHaveLength(2)
+    for (const call of calls) expect(call).toContain('tenantId: job.tenant.id')
   })
 })

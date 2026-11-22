@@ -28,7 +28,6 @@ import {
   openAdditionalInvoiceFor,
   recordGroupInvoicePaid,
   syncGroupInvoice,
-  syncDueGroupInvoices,
   resolveDiscountCode,
   promotionCodeUsable,
   createGroupInvoice,
@@ -39,6 +38,7 @@ import { STELLR_TENANT_ID } from '@/lib/tenancy/constants'
 import { TENANT_PAYMENTS_UNAVAILABLE } from '@/lib/registration/event-context'
 import { runAfterResponse } from '@/lib/after-response'
 import { notifyCommunityAdmins } from '@/lib/notify'
+import { syncDueGroupInvoices } from '@/lib/billing-sweeps'
 
 // ── Pure rules ───────────────────────────────────────────────────────────────
 

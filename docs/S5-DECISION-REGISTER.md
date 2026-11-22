@@ -159,6 +159,13 @@ Asked in chat on 20 Nov 2026 with a recommendation each (`docs/PLAN-S5-wave8-DRA
 | WD-K9 | K9: the tenancy switches on `stellr-web-dev` only (P1 to P12) and the canary flow | Yes, after ENF-dev; each flip in the flip log; findings filed by `WD-10`'s default | Approved as recommended | 20 Nov 2026 |
 | BF-66 | Group check-in with one consent-pending minor | Keep refusing the whole group, as built | Approved as recommended | 20 Nov 2026 |
 | WD-10, WD-11 | Which K9 findings go into wave 8; slugs globally unique in release 1 | Isolation leaks and consent bypasses go into wave 8, the rest wait with a reason; slugs stay globally unique, the facade still takes an explicit tenant | Approved as recommended | 20 Nov 2026 |
+| WD-2 | M7, B24: does a NULL `email_outbox.tenant_id` count as Stellr's? | Yes, as for every other derived table in log mode | Approved as recommended (owner, 20 Nov 2026: "Decisions: proceed with all recommendations"; entered here 22 Nov 2026) | 20 Nov 2026 |
+| WD-3 | ENF-dev: flip derivation to `enforce` on the `dev` database after 7 clean days? | Yes on `dev` only, with the owner's yes at the time; production stays the separate sign-off. Recorded in full as `WD-ENF` above (amended 21 Nov 2026: "clean" means no row enforce would refuse) | Approved as recommended (owner, 20 Nov 2026: "Decisions: proceed with all recommendations"; entered here 22 Nov 2026) | 20 Nov 2026 |
+| WD-4 | C20b: do tenants get scholarships in release 1? | No: refused for another tenant's event until S9 | Approved as recommended (owner, 20 Nov 2026: "Decisions: proceed with all recommendations"; entered here 22 Nov 2026) | 20 Nov 2026 |
+| WD-5 | CONSENT (b): the consent sweep's removal retry cap, and who is told when it is reached | 5 tries, then one alert with ids and counts only to Stellr's platform staff (see `BF-45` for a per-tenant contact) | Approved as recommended (owner, 20 Nov 2026: "Decisions: proceed with all recommendations"; entered here 22 Nov 2026) | 20 Nov 2026 |
+| WD-6 | CONSENT (c): wording of the staff marker and the desk refusal for pending consent | "Waiting for guardian consent", and the desk's existing pending refusal text from A16 | Approved as recommended (owner, 20 Nov 2026: "Decisions: proceed with all recommendations"; entered here 22 Nov 2026) | 20 Nov 2026 |
+| WD-8 | K11: may a CI job write to the shared hosted `dev` database for the canary? | No: local stack only | Approved as recommended (owner, 20 Nov 2026: "Decisions: proceed with all recommendations"; entered here 22 Nov 2026) | 20 Nov 2026 |
+| WD-9 | A10c, F10: flip `events-config` to tenant mode on `dev` once P9 is clean? | No standing flip: a supervised window with the owner's yes at the time, then back to shadow | Approved as recommended (owner, 20 Nov 2026: "Decisions: proceed with all recommendations"; entered here 22 Nov 2026) | 20 Nov 2026 |
 
 ## Owner answers, 22 Nov 2026
 
@@ -171,6 +178,7 @@ The owner, in chat on 22 Nov 2026: "proceed with your recommendations for anythi
 | BF-33 | The store catalogue: a tenant column, or accept the store/checkout IDOR outcome (`s5-wave9.5`) | Accept for now: the store is Stellr-only and refuses tenants | Approved as recommended. `MAX_ERROR` stays 1 in `test/idor/idor-routes.test.ts`; revisit before a tenant sells merchandise | 22 Nov 2026 |
 | W9-PLATFORM-DESTINED | The 2 routes still `platform_destined`: `events/slug-guard` and `schools/[id]` | Keep as they are | Approved as recommended | 22 Nov 2026 |
 | W9-REAL-HOSTS | Real tenant hosts: Vercel Pro (G1), the G5 subzone, Clerk session sharing, the production cookie-domain review | Hold until a partner event is booked | Approved as recommended: held | 22 Nov 2026 |
+| T-32 | **The isolating switches the readiness lock attests** (programme row `.32`; `docs/TENANCY-S5.md`, "The readiness lock"): `AUTHZ_SOURCE=postgres`, `LOADSCOPED_MODE=enforce`, `derivation_mode=enforce`, `PLATFORM_AUDIT_ENABLED`, `TENANT_GUARDIAN_CONSENT_ENABLED` with its preconditions, and `TENANT_ROUTING_ENABLED` with a usable suffix. Field crypto and the rate-limit store are left out: they harden, but do not separate one tenant from another | Approve this set as built | Approved as recommended (owner, in chat, 22 Nov 2026: "approve T-32 as recommended") | 22 Nov 2026 |
 
 ## Backfill from the earlier waves (folded in 22 Nov 2026)
 
@@ -357,6 +365,5 @@ Linked, not copied. The wording that counts is at the link.
 ## Not in this register yet
 
 - The A16 readiness items in `docs/TENANCY-S5.md`, "Owner decisions wave 6 raised" (credentials and surveys leaving out consent-pending participants, the staff pending marker, the sweep's retry cap). They are preconditions tracked in tracker rows `s5-programme.22`, `.23` and `.26`, not decisions. That list's decisions are now `BF-60` to `BF-66` above.
-- The wave 8 plan's own defaults that this register does not list (`WD-2` to `WD-6`, `WD-8`, `WD-9`), in `docs/PLAN-S5-wave8-DRAFT.md`, "Open decisions this plan depends on".
 
 The backfill draft's entries were folded in on 22 Nov 2026 (`s5-programme.41`), including those held in tracker `s5-programme.42` (B15 is `BF-3`, B5d `BF-44`, B20 `BF-18`, the C0b composite foreign key `BF-43`, the C14 remainder `BF-41`) and B17's staff alert contact (`AMD-NOTIFY-TENANT`).

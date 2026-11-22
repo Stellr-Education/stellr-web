@@ -106,7 +106,25 @@ const isMarketingRoute = createRouteMatcher([
   '/terms',
   '/volunteer',
   '/why-stellr',
+  // Classroom Qualifier landing pages (Sanity content, no session read).
+  '/classroom-qualifier',
+  '/classroom-qualifier/(.*)',
 ])
+
+// Generated text files that read no session, on either Stellr host. They go the
+// marketing way (no Clerk) instead of through clerkMiddleware: robots.txt alone
+// was about 12% of all proxy runs in a 12-hour sample on 21 Nov 2026, nearly all
+// crawlers. They still pass the tenant routing check above, so a tenant host keeps
+// its own robots answer and its deny-by-default list.
+const SESSION_FREE_FILES = new Set(['/robots.txt', '/sitemap.xml', '/llms.txt', '/indexnow-key.txt'])
+
+// Vulnerability-scanner probes for software this site does not run (WordPress, PHP,
+// dotfiles). They 404 anyway; answering here skips Clerk and the page render. Only
+// first segments and suffixes no Stellr route can have.
+function isScannerProbe(pathname: string): boolean {
+  const lower = pathname.toLowerCase()
+  return /^\/(?:wp-[^/]*|wordpress|xmlrpc\.php|\.env[^/]*|\.git|\.aws|\.ssh|cgi-bin|phpmyadmin)(?:\/|$)/.test(lower) || /\.php\d?$/.test(lower)
+}
 
 /** Tell browser code whether this visitor is in a strict-consent region (see lib/consent). */
 function withRegionCookie(req: NextRequest, res: Response): Response {
@@ -196,6 +214,7 @@ async function respondOnNonStellrHost(
 export default async function proxy(req: NextRequest, event: NextFetchEvent) {
   // Always on, on every host: the tenant tree is reached only through the rewrite below.
   if (isInternalTenantTreePath(req.nextUrl.pathname)) return plainResponse('Not found', 404)
+  if (isScannerProbe(req.nextUrl.pathname)) return plainResponse('Not found', 404)
 
   // Tenant routing (S5, B5). This comes before the marketing fast path and the
   // crawler count, because `/` and /events would otherwise serve Stellr's marketing
@@ -209,9 +228,10 @@ export default async function proxy(req: NextRequest, event: NextFetchEvent) {
 
   const host = req.headers.get('host') ?? ''
   const isAppSubdomain = !IS_SINGLE_HOST && host === APP_HOST
-  if (!isAppSubdomain && isMarketingRoute(req)) {
-    // AEO measurement (see below), without Clerk.
-    if (req.method === 'GET') {
+  const sessionFreeFile = SESSION_FREE_FILES.has(req.nextUrl.pathname)
+  if (sessionFreeFile || (!isAppSubdomain && isMarketingRoute(req))) {
+    // AEO measurement (see below), without Clerk. Not on the app host, as there.
+    if (req.method === 'GET' && !isAppSubdomain) {
       const bot = matchCrawler(req.headers.get('user-agent'))
       if (bot) event.waitUntil(recordCrawlerHit(bot, req.nextUrl.pathname))
     }

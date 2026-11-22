@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Eye } from 'lucide-react'
 import { Button } from '@stellr/web-ui'
+import { useStepUpFetch } from '@/components/admin/use-step-up-fetch'
 
 // The admin account summary reads a member's teams and billing through a
 // view-as session: the same short-lived, audited ticket, bound to this admin,
@@ -12,6 +13,7 @@ import { Button } from '@stellr/web-ui'
 // nothing recorded.
 export function StartViewAsSession({ memberId, what }: { memberId: string; what: string }) {
   const router = useRouter()
+  const stepUpFetch = useStepUpFetch()
   const [starting, setStarting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -19,7 +21,7 @@ export function StartViewAsSession({ memberId, what }: { memberId: string; what:
     setStarting(true)
     setError(null)
     try {
-      const res = await fetch('/api/admin/impersonation', {
+      const res = await stepUpFetch('/api/admin/impersonation', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ memberId }),

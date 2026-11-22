@@ -423,6 +423,19 @@ export async function applyCanaryFlowSeed(plan: CanaryFlowPlan, deps: ApplyDeps)
   const kept = existingEvents.find((e) => e.slug === plan.event.slug && e.sanity_id === plan.event.sanity_id)
   if (existingEvents.length && !kept) throw new Error('the event slug or sanity_id is already used by a different dev-canary row')
 
+  // The readiness lock (S5 .32, 20261122020000): the database refuses an active tenant other
+  // than the platform owner until tenancy_settings.tenants_ready_at is set. Say so plainly here,
+  // before any write, rather than fail mid-seed on SQLSTATE 55000.
+  if ((plan.tenant.status ?? 'active') === 'active') {
+    const lock = await db.from('tenancy_settings').select('tenants_ready_at').eq('id', true).maybeSingle()
+    check('tenancy_settings read', lock.error)
+    if (!(lock.data as { tenants_ready_at: string | null } | null)?.tenants_ready_at) {
+      throw new Error(
+        'refusing: the readiness lock is closed on this database (tenancy_settings.tenants_ready_at is NULL), so the canary tenant cannot be active. The owner attests readiness first: docs/TENANCY-S5.md, "The readiness lock"',
+      )
+    }
+  }
+
   // Writes.
   const tenant = await db.from('tenants').upsert(plan.tenant, { onConflict: 'id' })
   check('tenants upsert', tenant.error)

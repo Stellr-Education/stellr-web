@@ -34,6 +34,9 @@ CREATE FUNCTION pg_temp.event_day() RETURNS date LANGUAGE sql AS
                   THEN pg_temp.today_syd() + 31
                   ELSE pg_temp.today_syd() + 30 END $f$;
 
+-- S5 .32: open the readiness lock inside this rolled-back transaction, so the fixture
+-- tenants may be active (supabase/migrations/20261122020000_tenancy_readiness_lock.sql).
+UPDATE public.tenancy_settings SET tenants_ready_at = now(), tenants_ready_note = 'pgTAP fixture (rolled back)';
 INSERT INTO public.tenants (id, slug, legal_name, display_name, country, payment_region, currency, time_zone, min_participant_age) VALUES
   ('a2000000-0000-4000-8000-000000000001', 'pgtap-tgc', 'TGC Pty Ltd', 'TGC', 'AU', 'AU', 'aud', 'Australia/Sydney', 14);
 

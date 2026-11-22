@@ -7,6 +7,7 @@ import { Field, Input } from '@stellr/web-ui'
 import { postUpload, uploadDirectToStorage } from '@/lib/upload-client'
 import type { ComplianceState, TeacherLicense } from '@/lib/compliance'
 import { ExternalCheckForm } from '@/components/compliance/ExternalCheckForm'
+import { StepUpDownloadLink } from '@/components/admin/step-up'
 
 // State → pill. Two shades of green (BC vs license), orange in-process, red
 // invalid — shared shape with the event roster and member portal.
@@ -528,12 +529,12 @@ export function MemberCompliancePanel({
                 {/* Cleared checks only: the PDF is fetched from Checkr on click
                     and never stored here. */}
                 {compliance.state === 'valid_bc' && (
-                  <a
+                  <StepUpDownloadLink
                     href={`/api/admin/members/${memberId}/background-check/report`}
                     className="text-xs font-medium text-brand-blue hover:text-brand-blue-dark"
                   >
                     Download Checkr report (PDF)
-                  </a>
+                  </StepUpDownloadLink>
                 )}
               </div>
             )}

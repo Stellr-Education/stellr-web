@@ -47,6 +47,7 @@ import {
   type Capability,
   type CapabilityDecision,
 } from '@/lib/authz/capabilities'
+import { ADMIN_MFA_PAGE, adminMfaEnforced, holdsAdminRole, withoutAdmin } from '@/lib/authz/admin-mfa'
 import {
   anonymousPrincipal,
   authzSource,
@@ -140,11 +141,35 @@ const sessionHasStaffSecondFactor = cache(async (): Promise<boolean> => {
  * The principal as decisions see it: a Staff principal on a session with no
  * second factor loses the Staff role (withoutStaff), so every decision below,
  * capability, portal, event access and tenant crew alike, treats it as not
- * Staff. Anyone not holding the Staff role costs no read.
+ * Staff. With ADMIN_MFA_ENFORCE=true (F4 part B, off: see lib/authz/admin-mfa.ts
+ * before turning it on) an admin principal without one loses its admin role the
+ * same way (withoutAdmin). Anyone holding neither role, and every admin while the
+ * flag is off, costs no read.
  */
 async function staffGated(p: Principal): Promise<Principal> {
-  if (!holdsStaffRole(p)) return p
-  return (await sessionHasStaffSecondFactor()) ? p : withoutStaff(p)
+  let out = p
+  if (holdsStaffRole(out) && !(await sessionHasStaffSecondFactor())) out = withoutStaff(out)
+  if (adminMfaEnforced() && holdsAdminRole(out) && !(await sessionHasStaffSecondFactor())) out = withoutAdmin(out)
+  return out
+}
+
+/**
+ * F4 part B: is this an admin the ADMIN_MFA_ENFORCE gate is refusing? For the
+ * admin pages, to send them to ADMIN_MFA_PAGE rather than a 404. False, with no
+ * read, while the flag is off. Reads the principal before the gate: the Clerk
+ * claim, and under postgres the tables too (a failed lookup reads as the claim).
+ */
+export async function adminNeedsSecondFactor(): Promise<boolean> {
+  if (!adminMfaEnforced()) return false
+  const session = await clerkSession()
+  if (!session.userId) return false
+  const admin = holdsAdminRole(session) || (getAuthzSource() !== 'clerk' && (await postgresPrincipal().then(holdsAdminRole, () => false)))
+  return admin && !(await sessionHasStaffSecondFactor())
+}
+
+/** Signed-in admin page guard for F4 part B: an admin without a second factor goes to ADMIN_MFA_PAGE. */
+async function redirectAdminWithoutSecondFactor(): Promise<void> {
+  if (await adminNeedsSecondFactor()) redirect(ADMIN_MFA_PAGE)
 }
 
 /**
@@ -672,30 +697,35 @@ export const page = {
   async requireAdmin(opts: AuthzOptions = {}): Promise<void> {
     const session = await clerkSession()
     if (!session.userId) redirect('/sign-in')
+    await redirectAdminWithoutSecondFactor()
     if (!(await hasPortalAccess(opts))) notFound()
   },
   /** Admins of the current tenant, from the tables under postgres. Never an event manager. */
   async requireTenantAdmin(opts: AuthzOptions = {}): Promise<void> {
     const session = await clerkSession()
     if (!session.userId) redirect('/sign-in')
+    await redirectAdminWithoutSecondFactor()
     if (!(await requireTenantCrew(currentTenantId(), ['tenant_admin'], opts)).ok) notFound()
   },
   /** The Events section: admins, and event managers whatever the claim says about them. */
   async requireEventSection(opts: AuthzOptions = {}): Promise<void> {
     const session = await clerkSession()
     if (!session.userId) redirect('/sign-in')
+    await redirectAdminWithoutSecondFactor()
     if (!(await requireEventAccess(undefined, opts)).ok) notFound()
   },
   /** Holders of `cap`: an admin, or Staff when the capability is Staff's. */
   async requireCapability(cap: Capability, opts: AuthzOptions = {}): Promise<void> {
     const session = await clerkSession()
     if (!session.userId) redirect('/sign-in')
+    await redirectAdminWithoutSecondFactor()
     if (!(await requireCapability(cap, opts)).ok) notFound()
   },
   /** Stellr admins only. */
   async requireStellrAdmin(opts: AuthzOptions = {}): Promise<void> {
     const session = await clerkSession()
     if (!session.userId) redirect('/sign-in')
+    await redirectAdminWithoutSecondFactor()
     if (!(await isStellrAdmin(opts))) notFound()
   },
 }

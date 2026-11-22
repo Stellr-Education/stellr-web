@@ -496,6 +496,7 @@ export const ROUTE_MANIFEST: Record<string, RouteClass> = {
   'app/(stellr)/(member)/account/onboarding/page.tsx': 'participant',
   'app/(stellr)/(member)/account/page.tsx': 'participant',
   'app/(stellr)/(member)/account/extras/[registrationId]/page.tsx': 'participant',
+  'app/(stellr)/(member)/account/two-step/page.tsx': 'participant',
   'app/(stellr)/(member)/campaigns/[slug]/page.tsx': 'participant',
   'app/(stellr)/(member)/campaigns/[slug]/submit/page.tsx': 'participant',
   'app/(stellr)/(member)/campaigns/page.tsx': 'participant',

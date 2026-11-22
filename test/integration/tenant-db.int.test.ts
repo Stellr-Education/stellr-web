@@ -22,6 +22,7 @@ import {
   parseTenantDatabaseUrl,
   type PostgresTenantDriver,
 } from '@/lib/tenancy/driver'
+import { openReadinessLock } from './readiness-lock'
 
 const LOGIN_URL = process.env.TENANT_DB_TEST_URL
 const ADMIN_URL = process.env.TENANT_DB_TEST_ADMIN_URL
@@ -39,6 +40,7 @@ const A = { id: randomUUID(), slug: `tdb-a-${run}`, event: `tdb-ev-a-${run}`, sp
 const B = { id: randomUUID(), slug: `tdb-b-${run}`, event: `tdb-ev-b-${run}`, spare: `tdb-ev-b2-${run}` }
 
 let admin: postgres.Sql
+let closeReadinessLock: () => Promise<void> = async () => {}
 let env: Record<string, string>
 
 type Settings = { event_slug: string; company_count: number | null }
@@ -68,6 +70,7 @@ beforeAll(async () => {
   })
   env = { [TENANT_DB_FLAG]: 'true', TENANT_DATABASE_URL: loginUrl }
 
+  closeReadinessLock = await openReadinessLock(admin)
   for (const t of [A, B]) {
     await admin`
       INSERT INTO public.tenants (id, slug, legal_name, display_name, country, payment_region, currency, time_zone)
@@ -91,6 +94,7 @@ afterAll(async () => {
     () => admin`DELETE FROM public.refund_policies WHERE tenant_id = ANY(${ids}::uuid[])`,
     () => admin`DELETE FROM public.events WHERE tenant_id = ANY(${ids}::uuid[])`,
     () => admin`DELETE FROM public.tenants WHERE id = ANY(${ids}::uuid[])`,
+    () => closeReadinessLock(),
   ]
   for (const step of cleanup) await step().catch(() => {})
   await admin.end({ timeout: 5 })

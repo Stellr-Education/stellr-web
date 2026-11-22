@@ -20,6 +20,9 @@ SELECT plan(25);
 -- ── Fixtures ────────────────────────────────────────────────────────────────
 -- One tenant per status, each with one host. Stellr (the platform owner) is
 -- seeded by 20261104100000 and gets a host too.
+-- S5 .32: open the readiness lock inside this rolled-back transaction, so the fixture
+-- tenants may be active (supabase/migrations/20261122020000_tenancy_readiness_lock.sql).
+UPDATE public.tenancy_settings SET tenants_ready_at = now(), tenants_ready_note = 'pgTAP fixture (rolled back)';
 INSERT INTO public.tenants (id, slug, legal_name, display_name, country, payment_region, currency, time_zone, min_participant_age, status) VALUES
   ('a7000000-0000-4000-8000-000000000001', 'pgtap-m7-active',    'M7 Active Pty Ltd',    'M7 Active',    'AU', 'AU', 'aud', 'Australia/Sydney', 14, 'active'),
   ('a7000000-0000-4000-8000-000000000002', 'pgtap-m7-suspended', 'M7 Suspended Pty Ltd', 'M7 Suspended', 'AU', 'AU', 'aud', 'Australia/Sydney', 14, 'suspended'),

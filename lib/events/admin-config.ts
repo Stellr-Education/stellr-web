@@ -20,11 +20,13 @@
 // The tenant comes from the caller's own scope (requireEventRoute's tenantId), never
 // from request input. Every caller has already placed the event in that scope.
 //
-// Everything else here stays on the service-role client: the participant moves (whose
-// columns tenant_app writes per column grant, Lane A's to settle; until then a move is
-// confined by findEventParticipant and findEventCompany alone, which the route runs
-// before updateEventParticipant, and test/events-admin-config-c18.test.ts holds that
-// for a tenant's staff) and Stellr's store
+// A participant's move between companies is in the area too (the C18 leftover, 22 Nov
+// 2026): tenant_app holds UPDATE on participants, so the tenant path writes it under the
+// row policies, confined in SQL to this event's participant and this event's company. The
+// route still runs findEventParticipant and findEventCompany first, on every path.
+//
+// Everything else here stays on the service-role client: the overrides and Auto-Assign
+// (they read team profiles, which tenant events do not take until A10c) and Stellr's store
 // (offerings and the merch batch), which a tenant's staff cannot reach (the routes answer
 // refuseOutsideStellr first) and which take a StellrOnlyDb for that reason.
 import type { SupabaseClient } from '@supabase/supabase-js'
@@ -185,12 +187,66 @@ export function renameEventCompany(
 }
 
 /**
+ * The tenantDb write behind move: this event's participant (through its registration) gets
+ * the company, if the company is this event's or is null. Under the tenant policies a row of
+ * another tenant is invisible, so it matches nothing. Returns the rows changed.
+ */
+export async function tenantMoveParticipant(
+  db: TenantDb,
+  slug: string,
+  participantId: string,
+  companyId: string | null,
+): Promise<number> {
+  const rows = await db.sql<{ id: string }[]>`
+    UPDATE public.participants p
+       SET company_id = ${companyId}::uuid, company_locked = ${companyId !== null}
+      FROM public.registrations r
+     WHERE p.id = ${participantId}::uuid
+       AND p.registration_id = r.id
+       AND r.event_slug = ${slug}
+       AND (${companyId}::uuid IS NULL
+            OR EXISTS (SELECT 1 FROM public.event_companies c WHERE c.id = ${companyId}::uuid AND c.event_slug = ${slug}))
+    RETURNING p.id::text AS id`
+  return rows.length
+}
+
+/**
+ * POST companies { action: 'move' }: true unless the write failed. A hand placement sticks
+ * (company_locked), so Auto-Assign leaves it alone; moving back to null releases it. The
+ * caller has confined the participant and the company to this event first (AUTH-3).
+ */
+export function moveEventParticipant(
+  db: SupabaseClient,
+  tenantId: string,
+  slug: string,
+  participantId: string,
+  companyId: string | null,
+): Promise<boolean> {
+  return writeArea(EVENTS_CONFIG_AREA, {
+    tenantId,
+    service: async () => {
+      const { error } = await updateEventParticipant(db, participantId, { company_id: companyId, company_locked: companyId !== null })
+      return !error
+    },
+    tenant: async (tdb) => {
+      try {
+        await tenantMoveParticipant(tdb, slug, participantId, companyId)
+        return true
+      } catch (err) {
+        console.error('[events-config] participant move refused:', errorCodeOf(err))
+        return false
+      }
+    },
+  })
+}
+
+/**
  * A SQLSTATE or an error class name for the log, never the message (it can carry values).
  * Re-exported for the routes, which reach the area switch only through this module.
  */
 export { errorCodeOf }
 
-// ── Companies: service path only ────────────────────────────────────────────
+// ── Companies: the confinement checks and the overrides, service path ──────
 // Placement on a participant row, by id, confined to the event first (deep review AUTH-3).
 
 /** This event's participant with this id, through its registration, or null. */
@@ -210,7 +266,7 @@ export async function findEventCompany(db: SupabaseClient, slug: string, company
   return (data as { id: string } | null) ?? null
 }
 
-/** Write a participant's placement or override fields. The caller confined the id to its event. */
+/** Write a participant's override fields (and the service path of a move). The caller confined the id to its event. */
 export async function updateEventParticipant(db: SupabaseClient, participantId: string, fields: Record<string, unknown>) {
   return db.from('participants').update(fields).eq('id', participantId)
 }
