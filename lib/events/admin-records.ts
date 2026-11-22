@@ -92,26 +92,38 @@ export async function eventContainerId(db: StellrOnlyDb, slug: string): Promise<
 
 const VOLUNTEER_MEMBER = 'members(id, first_name, last_name, email, date_of_birth)'
 
-/** Who has raised interest in this event, and who is assigned to its container. */
-export async function loadEventVolunteers(db: StellrOnlyDb, slug: string, containerId: string | null) {
-  const [{ data: interestRows }, { data: assignedRows }] = await Promise.all([
-    db
-      .from('volunteer_event_interest')
-      .select(`member_id, created_at, ${VOLUNTEER_MEMBER}`)
-      .eq('event_slug', slug)
-      .eq('status', 'interested')
-      .order('created_at', { ascending: true }),
-    containerId
-      ? db
-          .from('cohort_members')
-          .select(`member_id, added_at, ${VOLUNTEER_MEMBER}`)
-          .eq('cohort_id', containerId)
-          .eq('relationship', 'volunteer')
-          .eq('status', 'active')
-          .order('added_at', { ascending: true })
-      : Promise.resolve({ data: [] as never[] }),
-  ])
-  return { interestRows, assignedRows }
+/**
+ * Who is assigned to this event's container. Who raised interest is the 'volunteers' area
+ * (lib/events/admin-volunteers.ts, S5 A10c), which the route reads beside this.
+ */
+export async function loadEventAssignedVolunteers(db: StellrOnlyDb, containerId: string | null) {
+  const { data: assignedRows } = containerId
+    ? await db
+        .from('cohort_members')
+        .select(`member_id, added_at, ${VOLUNTEER_MEMBER}`)
+        .eq('cohort_id', containerId)
+        .eq('relationship', 'volunteer')
+        .eq('status', 'active')
+        .order('added_at', { ascending: true })
+    : { data: [] as never[] }
+  return assignedRows
+}
+
+/**
+ * Interest rows with their member details. Rows that carry the embed (the service path)
+ * are returned as they are, and nothing is read. Rows without it (the 'volunteers' area's
+ * tenant path: tenant_app has no grant on members) get it from Stellr's service-role
+ * client, which only Stellr's scope can hold (StellrOnlyDb).
+ */
+export async function withVolunteerMembers<R extends { member_id: string; members?: unknown }>(
+  db: StellrOnlyDb,
+  rows: R[],
+): Promise<(R & { members: unknown })[]> {
+  const missing = [...new Set(rows.filter((r) => r.members === undefined).map((r) => r.member_id))]
+  if (missing.length === 0) return rows as (R & { members: unknown })[]
+  const { data } = await db.from('members').select('id, first_name, last_name, email, date_of_birth').in('id', missing)
+  const byId = new Map(((data ?? []) as { id: string }[]).map((m) => [m.id, m]))
+  return rows.map((r) => (r.members === undefined ? { ...r, members: byId.get(r.member_id) ?? null } : (r as R & { members: unknown })))
 }
 
 /**

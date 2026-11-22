@@ -53,4 +53,9 @@ export const TENANT_DB_CALLERS: readonly string[] = [
   // to not importing it, and drives it over a stand-in driver (it reaches
   // tenantDb only through the script, so it is not listed itself).
   'scripts/tenant-db-canary.ts',
+  // An event's volunteer interest (S5 A10c): the 'volunteers' area, through readArea. The
+  // events/[slug]/volunteers route reaches it only through this module. Its two-tenant test
+  // is test/integration/two-tenant/volunteers.int.test.ts (through the kit and this module).
+  'lib/events/admin-volunteers.ts',
+  'lib/events/admin-volunteers.test.ts',
 ]

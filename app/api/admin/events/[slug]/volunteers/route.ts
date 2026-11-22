@@ -2,7 +2,15 @@ import { NextResponse } from 'next/server'
 import { supabaseServer } from '@/lib/supabase'
 import { requireEventRoute } from '@/lib/authz'
 import { getEventBySlug } from '@/lib/events/repo'
-import { assignEventVolunteer, eventContainerId, loadEventVolunteers, removeEventVolunteer, stellrOnlyDb } from '@/lib/events/admin-records'
+import {
+  assignEventVolunteer,
+  eventContainerId,
+  loadEventAssignedVolunteers,
+  removeEventVolunteer,
+  stellrOnlyDb,
+  withVolunteerMembers,
+} from '@/lib/events/admin-records'
+import { errorCodeOf, loadEventVolunteerInterest } from '@/lib/events/admin-volunteers'
 import { ensureEventContainer } from '@/lib/container-sync'
 import { getVolunteerStatuses, grantVolunteerRole, dispatchVolunteerAgreement, VOLUNTEER_MEMBER_COLUMNS } from '@/lib/volunteer'
 import { logActivity, actorFromAuth } from '@/lib/activity-log'
@@ -23,6 +31,14 @@ import { refuseOutsideStellr } from '@/lib/tenancy/load-scoped'
 //
 // All of this is Stellr's: shared members, its community Spaces and mentoring containers,
 // its signing accounts. A tenant's staff are refused.
+//
+// S5 A10c: who raised interest is the 'volunteers' area (lib/events/admin-volunteers.ts),
+// read through the area switch with the caller's own tenant. On the service path (the
+// default) it is today's query. In tenant mode the interest rows come from tenantDb without
+// member details (tenant_app has no grant on members) and the names are filled in from
+// Stellr's client, which this route holds only in Stellr's scope. A tenant's staff are still
+// refused on every path: the names, the advisory pills and the assignments are Stellr's
+// data, and since A10b a tenant's event takes no volunteer interest at all.
 
 const ROUTE = '/api/admin/events/[slug]/volunteers'
 
@@ -38,7 +54,16 @@ export async function GET(_req: Request, { params }: Ctx) {
 
   const db = stellrOnlyDb(crew.scope, supabaseServer())
   const containerId = await eventContainerId(db, slug)
-  const { interestRows, assignedRows } = await loadEventVolunteers(db, slug, containerId)
+  const read = await Promise.all([
+    loadEventVolunteerInterest(db, crew.tenantId, slug).then((rows) => withVolunteerMembers(db, rows)),
+    loadEventAssignedVolunteers(db, containerId),
+  ]).catch((err: unknown) => {
+    // Only the tenant path throws: a refused or unreachable tenantDb, with no service fallback.
+    console.error('[admin/events/volunteers] interest read failed:', errorCodeOf(err))
+    return null
+  })
+  if (!read) return NextResponse.json({ error: 'Could not load volunteers' }, { status: 500 })
+  const [interestRows, assignedRows] = read
 
   type MemberJoin = { id: string; first_name: string | null; last_name: string | null; email: string | null; date_of_birth: string | null }
   const unwrap = (m: unknown): MemberJoin | null => (Array.isArray(m) ? (m[0] as MemberJoin) : (m as MemberJoin)) ?? null
