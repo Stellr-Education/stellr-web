@@ -340,6 +340,23 @@ None of these gates `dev`, which uses a placeholder document (`W7-6`). They are 
 |---|---|---|---|---|
 | SQ-9 | (Scoping) Do group ownership (`ownsTeam` in `lib/team-access.ts`) and self-ownership queries become authz resource predicates in S5, or wait for S7 identities? Options: (a) wait for S7; (b) S5 | (a): they are participant-class, outside staff convergence | Approved as recommended (owner, in chat, 22 Nov 2026: "approve the 81 open register rows as recommended") | 22 Nov 2026 |
 
+## S6 decisions
+
+Added 22 Nov 2026 with S6-D (`docs/S6-DESIGN.md`, section 1). **Open, default in force:** S6 builds the default until the owner answers. The owner's 22 Nov 2026 blanket yes (#855) predates these rows and does not cover them. S6-Q1 is answered in `docs/PLAN-S6-DRAFT.md` (owner, 21 Nov 2026: (a)).
+
+| Id | Question | Recommended default | Answer | Answered |
+|---|---|---|---|---|
+| S6-Q2 | Which roles must have MFA at request time? (a) admin and Staff; (b) also event managers; (c) everyone with portal access | (a) first for Stellr, then event managers; (c) for tenant admins once they exist | Open: default in force | |
+| S6-Q3 | Who is on `platform_admins`, route by route, under `AUTHZ_SOURCE=postgres`? | The two platform admins mapped on production on 21 Nov 2026; BF-15 (a)'s seven routes `platform_admin` only; other admin routes keep the Stellr admin check until C25 | Open: default in force | |
+| S6-Q4 | How a tenant consents to break-glass write: (a) in-app approval by a tenant admin, logged; (b) written consent recorded by staff | (a); with no tenant admin, break-glass is refused | Open: default in force | |
+| S6-Q5 | Break-glass time limit: 15, 30 or 60 minutes | 30 minutes, renewable once with a fresh reason and step-up | Open: default in force | |
+| S6-Q6 | Which usage figures the console shows, and how long `usage_events` is kept | Counts only (registrations, events, emails, identities); gross volume and fees after S9; raw events 90 days, daily roll-ups kept | Open: default in force | |
+| S6-Q7 | Where support mode runs: (a) the platform host; (b) the tenant's host | (a); `/admin` stays a 404 on tenant hosts (REF-14) | Open: default in force | |
+| S6-Q8 | Does view-as stay for Stellr once support mode exists? (a) keep for Stellr, support mode for tenants; (b) replace | (a); view-as refuses a target tied to a non-owner tenant (BF-40) | Open: default in force | |
+| S6-Q9 | Is the authority flip (C25) S6's first production step, or the end of S5? | (a) S6's first step, after the production shadow week (to 29 Nov 2026 01:26Z) | Open: default in force | |
+| S6-Q10 | The `proxy.ts` admin prefilter under `postgres` (B20): (a) sync a Clerk claim from Postgres; (b) signed-in only | (a): the proxy stays database-free | Open: default in force | |
+| S6-Q11 | Where the audit chain's recorded heads are kept: (a) a scheduled job; (b) by hand at each promotion | (b) until a cron's Active CPU is measured | Open: default in force | |
+
 ## Settled elsewhere
 
 Linked, not copied. The wording that counts is at the link.
