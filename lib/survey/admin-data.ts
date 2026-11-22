@@ -174,7 +174,7 @@ export async function tenantLogSurveyView(db: TenantDb, entry: SurveyViewEntry):
   await db.sql`
     INSERT INTO public.survey_access_log (tenant_id, actor, action, event_slug, distribution_id, row_count, detail)
     VALUES (${db.tenantId}::uuid, ${entry.actor}, 'view', ${entry.eventSlug}, ${entry.distributionId}::uuid, ${entry.rowCount}::int,
-            ${JSON.stringify({ what: 'completion_table' })}::jsonb)`
+            ${JSON.stringify({ what: 'completion_table' })}::text::jsonb)`
 }
 
 /** Record a view of the completion table. Never throws, as today: a failed write is logged. */
@@ -225,6 +225,11 @@ export const PATCHABLE_COLUMNS = [
  * status is one of `onlyIfStatus`. Values are bound as one jsonb and typed by the table's own
  * row type. Under the tenant policies another tenant's row is invisible, so it matches
  * nothing. Returns the changed rows as PostgREST renders them.
+ *
+ * The patch is bound as text and cast to jsonb in SQL (`::text::jsonb`), never as `::jsonb`
+ * alone: postgres.js reads the parameter's type from the server, and for a jsonb parameter it
+ * JSON-encodes the value again, so the JSON text arrives as a jsonb string scalar and
+ * jsonb_populate_record refuses it (22023, "on a scalar"), while `? 'key'` on it is false.
  */
 export async function tenantUpdateDistribution(
   db: TenantDb,
@@ -239,23 +244,23 @@ export async function tenantUpdateDistribution(
   const statuses = onlyIfStatus?.length ? onlyIfStatus.join(',') : null
   const rows = await db.sql<{ row: unknown }>`
     UPDATE public.survey_distributions d SET
-      opens_at = CASE WHEN ${j}::jsonb ? 'opens_at' THEN r.opens_at ELSE d.opens_at END,
-      opens_at_source = CASE WHEN ${j}::jsonb ? 'opens_at_source' THEN r.opens_at_source ELSE d.opens_at_source END,
-      opened_by = CASE WHEN ${j}::jsonb ? 'opened_by' THEN r.opened_by ELSE d.opened_by END,
-      opened_by_label = CASE WHEN ${j}::jsonb ? 'opened_by_label' THEN r.opened_by_label ELSE d.opened_by_label END,
-      opens_at_set_at = CASE WHEN ${j}::jsonb ? 'opens_at_set_at' THEN r.opens_at_set_at ELSE d.opens_at_set_at END,
-      schedule_flag = CASE WHEN ${j}::jsonb ? 'schedule_flag' THEN r.schedule_flag ELSE d.schedule_flag END,
-      status = CASE WHEN ${j}::jsonb ? 'status' THEN r.status ELSE d.status END,
-      opened_at = CASE WHEN ${j}::jsonb ? 'opened_at' THEN r.opened_at ELSE d.opened_at END,
-      paused_at = CASE WHEN ${j}::jsonb ? 'paused_at' THEN r.paused_at ELSE d.paused_at END,
-      closed_at = CASE WHEN ${j}::jsonb ? 'closed_at' THEN r.closed_at ELSE d.closed_at END,
-      closed_by = CASE WHEN ${j}::jsonb ? 'closed_by' THEN r.closed_by ELSE d.closed_by END,
-      audiences = CASE WHEN ${j}::jsonb ? 'audiences' THEN r.audiences ELSE d.audiences END,
-      minor_agreement_override = CASE WHEN ${j}::jsonb ? 'minor_agreement_override' THEN r.minor_agreement_override ELSE d.minor_agreement_override END,
-      minor_agreement_override_set_by = CASE WHEN ${j}::jsonb ? 'minor_agreement_override_set_by' THEN r.minor_agreement_override_set_by ELSE d.minor_agreement_override_set_by END,
-      minor_agreement_override_set_at = CASE WHEN ${j}::jsonb ? 'minor_agreement_override_set_at' THEN r.minor_agreement_override_set_at ELSE d.minor_agreement_override_set_at END,
-      gate_certificate = CASE WHEN ${j}::jsonb ? 'gate_certificate' THEN r.gate_certificate ELSE d.gate_certificate END
-    FROM jsonb_populate_record(NULL::public.survey_distributions, ${j}::jsonb) r
+      opens_at = CASE WHEN ${j}::text::jsonb ? 'opens_at' THEN r.opens_at ELSE d.opens_at END,
+      opens_at_source = CASE WHEN ${j}::text::jsonb ? 'opens_at_source' THEN r.opens_at_source ELSE d.opens_at_source END,
+      opened_by = CASE WHEN ${j}::text::jsonb ? 'opened_by' THEN r.opened_by ELSE d.opened_by END,
+      opened_by_label = CASE WHEN ${j}::text::jsonb ? 'opened_by_label' THEN r.opened_by_label ELSE d.opened_by_label END,
+      opens_at_set_at = CASE WHEN ${j}::text::jsonb ? 'opens_at_set_at' THEN r.opens_at_set_at ELSE d.opens_at_set_at END,
+      schedule_flag = CASE WHEN ${j}::text::jsonb ? 'schedule_flag' THEN r.schedule_flag ELSE d.schedule_flag END,
+      status = CASE WHEN ${j}::text::jsonb ? 'status' THEN r.status ELSE d.status END,
+      opened_at = CASE WHEN ${j}::text::jsonb ? 'opened_at' THEN r.opened_at ELSE d.opened_at END,
+      paused_at = CASE WHEN ${j}::text::jsonb ? 'paused_at' THEN r.paused_at ELSE d.paused_at END,
+      closed_at = CASE WHEN ${j}::text::jsonb ? 'closed_at' THEN r.closed_at ELSE d.closed_at END,
+      closed_by = CASE WHEN ${j}::text::jsonb ? 'closed_by' THEN r.closed_by ELSE d.closed_by END,
+      audiences = CASE WHEN ${j}::text::jsonb ? 'audiences' THEN r.audiences ELSE d.audiences END,
+      minor_agreement_override = CASE WHEN ${j}::text::jsonb ? 'minor_agreement_override' THEN r.minor_agreement_override ELSE d.minor_agreement_override END,
+      minor_agreement_override_set_by = CASE WHEN ${j}::text::jsonb ? 'minor_agreement_override_set_by' THEN r.minor_agreement_override_set_by ELSE d.minor_agreement_override_set_by END,
+      minor_agreement_override_set_at = CASE WHEN ${j}::text::jsonb ? 'minor_agreement_override_set_at' THEN r.minor_agreement_override_set_at ELSE d.minor_agreement_override_set_at END,
+      gate_certificate = CASE WHEN ${j}::text::jsonb ? 'gate_certificate' THEN r.gate_certificate ELSE d.gate_certificate END
+    FROM jsonb_populate_record(NULL::public.survey_distributions, ${j}::text::jsonb) r
     WHERE d.id = ${id}::uuid
       AND (${statuses}::text IS NULL OR d.status = ANY (string_to_array(${statuses}::text, ',')))
     RETURNING to_jsonb(d) AS row`

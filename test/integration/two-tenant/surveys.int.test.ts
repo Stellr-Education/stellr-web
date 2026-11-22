@@ -131,7 +131,7 @@ const distributionAsOwner = async (id: string) => {
 
 const accessRows = async (slug: string) =>
   kit.admin<{ actor: string; tenant_id: string }[]>`
-    SELECT actor, tenant_id::text AS tenant_id FROM public.survey_access_log WHERE event_slug = ${slug} ORDER BY created_at`
+    SELECT actor, tenant_id::text AS tenant_id FROM public.survey_access_log WHERE event_slug = ${slug} ORDER BY at`
 
 describe('the reads', () => {
   it('the distribution: only its own tenant’s row on both paths, and the paths agree', async () => {
@@ -225,6 +225,10 @@ describe('the writes, through the area switch in tenant mode', () => {
 
       await logSurveyView(noService, t.id, { actor: `iso-own-${t.tag}`, eventSlug: t.event.slug, distributionId: id, rowCount: 1 })
       expect((await accessRows(t.event.slug)).filter((r) => r.actor === `iso-own-${t.tag}`)).toEqual([{ actor: `iso-own-${t.tag}`, tenant_id: t.id }])
+      // The detail lands as an object, not a JSON string (the parameter is bound as text).
+      const [detail] = await kit.admin<{ kind: string; what: string | null }[]>`
+        SELECT jsonb_typeof(detail) AS kind, detail ->> 'what' AS what FROM public.survey_access_log WHERE actor = ${`iso-own-${t.tag}`}`
+      expect(detail).toEqual({ kind: 'object', what: 'completion_table' })
     }
   })
 })
