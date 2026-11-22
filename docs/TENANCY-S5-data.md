@@ -102,6 +102,16 @@ An entry that does not parse, names an undeclared area, gives a rate to `tenant`
 - **Unchanged.** Issuing (POST) and the wording (PATCH) stay Stellr-only on every path (W7-9). All of A10a's guards stay. `credential_events` is written only by public pages, so no admin path reads it.
 - **Members.** No credentials read joins `members`, which `tenant_app` cannot read, so shadow needs no `normalise`.
 - **Tests.** `lib/events/admin-credentials.test.ts`, `app/api/admin/events/[slug]/credentials/tenant-path.test.ts`, and `test/integration/two-tenant/credentials.int.test.ts` in the `tenant-db` job.
+### A10c surveys: the `surveys` area (22 Nov 2026, on a PR into `dev`, not merged)
+
+`lib/survey/admin-data.ts` holds the data behind an event's Survey tab (`app/api/admin/events/[slug]/survey`), on the same three paths as `events-config`, with the tenant from `requireEventRoute`:
+
+- **Through the area:** the event's distribution, the completion table (invitations with their response progress), the `survey_access_log` row for viewing it, and the distribution's admin writes (go-live, reset, pause, resume, close, audiences, the minors' agreement override, the certificate gate). With the defaults the service path is today's query, unchanged, and no connection opens.
+- **What the tenant path cannot reproduce.** `tenant_app` has no grant on `members` (S7), so a completion row's `members` embed is null and an invitation with no participant shows its first name or email; the shadow comparison drops `members`. It has none on `survey_definitions`, so the distribution read takes the event's newest distribution without the `post_event` key filter (every distribution is a `post_event` one today). A refused tenant write answers a fixed message, never the database's. Mismatch records carry uuids and counts only.
+- **Who reaches it.** A tenant's staff are still refused (`refuseOutsideStellr`'s 503) unless `surveys` is on the tenant path. Then they get the tab narrowed to the distribution and the completion table: no schedule sync with Sanity, no recipient preview (it reads members), no definition and no late-open preview. `send_now`, `resend`, `open_after_event` and `minor_agreement_override` stay refused for them on every path. Stellr's staff get today's tab on every path.
+- **Left on the service path:** the respondent token pages, the survey cron and every send, the recipient plan, `ensureDistribution`, `audit_log` rows, and the Stellr-only cross-event pages (analytics, export, testimonials).
+
+**CI.** `test/integration/two-tenant/surveys.int.test.ts` (both paths isolated and in agreement, the tab's calls in tenant mode, a cross-tenant distribution write changing nothing, a cross-tenant access-log row refused). The `tenant-db` scope step now also runs for `lib/survey/admin-data.ts`, `lib/survey/admin.ts` and the survey route.
 
 ### Stellr-only routes refuse another tenant's event (waves 6 and 7)
 

@@ -70,4 +70,10 @@ export const TENANT_DB_CALLERS: readonly string[] = [
   // kit and this module, so it is not listed itself.
   'lib/events/admin-credentials.ts',
   'lib/events/admin-credentials.test.ts',
+  // Event survey admin data (S5 A10c): the 'surveys' area, behind the event's Survey tab.
+  // The route and lib/survey/admin.ts reach it only through this module. Its two-tenant test
+  // (test/integration/two-tenant/surveys.int.test.ts) reaches tenantDb only through the kit
+  // and this module, so it is not listed itself.
+  'lib/survey/admin-data.ts',
+  'lib/survey/admin-data.test.ts',
 ]
