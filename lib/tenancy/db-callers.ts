@@ -64,4 +64,10 @@ export const TENANT_DB_CALLERS: readonly string[] = [
   // kit and this module, so it is not listed itself.
   'lib/team-profile/admin-data.ts',
   'lib/team-profile/admin-data.test.ts',
+  // The 'credentials' area (S5 A10c): an event's issued-credentials list, the tenant panel
+  // and revoke, through readArea and writeArea. Its two-tenant test
+  // (test/integration/two-tenant/credentials.int.test.ts) reaches tenantDb only through the
+  // kit and this module, so it is not listed itself.
+  'lib/events/admin-credentials.ts',
+  'lib/events/admin-credentials.test.ts',
 ]

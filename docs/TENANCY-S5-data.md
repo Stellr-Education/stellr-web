@@ -93,6 +93,15 @@ An entry that does not parse, names an undeclared area, gives a rate to `tenant`
 - **Who reaches it.** Stellr's staff as before, on every path. A tenant's staff get Auto-Assign and the overrides only while the area is in tenant mode (`team-profiles:tenant`). On the service and shadow paths they still get `refuseOutsideStellr`'s 503. Sending team profiles (`events/[slug]/team-profiles`) stays Stellr's.
 - **CI.** `test/integration/two-tenant/team-profiles.int.test.ts` in the `tenant-db` job; the scope step now covers `lib/team-profile/{admin-data,assign,override,store}.ts` and the event page.
 - **Flip order.** As `events-config`: `team-profiles:shadow:<low rate>` on `dev`, then `:1`, then `:tenant`. Read the `TENANTDB` rows in `app_errors` before each step.
+### A10c credentials: the `credentials` area
+
+`lib/events/admin-credentials.ts` adds the `credentials` area, on the same three paths as `events-config`. With `TENANT_DB_AREAS` unset, Stellr runs today's queries and no tenant connection opens. The tenant comes from `requireEventRoute` or `requireEventCrew`, never from the request.
+
+- **Converted.** An event's issued-credentials list (the GET under `events/[slug]/credentials`) goes through `readArea`. A revoke (`/api/admin/credentials/[id]/revoke`) goes through `writeArea`: on the tenant path, one UPDATE pinned to the caller's tenant, so another tenant's credential matches nothing and answers the 409 it answers today.
+- **Tenant staff.** The credentials GET answers another tenant's staff only while the area is `tenant`. They get their own event's panel, with every part read through `tenantDb`: the wording, the list and the checked-in count. The mentor count is 0, because mentor containers are Stellr's only (a CHECK on `mentoring_cohorts`). On `service` and `shadow` they still get the Stellr-only 503. `test/stellr-only-event-guard.test.ts` allows this one exception, for GET only.
+- **Unchanged.** Issuing (POST) and the wording (PATCH) stay Stellr-only on every path (W7-9). All of A10a's guards stay. `credential_events` is written only by public pages, so no admin path reads it.
+- **Members.** No credentials read joins `members`, which `tenant_app` cannot read, so shadow needs no `normalise`.
+- **Tests.** `lib/events/admin-credentials.test.ts`, `app/api/admin/events/[slug]/credentials/tenant-path.test.ts`, and `test/integration/two-tenant/credentials.int.test.ts` in the `tenant-db` job.
 
 ### Stellr-only routes refuse another tenant's event (waves 6 and 7)
 
