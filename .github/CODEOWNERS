@@ -47,6 +47,7 @@
 # S5 data-access ratchets: the shrink-only baselines and what measures them
 /test/service-role-ratchet.test.ts  @aussie-spaceman
 /test/events-facade-ratchet.test.ts @aussie-spaceman
+/test/stellr-only-lists-ratchet.test.ts @aussie-spaceman
 /test/audit-coverage.test.ts        @aussie-spaceman
 /test/optional-event-tenant-id.test.ts @aussie-spaceman
 /test/baselines/**                  @aussie-spaceman
@@ -113,6 +114,7 @@
 /lib/security/stellr-only-dispositions.ts @aussie-spaceman
 /test/registration/participants-eligibility-sql.test.ts @aussie-spaceman
 /test/registration/tenant-guardian-consent-sql.test.ts @aussie-spaceman
+/test/registration/tenant-guardian-consent-edges-sql.test.ts @aussie-spaceman
 # S5 wave 6: whose rules a roster writer applies, the tenant guardian-consent
 # envelope and check-in refusal, the team-route audit spec, the production code
 # that applies consent (the tenant mail-audience filter and the e-sign signed and
