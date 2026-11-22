@@ -6,7 +6,7 @@ import { devPriceMap, priceSwappingHttpClient, swapDeep, swapIds } from './strip
 const LIVE = 'price_1LiveAAA'
 const TEST = 'price_1TestBBB'
 const MAP_JSON = JSON.stringify({ [LIVE]: TEST })
-const env = (over: Record<string, string | undefined>) => ({ STRIPE_SECRET_KEY: 'sk_test_x', STRIPE_DEV_PRICE_MAP: MAP_JSON, ...over }) as NodeJS.ProcessEnv
+const env = (over: Record<string, string | undefined>) => ({ STRIPE_SECRET_KEY: 'sk_test_x', STRIPE_DEV_PRICE_MAP: MAP_JSON, ...over }) as unknown as NodeJS.ProcessEnv
 
 afterEach(() => vi.unstubAllEnvs())
 
