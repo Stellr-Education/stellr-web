@@ -111,14 +111,12 @@ describe('POST /api/check-in', () => {
 })
 
 describe('DELETE /api/check-in ("Not you?")', () => {
-  it('records the forget on the platform chain, marked unresolved, and never looks up the slug', async () => {
+  it('writes no audit event and looks nothing up (owner decision PR721-1)', async () => {
     const res = await DELETE(new Request(`https://app.test/api/check-in?slug=${SLUG}`, { method: 'DELETE' }))
     expect(res.status).toBe(200)
     await flush()
-    expect(h.audits.map((a) => ({ action: a.action, tenantId: a.tenantId, actor: a.actor, target: a.target, metadata: a.metadata }))).toEqual([
-      { action: 'event.check_in.self_forget', tenantId: null, actor: 'system', target: null, metadata: { tenant_unresolved: true, actor_anonymous: true, status: 200 } },
-    ])
+    expect(h.afters).toEqual([])
+    expect(h.audits).toEqual([])
     expect(h.mirrored).toEqual([])
-    expect(JSON.stringify(h.audits)).not.toContain(SLUG)
   })
 })
