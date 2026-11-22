@@ -1,5 +1,7 @@
 # DRAFT: S5 decision register backfill
 
+> **Folded into the register on 22 Nov 2026.** Every entry below is now a row in `docs/S5-DECISION-REGISTER.md`, under the same gate and with the same id (`BF-33` and `BF-66` were already there). The register is the source from here: answers are recorded there, not in this file, which stays as the record of the draft.
+
 > **DRAFT, for the record slice to fold into `docs/S5-DECISION-REGISTER.md`.** This file does not change the register. It collects the owner decisions from S5 waves 2 to 6 that the register does not hold yet (its section "Not in this register yet"; tracker row `s5-programme.41`), C13's four wave 4 follow-ups (tracker `s5-programme.44`), the scoping questions nobody answered, and a definition of "C18m". Each entry sits under the gate it blocks, with the options, a proposed safe default and a status. Nothing here is answered: every open entry is **owner decides**.
 
 Written 14 Nov 2026 against `dev` at `1d9b6977`. Sources, all on `dev`: `docs/TENANCY-S5.md` ("Owner decisions wave 2 raised" to "Owner decisions wave 6 raised", and "Owner gates", "Decisions"), `docs/TENANCY-S5-registration.md` ("Owner decisions"), `docs/TENANCY-S5-data.md`, `docs/AUTHZ.md`, `docs/S5-CRONS-LIMITS-SMMA.md` and the tracker `docs/handovers/tracker/2026-11-11-s5-programme.md`. The scoping questions come from the private S5 scoping output of 4 Nov 2026; only the questions are copied. People are named by role only.
