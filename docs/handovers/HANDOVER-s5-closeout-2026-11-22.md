@@ -70,3 +70,13 @@ Also, without a PR:
 - **The admin health route needs a fresh Clerk session.** Load an HTML admin page before calling JSON routes from the browser, or the short-lived token has expired and the call answers 401 or 403.
 - **The audit-coverage gate counts every DELETE as a mutation,** even one that only clears a cookie. Dropping an audit event means an `AUDIT_EXEMPTIONS` entry with the owner's decision.
 - **A BEFORE trigger fires before CHECK constraints,** so a lock trigger masks the codes other tests expect. Open the lock first in any fixture that inserts a tenant.
+
+## 7. Addendum, 22 Nov 2026 (later the same night)
+
+- **Merged:** #859 (CODEOWNERS, with the owner's yes in chat), #861 (register backfill), #864 (the 81 backfill rows approved), #865 (wave 8 `WD` rows entered). **T-32 approved.** Every S5 decision is now in the register, and none is open.
+- **The repository moved** to `Stellr-Education/stellr-web`; the main checkout's `origin` now points there.
+- **#860, the readiness lock:** `db` and `tenant-db` are green. `canary-local` needed the lock opened on CI's local stack, which is now done by `seed-two-tenants.ts --ci-open-readiness-lock` (loopback only). Needs the owner's review.
+- **#866, the C18 participant move,** goes through the `events-config` area (`tenant_app` already holds UPDATE on `participants`). Needs the owner's review. Auto-Assign and the overrides wait for A10c.
+- **P9 preparation:** 400 counted companies reads on dev, all 200, and 0 `app_errors` (flip log). P9 itself waits for the owner's yes and the meter read.
+- **P7 meter:** the CLI cannot read Hobby billing data, so the owner reads Active CPU in the dashboard.
+- **The `.35` registrations are paused for the owner.** The local app holds a real HubSpot token and a live Resend key, so a test registration would write to the real CRM and send mail to fake addresses. Proposed: run the local app with those two keys blank, then do one registration of each kind, one A8 roster round and the Stripe shared-cost drill on localhost (Stripe test mode). Test payments may not be made on the hosted dev site.
