@@ -106,7 +106,7 @@ export async function loadRecipientsByEnvelopeRows(
   for (let i = 0; i < ids.length; i += RECIPIENT_IN_CHUNK) {
     const { data: slice, error } = await db
       .from('agreement_recipients')
-      .select('envelope_row, name, email, role_name, status, delivered_at, routing_order, invite_sent_at, envelope:agreements!inner(provider)')
+      .select('envelope_row, name, email, role_name, status, delivered_at, signed_at, routing_order, invite_sent_at, envelope:agreements!inner(provider)')
       .in('envelope_row', ids.slice(i, i + RECIPIENT_IN_CHUNK))
       .order('routing_order', { ascending: true })
     if (error) {
