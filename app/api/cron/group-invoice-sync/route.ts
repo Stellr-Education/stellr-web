@@ -6,14 +6,13 @@ import { stripeClient } from '@/lib/stripe'
 import { guardCron } from '@/lib/cron'
 import { withCronAudit } from '@/lib/cron-audit'
 import { startCronRun } from '@/lib/cron-runs'
-import { partitionByTenant, runPerTenant, type TenantJob } from '@/lib/cron-tenants'
+import { runPerTenant, type TenantJob } from '@/lib/cron-tenants'
 import { getEventBySlugIn } from '@/lib/events/tenant-facade'
-import { syncGroupInvoice } from '@/lib/group-billing'
+import { syncDueGroupInvoices } from '@/lib/group-billing'
 import { syncAddonInvoice } from '@/lib/addons/invoice'
 import { sweepUnpaidAddons } from '@/lib/addons/sweep'
-import { eventIsOver, settleShare } from '@/lib/teacher-share'
+import { settleDueShares } from '@/lib/teacher-share'
 import { STELLR_TENANT_ID } from '@/lib/tenancy/constants'
-import { STELLR_OR_NULL } from '@/lib/tenancy/stellr-scope'
 
 // GET /api/cron/group-invoice-sync — runs daily (see vercel.json).
 //
@@ -36,10 +35,11 @@ import { STELLR_OR_NULL } from '@/lib/tenancy/stellr-scope'
 // Stellr's reads take Stellr's rows (NULL counts as Stellr), so a backlog of held
 // rows can never fill the 50 a pass takes and starve Stellr's.
 //
-// The sweeps here stand in for syncDueGroupInvoices (lib/group-billing.ts) and
-// settleDueShares (lib/teacher-share.ts), adding the tenant column, the deadline
-// and the abort check. test/cron-per-tenant-b22.test.ts proves the Stripe calls
-// and writes match theirs on a Stellr fixture.
+// Both passes are the lib sweeps, syncDueGroupInvoices (lib/group-billing.ts) and
+// settleDueShares (lib/teacher-share.ts), given the job's tenant, the deadline and
+// the abort check. test/cron-per-tenant-b22.test.ts proves the Stripe calls and
+// writes match the sweeps' unscoped run on a Stellr fixture. The held counts are
+// head counts: no held row is fetched.
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 300
@@ -52,91 +52,60 @@ const RUN_BUDGET_MS = 270_000
 
 type Db = SupabaseClient
 type Pass = Record<string, number>
-type Due = { id: string; tenant_id: string | null }
-type ShareDue = Due & { event_slug: string }
 
-/** PostgREST `or` value for this tenant's rows: Stellr's own and those not yet stamped (NULL counts as Stellr), or exactly another tenant's. */
-function ownRows(tenantId: string): string {
-  return tenantId === STELLR_TENANT_ID ? STELLR_OR_NULL : `tenant_id.eq.${tenantId}`
-}
+/** Registrations of another tenant (never NULL, which is Stellr's) whose invoice update is due, counted only. */
+const invoiceSyncHeld = (db: Db) =>
+  db.from('registrations').select('id', { count: 'exact', head: true })
+    .not('invoice_sync_due_at', 'is', null).lte('invoice_sync_due_at', new Date().toISOString())
+    .not('tenant_id', 'is', null).neq('tenant_id', STELLR_TENANT_ID)
 
-const invoiceSyncDue = (db: Db, columns: string) =>
-  db.from('registrations').select(columns).not('invoice_sync_due_at', 'is', null).lte('invoice_sync_due_at', new Date().toISOString())
+/** Registrations of another tenant whose shared cost is still to settle, counted only. */
+const shareHeld = (db: Db) =>
+  db.from('registrations').select('id', { count: 'exact', head: true })
+    .not('share_estimate', 'is', null).is('share_settled_at', null).neq('status', 'withdrawn')
+    .not('tenant_id', 'is', null).neq('tenant_id', STELLR_TENANT_ID)
 
-const shareDue = (db: Db, columns: string) =>
-  db.from('registrations').select(columns).not('share_estimate', 'is', null).is('share_settled_at', null).neq('status', 'withdrawn')
-
-/** The rows the read returned that are this tenant's; any other is left alone. */
-function mine<T extends Due>(rows: readonly T[], tenantId: string): T[] {
-  return partitionByTenant(rows).get(tenantId) ?? []
-}
-
-/** Unpaid group invoices whose update is due, as syncDueGroupInvoices does, for one tenant. */
-async function syncDue(db: Db, stripe: Stripe, job: TenantJob, stop: () => boolean): Promise<Pass> {
-  const { data, error } = await invoiceSyncDue(db, 'id, tenant_id').or(ownRows(job.tenant.id)).limit(PASS_LIMIT)
-  if (error) throw new Error(error.message)
-  const tally: Pass = {}
-  for (const { id } of mine((data ?? []) as unknown as Due[], job.tenant.id)) {
-    if (stop()) {
-      tally.deferred = (tally.deferred ?? 0) + 1
-      continue
-    }
-    const result = await syncGroupInvoice(db, stripe, id)
-    tally[result] = (tally[result] ?? 0) + 1
+/** Unpaid group invoices whose update is due, for one tenant, then any add-ons on each invoice. */
+function syncDue(db: Db, stripe: Stripe, job: TenantJob, stop: () => boolean): Promise<Pass> {
+  return syncDueGroupInvoices(db, stripe, {
+    limit: PASS_LIMIT,
+    tenantId: job.tenant.id,
+    stop,
     // Add-ons on the group's invoice (lib/addons/invoice.ts): an update that found the invoice busy.
-    const { count } = await db.from('registration_addons').select('id', { count: 'exact', head: true })
-      .eq('registration_id', id).eq('payer', 'group').eq('group_method', 'invoice').eq('status', 'pending_payment')
-    if (count) {
+    after: async (id, tally) => {
+      const { count } = await db.from('registration_addons').select('id', { count: 'exact', head: true })
+        .eq('registration_id', id).eq('payer', 'group').eq('group_method', 'invoice').eq('status', 'pending_payment')
+      if (!count) return
       const addons = await syncAddonInvoice(db, stripe, id, { memberId: null, label: 'add-on change' })
       tally[`addons_${addons}`] = (tally[`addons_${addons}`] ?? 0) + 1
-    }
-  }
-  return tally
+    },
+  })
 }
 
-/** Sharing groups whose event is over, as settleDueShares does, for one tenant. */
-async function settleDue(db: Db, stripe: Stripe, job: TenantJob, stop: () => boolean): Promise<Pass> {
-  const { data, error } = await shareDue(db, 'id, event_slug, tenant_id').or(ownRows(job.tenant.id)).limit(PASS_LIMIT)
-  if (error) throw new Error(error.message)
-  const tally: Pass = { settled: 0, not_due: 0, refunds: 0, refunds_failed: 0 }
-  const events = new Map<string, boolean>()
-  for (const row of mine((data ?? []) as unknown as ShareDue[], job.tenant.id)) {
-    if (stop()) {
-      tally.deferred = (tally.deferred ?? 0) + 1
-      continue
-    }
-    if (!events.has(row.event_slug)) {
-      // S5 wave 8, C8-PG: the job's tenant reads its own events (lib/events/tenant-facade.ts).
-      const event = (await getEventBySlugIn(job.tenant.id, row.event_slug).catch(() => null)) as { date?: string; endDate?: string } | null
-      events.set(row.event_slug, eventIsOver(event))
-    }
-    if (!events.get(row.event_slug)) { tally.not_due++; continue }
-    const out = await settleShare(db, stripe, row.id)
-    if (!out) continue
-    tally.settled++
-    tally.refunds += out.refunded
-    tally.refunds_failed += out.failed
-  }
-  return tally
+/** Sharing groups whose event is over, for one tenant, its events read through that tenant (C8-PG). */
+function settleDue(db: Db, stripe: Stripe, job: TenantJob, stop: () => boolean): Promise<Pass> {
+  return settleDueShares(db, stripe, {
+    limit: PASS_LIMIT,
+    tenantId: job.tenant.id,
+    stop,
+    readEvent: (slug) => getEventBySlugIn(job.tenant.id, slug),
+  })
 }
 
 /**
- * How many due rows other tenants have waiting: another tenant's id only, since
- * NULL is Stellr's. A failed read is recorded and counts none, so Stellr's result
- * still lands.
+ * How many due rows other tenants have waiting. A failed read is recorded and
+ * counts none, so Stellr's result still lands (PR701-1: kept as built).
  */
 async function heldCount(
-  query: PromiseLike<{ data: unknown; error: { message: string } | null }>,
+  query: PromiseLike<{ count: number | null; error: { message: string } | null }>,
   fail: (detail: string) => void,
 ): Promise<number> {
-  const { data, error } = await query
+  const { count, error } = await query
   if (error) {
     fail(error.message)
     return 0
   }
-  let held = 0
-  for (const [tenantId, rows] of partitionByTenant((data ?? []) as Due[])) if (tenantId !== STELLR_TENANT_ID) held += rows.length
-  return held
+  return count ?? 0
 }
 
 export const GET = withCronAudit('group-invoice-sync', async (req: NextRequest) => {
@@ -200,21 +169,15 @@ export const GET = withCronAudit('group-invoice-sync', async (req: NextRequest) 
       console.error(`[cron:group-invoice-sync] ${where} read failed:`, detail)
       run.fail(where, detail)
     }
-    const tenantHeld = await heldCount(
-      invoiceSyncDue(db, 'id, tenant_id').not('tenant_id', 'is', null).neq('tenant_id', STELLR_TENANT_ID),
-      heldFailed('tenant-held'),
-    )
-    const shareHeld = await heldCount(
-      shareDue(db, 'id, tenant_id').not('tenant_id', 'is', null).neq('tenant_id', STELLR_TENANT_ID),
-      heldFailed('share-tenant-held'),
-    )
+    const tenantHeld = await heldCount(invoiceSyncHeld(db), heldFailed('tenant-held'))
+    const shareTenantHeld = await heldCount(shareHeld(db), heldFailed('share-tenant-held'))
 
     // tenantHeld, share_tenantHeld and the ledger are absent from a Stellr-only run with nothing held.
     const all = {
       ...tally,
       ...Object.fromEntries(Object.entries(shares).map(([k, v]) => [`share_${k}`, v])),
       ...(tenantHeld ? { tenantHeld } : {}),
-      ...(shareHeld ? { share_tenantHeld: shareHeld } : {}),
+      ...(shareTenantHeld ? { share_tenantHeld: shareTenantHeld } : {}),
       ...outcome.ledger,
     }
     await run.finish(all)

@@ -15,9 +15,12 @@ export interface ChainCall {
   payload?: unknown
   filters: { method: string; args: unknown[] }[]
   single: boolean
+  /** select(columns, { count, head }): a head read asks for the count alone. */
+  count?: string
+  head?: boolean
 }
 
-export type Answer = (call: ChainCall) => { data: unknown; error: { message: string; code?: string } | null }
+export type Answer = (call: ChainCall) => { data: unknown; error: { message: string; code?: string } | null; count?: number | null }
 
 const FILTERS = ['eq', 'neq', 'in', 'not', 'is', 'or', 'order', 'limit', 'range', 'lte', 'gte', 'lt', 'gt', 'match', 'filter', 'ilike']
 
@@ -39,10 +42,12 @@ export function fakeChainDb(answer: Answer, rpcAnswer: RpcAnswer = () => ({ data
         return Promise.resolve(answer(call))
       }
       const q: Record<string, unknown> = {
-        select(columns = '*') {
+        select(columns = '*', opts?: { count?: string; head?: boolean }) {
           // insert(...).select() keeps the insert as the operation.
           if (call.op === 'select') call.columns = columns
           else call.columns = call.columns || columns
+          if (opts?.count) call.count = opts.count
+          if (opts?.head) call.head = true
           return q
         },
         insert(payload: unknown) {

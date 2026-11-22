@@ -1,8 +1,9 @@
 import type Stripe from 'stripe'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { getEventBySlug } from '@/lib/events/repo'
+import { rowsOfTenant, tenantRowsOr } from '@/lib/tenancy/stellr-scope'
 import { isAdultRole, isSharedGroup, payerOf, type PayerGroup } from '@/lib/group-payer'
-import type { CouponTerms } from '@/lib/group-billing'
+import type { CouponTerms, DueSweepOptions } from '@/lib/group-billing'
 import { checkoutInvoiceParams } from '@/lib/payments/checkout-invoice'
 import type { ParticipantRow, RegistrationRow } from '@/lib/database.types'
 import { loadRegistrationTenantId } from '@/lib/tenancy/registration-tenant'
@@ -419,21 +420,36 @@ export function eventIsOver(event: { date?: string | null; endDate?: string | nu
   return now.getTime() >= dayAfter.getTime()
 }
 
-/** The daily sweep: settles every sharing group whose event is over. */
-export async function settleDueShares(db: Db, stripe: Stripe, limit = 50): Promise<Record<string, number>> {
-  const { data, error } = await db.from('registrations')
-    .select('id, event_slug')
+/**
+ * The daily sweep: settles every sharing group whose event is over. Options as
+ * syncDueGroupInvoices takes them (lib/group-billing.ts), with `readEvent`: the
+ * per-tenant cron reads its tenant's events (S5 wave 8, C8-PG). Unset, Stellr's
+ * Sanity read.
+ */
+export async function settleDueShares(
+  db: Db,
+  stripe: Stripe,
+  opts: Omit<DueSweepOptions, 'after'> & { readEvent?: (slug: string) => Promise<unknown> } = {},
+): Promise<Record<string, number>> {
+  const { limit = 50, tenantId, stop, readEvent = getEventBySlug } = opts
+  let query = db.from('registrations')
+    .select(tenantId ? 'id, event_slug, tenant_id' : 'id, event_slug')
     .not('share_estimate', 'is', null)
     .is('share_settled_at', null)
     .neq('status', 'withdrawn')
-    .limit(limit)
+  if (tenantId) query = query.or(tenantRowsOr(tenantId))
+  const { data, error } = await query.limit(limit)
   if (error) throw new Error(error.message)
   const tally: Record<string, number> = { settled: 0, not_due: 0, refunds: 0, refunds_failed: 0 }
   const events = new Map<string, boolean>()
-  const due: Pick<RegistrationRow, 'id' | 'event_slug'>[] = data ?? []
-  for (const row of due) {
+  const rows = (data ?? []) as unknown as (Pick<RegistrationRow, 'id' | 'event_slug'> & { tenant_id: string | null })[]
+  for (const row of tenantId ? rowsOfTenant(rows, tenantId) : rows) {
+    if (stop?.()) {
+      tally.deferred = (tally.deferred ?? 0) + 1
+      continue
+    }
     if (!events.has(row.event_slug)) {
-      const event = (await getEventBySlug(row.event_slug).catch(() => null)) as { date?: string; endDate?: string } | null
+      const event = (await readEvent(row.event_slug).catch(() => null)) as { date?: string; endDate?: string } | null
       events.set(row.event_slug, eventIsOver(event))
     }
     if (!events.get(row.event_slug)) { tally.not_due++; continue }
