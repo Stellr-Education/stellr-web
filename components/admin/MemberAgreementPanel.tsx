@@ -6,12 +6,13 @@ import { formatDateShort } from '@/lib/utils'
 import {
   describeEnvelope,
   describeMissingEnvelope,
-  roleLabel,
+  showsSignerList,
   PILL_CLASSES,
   type RecipientLike,
 } from '@/lib/docusign-status'
 import type { VolunteerAgreementRecord } from '@/lib/volunteer'
 import { CorrectSignerEmailButton } from '@/components/admin/CorrectSignerEmailButton'
+import { AgreementSigners } from '@/components/esign/AgreementSigners'
 
 export interface MemberAgreement {
   /** Null when no Volunteer / Mentor agreement has ever been issued. */
@@ -45,6 +46,7 @@ export function MemberAgreementPanel({
   const { envelope, recipients } = agreement
   const desc = envelope ? describeEnvelope(envelope, recipients) : describeMissingEnvelope(true)
   const inFlight = !!envelope && OPEN.has(envelope.status)
+  const showSigners = showsSignerList(desc)
   const signed = !!envelope && envelope.status === 'completed'
   const expired = signed && !!envelope.expires_at && new Date(envelope.expires_at) <= new Date()
   const pill = expired ? { label: 'Expired', cls: PILL_CLASSES.declined } : { label: desc.label, cls: PILL_CLASSES[desc.pill] }
@@ -89,19 +91,8 @@ export function MemberAgreementPanel({
               <span className="text-brand-blue-dark">{formatDateShort(envelope.expires_at)}</span>
             </div>
           )}
-          {recipients.length > 0 && (
-            <ul className="pt-2 space-y-0.5">
-              {recipients.map((r) => (
-                <li key={`${r.email}-${r.role_name}`} className="flex justify-between text-xs">
-                  <span className="text-brand-muted-soft capitalize">{roleLabel(r.role_name)}</span>
-                  <span className={r.status === 'completed' ? 'text-green-600 font-medium' : 'text-brand-muted'}>
-                    {r.status === 'completed' ? 'Signed' : r.status === 'autoresponded' ? 'Email bounced' : r.status === 'declined' ? 'Declined' : 'Waiting'}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          )}
-          {desc.detail && !expired && <p className="text-xs text-brand-muted-soft pt-1">{desc.detail}.</p>}
+          {showSigners && <AgreementSigners signers={desc.signers} className="pt-2" />}
+          {desc.detail && !expired && !showSigners && <p className="text-xs text-brand-muted-soft pt-1">{desc.detail}.</p>}
         </div>
       ) : (
         <p className="text-xs text-brand-muted-soft">

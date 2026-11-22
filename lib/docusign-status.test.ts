@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { describeEnvelope, describeMissingEnvelope, roleLabel } from './docusign-status'
+import { describeEnvelope, describeMissingEnvelope, roleLabel, showsSignerList, signerSummaries } from './docusign-status'
 
 // These cases are the real 4 Sept 2026 incident and its mirror image. A parent
 // wrote in saying "we signed the consent form last week, what do we have to
@@ -188,5 +188,62 @@ describe('describeEnvelope — queued signer (shared inbox)', () => {
     )
     expect(d.detail).toBe('Awaiting Ada Lovelace (student) — never opened')
     expect(d.queued).toHaveLength(0)
+  })
+})
+
+// 22 Nov 2026: a student's school address bounced and the card showed only
+// "Email Bounced", hiding that the parent had signed five days earlier. The
+// per-signer list is the fix; these pin what each line says.
+describe('signerSummaries', () => {
+  const parent = { name: 'Pat Example', email: 'pat@example.com', role_name: 'Guardian', status: 'completed', delivered_at: '2026-11-17T20:37:54Z', signed_at: '2026-11-17T20:38:24Z' }
+  const student = { name: 'Sam Example', email: 'sam@school.example', role_name: 'Minor', status: 'autoresponded', delivered_at: null }
+
+  it('shows the parent signed and the student bounced', () => {
+    const d = describeEnvelope({ status: 'sent', signers_total: 2, signers_completed: 1 }, [parent, student])
+    expect(d.pill).toBe('bounced')
+    expect(showsSignerList(d)).toBe(true)
+    expect(d.signers).toEqual([
+      { name: 'Pat Example', role: 'Parent', tone: 'done', status: 'Signed', signedAt: '2026-11-17T20:38:24Z' },
+      { name: 'Sam Example', role: 'Student', tone: 'attention', status: 'Email bounced', signedAt: null },
+    ])
+  })
+
+  it('names who has already signed in the bounced sentence', () => {
+    const d = describeEnvelope({ status: 'sent', signers_total: 2, signers_completed: 1 }, [parent, student])
+    expect(d.detail).toBe('Email bounced for Sam Example (student). Pat Example (parent/guardian) has signed. Use Correct email: signatures already given are kept')
+  })
+
+  it('says only the bounce when nobody has signed yet', () => {
+    const d = describeEnvelope({ status: 'sent' }, [{ ...parent, status: 'sent', signed_at: null }, student])
+    expect(d.detail).toBe('Email bounced for Sam Example (student). Use Correct email: signatures already given are kept')
+  })
+
+  it('tells not opened, opened, queued, sending soon and declined apart', () => {
+    const s = signerSummaries([
+      { name: 'A', email: 'a@example.com', role_name: 'Guardian', status: 'sent', delivered_at: null },
+      { name: 'B', email: 'b@example.com', role_name: 'Minor', status: 'created' },
+    ])
+    expect(s.map((x) => [x.tone, x.status])).toEqual([['waiting', 'Not opened'], ['queued', 'After parent signs']])
+
+    expect(signerSummaries([{ name: 'C', email: 'c@example.com', role_name: 'Adult', status: 'delivered', delivered_at: '2026-11-01T00:00:00Z' }])[0])
+      .toMatchObject({ role: 'Participant', tone: 'waiting', status: 'Opened, not signed' })
+    expect(signerSummaries([{ name: 'D', email: 'd@example.com', role_name: 'Mentor', status: 'sent', unsent: true }])[0])
+      .toMatchObject({ tone: 'waiting', status: 'Sending soon' })
+    expect(signerSummaries([{ name: 'E', email: 'e@example.com', role_name: 'Guardian', status: 'declined' }])[0])
+      .toMatchObject({ tone: 'attention', status: 'Declined' })
+  })
+
+  it('leaves out Stellr’s counter-signature: one line for a mentor', () => {
+    const s = signerSummaries([
+      { name: 'M', email: 'm@example.com', role_name: 'Mentor', status: 'sent', delivered_at: null },
+      { name: 'Stellr', email: 'ops@example.com', role_name: 'StellrRepresentative', status: 'created' },
+    ])
+    expect(s).toHaveLength(1)
+    expect(s[0]).toMatchObject({ role: 'Mentor', status: 'Not opened' })
+  })
+
+  it('keeps the single pill once signing is settled', () => {
+    const d = describeEnvelope({ status: 'completed' }, [parent, { ...student, status: 'completed' }])
+    expect(showsSignerList(d)).toBe(false)
   })
 })
