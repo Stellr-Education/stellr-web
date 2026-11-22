@@ -13,6 +13,7 @@ vi.mock('@clerk/nextjs/server', () => ({ auth: () => authMock() }))
 const db = vi.hoisted(() => ({
   reads: [] as { table: string; columns: string }[],
   result: { data: { derivation_mode: 'log' } as unknown, error: null as unknown } as { data: unknown; error: unknown },
+  tenants: { count: 0 as number | null, error: null as unknown, data: null },
   throws: false,
 }))
 vi.mock('@/lib/supabase', () => ({
@@ -22,11 +23,15 @@ vi.mock('@/lib/supabase', () => ({
       from: (table: string) => {
         const read = { table, columns: '' }
         db.reads.push(read)
+        // tenancy_settings answers db.result (the derivation mode and the readiness lock both
+        // read that row); tenants answers the head count of active non-owner tenants.
+        const answer = () => (table === 'tenants' ? db.tenants : db.result)
         const builder = {
           select: (columns: string) => ((read.columns = columns), builder),
           eq: () => builder,
           abortSignal: () => builder,
-          maybeSingle: async () => db.result,
+          maybeSingle: async () => answer(),
+          then: (ok: (v: unknown) => unknown, bad: (e: unknown) => unknown) => Promise.resolve(answer()).then(ok, bad),
         }
         return builder
       },
@@ -62,6 +67,7 @@ afterEach(() => {
   authMock.mockReset()
   db.reads.length = 0
   db.result = { data: { derivation_mode: 'log' }, error: null }
+  db.tenants = { count: 0, error: null, data: null }
   db.throws = false
 })
 
@@ -185,10 +191,39 @@ describe('GET /api/admin/health/integrations — tenancy', () => {
     expect(body.ok).toBe(true)
   })
 
-  it('makes exactly one read, of tenancy_settings.derivation_mode', async () => {
+  it('reads the derivation mode, the readiness lock and the active-tenant count, and nothing else', async () => {
     db.result = { data: { derivation_mode: 'enforce' }, error: null }
     expect((await (await GET()).json()).tenancy.derivationMode).toBe('enforce')
-    expect(db.reads).toEqual([{ table: 'tenancy_settings', columns: 'derivation_mode' }])
+    expect(db.reads).toEqual([
+      { table: 'tenancy_settings', columns: 'derivation_mode' },
+      { table: 'tenancy_settings', columns: 'tenants_ready_at' },
+      { table: 'tenants', columns: 'id' },
+    ])
+  })
+
+  it('readiness (S5 .32): the lock closed and no other tenant is no violation; a live tenant without the switches is', async () => {
+    const quiet = (await (await GET()).json()).readiness
+    expect(quiet).toEqual({
+      lock: 'closed',
+      activeOtherTenants: 0,
+      missing: ['authz_postgres', 'loadscoped_enforce', 'derivation_enforce', 'platform_audit', 'guardian_consent', 'tenant_routing'],
+      violation: false,
+    })
+
+    db.result = { data: { derivation_mode: 'enforce', tenants_ready_at: '2026-12-01T00:00:00Z' }, error: null }
+    db.tenants = { count: 1, error: null, data: null }
+    const live = await (await GET()).text()
+    expect(JSON.parse(live).readiness).toMatchObject({ lock: 'open', activeOtherTenants: 1, violation: true })
+    expect(JSON.parse(live).readiness.missing).not.toContain('derivation_enforce')
+    expect(live).not.toContain('2026-12-01')
+  })
+
+  it('readiness: a failed read is unavailable, and never a violation', async () => {
+    db.result = { data: null, error: { message: 'column tenants_ready_at does not exist' } }
+    db.tenants = { count: null, error: { message: 'boom' }, data: null }
+    const text = await (await GET()).text()
+    expect(JSON.parse(text).readiness).toMatchObject({ lock: 'unavailable', activeOtherTenants: 'unavailable', violation: false })
+    expect(text).not.toContain('does not exist')
   })
 
   it('reports a failed or unconfigured read as unavailable, never a guess', async () => {

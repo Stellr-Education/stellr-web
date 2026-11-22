@@ -25,6 +25,27 @@ export function stellrRows<Q extends { or(filters: string): Q }>(query: Q): Q {
   return query.or(STELLR_OR_NULL)
 }
 
+/**
+ * PostgREST `or` value for one tenant's rows in a per-tenant cron (S5 B22): for
+ * Stellr, its own rows and rows with no tenant yet; for any other tenant, exactly
+ * its own.
+ */
+export function tenantRowsOr(tenantId: string): string {
+  return tenantId === STELLR_TENANT_ID ? STELLR_OR_NULL : `tenant_id.eq.${tenantId}`
+}
+
+/**
+ * The rows that are this tenant's, NULL counting as Stellr's. A belt to the read's
+ * filter: a row of any other tenant that reaches it anyway is left out. A row
+ * read without the column throws rather than be filed under Stellr.
+ */
+export function rowsOfTenant<T extends { tenant_id: string | null }>(rows: readonly T[], tenantId: string): T[] {
+  return rows.filter((row) => {
+    if (row.tenant_id === undefined) throw new Error('rowsOfTenant: row has no tenant_id; select the column')
+    return (row.tenant_id ?? STELLR_TENANT_ID) === tenantId
+  })
+}
+
 const EVENTS_PAGE = 1000
 
 export interface OtherTenantEvents {

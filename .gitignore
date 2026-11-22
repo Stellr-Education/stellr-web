@@ -63,3 +63,8 @@ supabase/.temp/
 .design-sync/.*.log
 .ds-sync/
 ds-bundle/
+
+# Backup keys and archives (docs/RUNBOOK-backups.md): never commit
+*.agekey
+*.tar.age
+stellr-drill-*.txt

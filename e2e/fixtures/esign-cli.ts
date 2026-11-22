@@ -10,6 +10,14 @@
 import { createClient } from '@supabase/supabase-js'
 import { supabaseFetch, supabaseSecretKey } from '../../lib/supabase-keys'
 import { assertE2eSupabase } from '../../lib/testing/e2e-supabase-target'
+import { mirrorE2eEvent } from './mirror-event'
+
+// The fixed slug every test agreement is filed under. It names no real event, so it is
+// mirrored as Stellr's (ENF-dev, 21 Nov 2026): without a mirror row the tenancy trigger
+// logs `no_event` for each agreement, which kept the 7-day clock from ever running clean,
+// and in enforce mode it refuses the insert. The mirror row is left in place on purpose.
+// Runs share the slug, so deleting it after one run would break another run mid-test.
+const E2E_SIGNING_SLUG = 'e2e-signing'
 
 async function main() {
   // Issuing sends no email: the test mints each signer's link itself.
@@ -50,11 +58,12 @@ async function main() {
       schoolState: 'CO',
       grade: '8',
     }
+    await mirrorE2eEvent(db, E2E_SIGNING_SLUG, params.eventTitle)
     const created = await nativeProvider.create({ db }, { type: 'minor', params } as never)
     const { data: row, error } = await db.from('agreements').insert({
       participant_id: null,
       member_id: null,
-      event_slug: 'e2e-signing',
+      event_slug: E2E_SIGNING_SLUG,
       event_title: params.eventTitle,
       envelope_id: created.externalId,
       provider: 'native',

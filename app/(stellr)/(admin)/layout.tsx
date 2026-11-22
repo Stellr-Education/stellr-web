@@ -4,7 +4,8 @@ import { ClerkProvider } from '@clerk/nextjs'
 import { AdminUserButton } from '@/components/admin/AdminUserButton'
 import { clerkAppearance } from '@/lib/clerk-appearance'
 import { requestNonce } from '@/lib/request-nonce'
-import { currentCapabilities, hasCapability, hasPortalAccess, isStellrAdmin } from '@/lib/authz'
+import { adminNeedsSecondFactor, currentCapabilities, hasCapability, hasPortalAccess, isStellrAdmin } from '@/lib/authz'
+import { ADMIN_MFA_PAGE } from '@/lib/authz/admin-mfa'
 import { AdminSidebar } from '@/components/admin/AdminSidebar'
 import { SiteFooter } from '@/components/layout/SiteFooter'
 import { RecordLinksProvider } from '@/components/admin/RecordLinks'
@@ -13,6 +14,8 @@ import { CapabilitiesProvider } from '@/components/admin/CapabilitiesContext'
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
   const { userId } = await auth()
   if (!userId) redirect('/sign-in')
+  // F4 part B (ADMIN_MFA_ENFORCE, off): an admin without a second factor is asked to turn one on.
+  if (await adminNeedsSecondFactor()) redirect(ADMIN_MFA_PAGE)
 
   // Admins see the full portal; Staff read all of it but the pages proxy.ts keeps
   // from them, and change only Competitions and Members (lib/authz/capabilities);

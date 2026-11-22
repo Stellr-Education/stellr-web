@@ -147,7 +147,7 @@ Systems that hold or process personal data. "In code" means the repo calls or co
 
 | Date | Archives | Result | Elapsed | Witness |
 |---|---|---|---|---|
-| (to do) | | | | |
+| 22 Nov 2026 | nightly, hourly and storage taken 22 Nov 2026 17:42–17:44 UTC (first install) | PASS: 170/170 tables, 42/42 critical tables, 14 audit chains, 216 files, 70 signed agreements | 1 min 55 s | Owner (ran it) |
 - Fallback drill on dev: `scripts/esign-fallback-drill.ts`.
 - Known gaps: no `npm audit`, Dependabot or secret scanning in CI; no rate limit, CAPTCHA or honeypot on registration routes (plan, "Found, outside this feature").
 

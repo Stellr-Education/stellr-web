@@ -47,12 +47,17 @@ entitlements.bookings
 entitlements.coupon_redemptions
 entitlements.entitlements
 entitlements.processed_events
+# Event add-ons (on production since 20 Nov 2026)
+public.addon_orders
+public.registration_addons
 
 # Credentials and safeguarding
 public.credentials
 public.credential_events
 public.member_background_checks
 public.member_teacher_licenses
+# Staff role grants (on production since 14 Nov 2026)
+public.staff_grants
 
 # Tenancy and the platform audit chain (S3; on production since 4 Nov 2026)
 public.tenants
@@ -60,3 +65,5 @@ public.tenant_memberships
 public.platform_admins
 public.events
 public.platform_audit_events
+# Guardian consent held per tenant (on production since 12 Nov 2026)
+public.tenant_guardian_consents

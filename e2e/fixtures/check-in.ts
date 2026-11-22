@@ -83,13 +83,17 @@ export async function createCheckInEvent(opts: { withMentor?: boolean } = {}): P
 export async function removeCheckInEvent(slug: string): Promise<void> {
   if (!slug.startsWith('e2e-checkin-')) throw new Error(`refusing to remove ${slug}`)
   const client = db()
+  // The volunteer container goes first (ENF-dev, 21 Nov 2026). A desk tap still in flight
+  // when a test ends then finds no mentor and gets a 404, instead of landing a crew row
+  // after the mirror row is gone: that late row logged `no_event` against the 7-day clock,
+  // and in enforce mode it is refused. Deleting the container removes its cohort_members
+  // rows (ON DELETE CASCADE).
+  await client.from('mentoring_cohorts').delete().eq('container_type', 'event_participation').eq('campaign_ref', slug)
   const { data: regs } = await client.from('registrations').select('id').eq('event_slug', slug)
   const ids = (regs ?? []).map((r) => r.id as string)
   if (ids.length) await client.from('participants').delete().in('registration_id', ids)
   await client.from('registrations').delete().eq('event_slug', slug)
   await client.from('event_settings').delete().eq('event_slug', slug)
   await client.from('event_crew_check_ins').delete().eq('event_slug', slug)
-  // Deleting the container removes its cohort_members rows (ON DELETE CASCADE).
-  await client.from('mentoring_cohorts').delete().eq('container_type', 'event_participation').eq('campaign_ref', slug)
   await unmirrorE2eEvent(client, slug)
 }

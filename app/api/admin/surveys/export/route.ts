@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { requireStepUp } from '@/lib/authz/step-up'
 import { supabaseServer } from '@/lib/supabase'
 import { filterFrom, requireSurveyAdmin } from '@/lib/survey/admin-auth'
 import { exportFilename, loadLongRows, longCsv, wideCsv } from '@/lib/survey/export'
@@ -9,6 +10,8 @@ import { logSurveyAccess } from '@/lib/survey/audit'
 export async function GET(req: Request) {
   const gate = await requireSurveyAdmin('export')
   if (!gate.ok) return gate.response
+  const stepUp = await requireStepUp()
+  if (stepUp) return stepUp
   const f = filterFrom(req.url)
   const format = new URL(req.url).searchParams.get('format') === 'wide' ? 'wide' : 'long'
   const db = supabaseServer()

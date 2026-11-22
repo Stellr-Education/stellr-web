@@ -90,6 +90,9 @@ const ZONE = flagValue('--zone')
 const CHECK = process.argv.includes('--check')
 const REMOVE = process.argv.includes('--remove')
 const CLERK_LOOKUP = process.argv.includes('--clerk-lookup')
+// CI only (scripts/canary-ci.ts): open the readiness lock (S5 .32) on the throwaway local stack
+// before seeding. assertCanaryCiTarget refuses anything that is not a Supabase stack on this machine.
+const CI_OPEN_READINESS_LOCK = process.argv.includes('--ci-open-readiness-lock')
 
 /** `--name value` or `--name=value`; '' when the flag has no value, undefined when absent. */
 function flagValue(name: string): string | undefined {
@@ -146,6 +149,15 @@ async function main() {
   if (!stellr) throw new Error('Stellr tenant row missing: apply migration 20261104100000 first')
 
   const others = plan.tenants.filter((t) => t.id !== STELLR_TENANT_ID)
+  // The readiness lock (S5 .32): the database refuses another active tenant while
+  // tenancy_settings.tenants_ready_at is NULL. Say so before any write.
+  if (others.some((t) => (t.status ?? 'active') === 'active')) {
+    const { data: lock, error: lockErr } = await db.from('tenancy_settings').select('tenants_ready_at').eq('id', true).maybeSingle()
+    if (lockErr) throw new Error(`reading tenancy_settings: ${lockErr.message}`)
+    if (!(lock as { tenants_ready_at: string | null } | null)?.tenants_ready_at) {
+      throw new Error('refusing: the readiness lock is closed on this database (tenancy_settings.tenants_ready_at is NULL). The owner attests readiness first: docs/TENANCY-S5.md, "The readiness lock"')
+    }
+  }
   for (const [table, rows, onConflict] of [
     ['tenants', others, 'id'],
     ['tenant_domains', plan.tenant_domains, 'host'],
@@ -269,6 +281,15 @@ async function mainFlow() {
   }
   const { supabaseServer } = await import('../lib/supabase')
   const { syncEventManagerAssigned, syncTenantAdminGranted } = await import('../lib/authz/role-sync')
+  if (CI_OPEN_READINESS_LOCK) {
+    assertCanaryCiTarget(process.env)
+    const { error } = await supabaseServer()
+      .from('tenancy_settings')
+      .update({ tenants_ready_at: new Date().toISOString(), tenants_ready_note: 'canary-ci (CI local stack)' })
+      .eq('id', true)
+    if (error) throw new Error(`opening the readiness lock on the local stack: ${error.message}`)
+    console.log('  readiness lock opened on the local stack (CI)')
+  }
   await applyCanaryFlowSeed(plan, {
     db: supabaseServer(),
     ensureClerkUser: CLERK ? ensureFlowClerkUser : CLERK_LOOKUP ? lookUpFlowClerkUser : undefined,

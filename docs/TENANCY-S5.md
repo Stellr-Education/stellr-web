@@ -927,7 +927,10 @@ Wave 8 follows `docs/PLAN-S5-wave8-DRAFT.md`. Every open WD and BF decision ther
 
 **Wave 8 is built.** Everything above is on `dev`; none of it is on production. What remains:
 - **Promotion #818** (another session): waits on #826, then B25's migration through the Action, with the owner's approval of each run.
-- **ENF-dev:** the 7 clean days started at 2026-11-20 22:53Z, when #822 and #823 merged. If `public.tenancy_derivation_log` has no new row by 2026-11-27 22:53Z, `derivation_mode` goes to `enforce` on `dev` only. Then K9's dev flips (`WD-K9`).
+- **ENF-dev:** the 7 clean days first started at 2026-11-20 22:53Z, when #822 and #823 merged. A read of the `dev` database on 21 Nov 2026 found the clock never ran clean, for two reasons:
+  - **Rows enforce would refuse kept arriving, all from e2e fixtures.** `agreements` `no_event` with `sample_key` `e2e-signing`, two per e2e run: `e2e/fixtures/esign-cli.ts` filed its test agreement under a slug with no mirror row. And an occasional `event_crew_check_ins` `no_event` for an `e2e-checkin-*` slug, most likely a desk tap still in flight when the mentors test tore its event down. Both are fixed in the ENF-dev fixtures PR. No app writer produced a refusable row after 21 Nov 00:00Z; the `no_key` rows of 20 Nov 23:01–23:04Z (`training_modules`, `community_spaces`, `mentoring_cohorts`) stopped once #823 was in the running e2e build.
+  - **`kept` rows log by design.** A membership agreement supplies Stellr's tenant for the slug `membership`, which no mirror row holds, so the trigger logs `kept` (two per e2e run, and on every real membership agreement). Enforce accepts these rows.
+  - **So "clean" means no row enforce would refuse:** reasons `no_key`, `no_event`, `mismatch` or `error` (the query is in `supabase/tests/s5_watch_only.sql`, "ENF-dev clock"). `kept` does not count. **The clock restarts when the fixtures PR merges into `dev`,** and runs 7 days from that merge. Then `derivation_mode` goes to `enforce` on `dev` only, and K9's dev flips follow (`WD-K9`).
 - **A10c and F10:** need P9 clean, which needs the `tenant_app_login` on `dev` (the owner creates it).
 - **Wave 9 (S5's remaining code gates):** the 8 tenant-destined Stellr-only routes (C20 scholarships, C21 event managers), the 10 Stellr-host register cases that still fail in the tenant-host suite (#828 took 10 to 2; the last 2, #828's scholarship offer variant, were accepted as unproven by the owner on 21 Nov 2026: the suite cannot yet model a scholarship offer, and they are not a leak. Tenant-host cap: failing 0, unproven 24, under the `tenant-host-cap-grow` label), the 99 legacy authorisation sites (C25), the unaudited mutations, and the Stellr-only list reads.
 
@@ -1059,6 +1062,28 @@ Other things this slice leaves in place:
 - **An admin count of held signing invitations (from B14b).** With the flag on, `drainOutbox` reads only the signers of tenants with a usable sender, so a sender-less tenant's waiting signers are neither read nor counted. `loadTenantSenders` reads every non-Stellr tenant in one unpaged query, which needs paging before the tenant list nears PostgREST's row cap.
 
 **Two different TODO pairs.** Do not conflate them. The snapshot entries in `test/idor/idor-snapshot.json` are on community coaching request and training `[itemId]/flag`. The allow-list entries in `route-guards.ts` are `schools/search` and `store/checkout`. B9 and C6 close the first pair; B15 closes the second.
+
+## The readiness lock
+
+Programme row `.32`, built 22 Nov 2026 (migration `20261122020000_tenancy_readiness_lock.sql`). `public.tenants.status` defaults to `'active'`, so before this a second tenant was live the moment it was inserted, whatever the switches said.
+
+- **The database refuses** a tenant other than the platform owner going `active`, on insert or update, while `tenancy_settings.tenants_ready_at` is NULL (SQLSTATE 55000). `provisioning`, `suspended` and `archived` are always allowed, so a tenant can be set up before the lock opens. Only one platform owner can exist, so the owner flag is no way round it.
+- **The lock cannot close** (`tenants_ready_at` back to NULL) while any other tenant is active: suspend those first.
+- **The lock is an attestation.** The database cannot see the Vercel variables, so the owner sets `tenants_ready_at` (and `tenants_ready_note`: who, and against which check, with no personal data) only after reading the health route's `readiness` block on that environment's deployment and finding `missing` empty. The isolating switches are `ISOLATING_SWITCHES` in `lib/tenancy/flags.ts`:
+
+| Id | Switch | Isolating state |
+|---|---|---|
+| `authz_postgres` | `AUTHZ_SOURCE` | `postgres` |
+| `loadscoped_enforce` | `LOADSCOPED_MODE` | `enforce` |
+| `derivation_enforce` | `tenancy_settings.derivation_mode` | `enforce` |
+| `platform_audit` | `PLATFORM_AUDIT_ENABLED` | on |
+| `guardian_consent` | `TENANT_GUARDIAN_CONSENT_ENABLED`, `TENANT_EVENT_MAIL_ENABLED` | on, with its preconditions met |
+| `tenant_routing` | `TENANT_ROUTING_ENABLED`, `TENANT_HOST_SUFFIX` | on, with a usable zone suffix |
+
+- **Afterwards, the health route watches it.** `GET /api/admin/health/integrations` returns `readiness`: `lock` (`open`, `closed` or `unavailable`), `activeOtherTenants`, `missing` (ids from the table) and `violation`. `violation` is true when another tenant is active while a switch is missing, for example after a switch is turned back off. Each read that finds one writes a `TENANCY readiness` row to `app_errors`, with no tenant named. The check runs on each health read; there is no separate startup hook.
+- **On `dev`,** the owner opens the lock before K9's canary tenant goes active (`WD-K9`). Each K9 flip can then be read against `missing`. `scripts/seed-two-tenants.ts --profile flow` refuses before any write while the lock is closed.
+- **Test fixtures** that insert another tenant open the lock inside their own rolled-back transaction (pgTAP), or open it and close it again around their run (`test/integration/readiness-lock.ts`).
+- **What the set is** is owner decision `T-32` (`docs/S5-DECISION-REGISTER.md`), approved as built on 22 Nov 2026.
 
 ## Gates
 

@@ -1,4 +1,5 @@
 import { isStellrAdmin } from '@/lib/authz'
+import { requireStepUp } from '@/lib/authz/step-up'
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import { supabaseServer } from '@/lib/supabase'
@@ -26,6 +27,9 @@ async function resolve(id: string): Promise<AccessObject | null> {
 
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   if (!(await isStellrAdmin({ route: '/api/admin/access/objects/[id]/roster' }))) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  // F4: the roster lists members' names and emails (ADMIN_STEP_UP_ENFORCE).
+  const stepUp = await requireStepUp()
+  if (stepUp) return stepUp
 
   const { id } = await params
   const object = await resolve(id)

@@ -1,4 +1,5 @@
 import { hasCapability } from '@/lib/authz'
+import { requireStepUp } from '@/lib/authz/step-up'
 import { withAudit } from '@/lib/audit/route'
 import { NextResponse } from 'next/server'
 import { supabaseServer } from '@/lib/supabase'
@@ -10,6 +11,8 @@ import { applyMemberFilters, applyMemberSort, memberFilterEmbeds, parseMemberFil
 // export is exactly the filtered list on screen. No params: every active member.
 async function exportMembers(req: Request) {
   if (!(await hasCapability('export'))) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  const stepUp = await requireStepUp()
+  if (stepUp) return stepUp
 
   const filters = parseMemberFilters(Object.fromEntries(new URL(req.url).searchParams))
   const db = supabaseServer()
