@@ -50,18 +50,12 @@ function doorEvent(req: Request): Omit<AuditMutation, 'action'> {
     : { actor: { userId: null }, tenant: { tenantId: null }, target, metadata: { ...metadata, tenant_unresolved: true } }
 }
 const checkInAudit = ({ args: [req] }: { args: [Request] }) => ({ action: 'event.check_in.self_check_in' as const, ...doorEvent(req) })
-// "Not you?" clears this phone's cookie and reads no record. Its slug is the caller's own
-// text, never checked, so the event neither stores it nor looks it up: it goes on the
-// platform chain marked as resolveTenant marks an event it cannot place.
-const forgetAudit = {
-  action: 'event.check_in.self_forget',
-  actor: { userId: null },
-  tenant: { tenantId: null },
-  metadata: { tenant_unresolved: true },
-} as const
-
 export const POST = withAudit(checkInAudit, selfCheckIn)
-export const DELETE = withAudit(forgetAudit, forgetPhone)
+// "Not you?" clears this phone's cookie and reads or writes no record, so it is not audited
+// (owner decision PR721-1, 22 Nov 2026). It is unauthenticated and not rate-limited: an audit
+// event here would let anyone append anonymous rows with no tenant and no target to the
+// append-only chain, which is never erased.
+export const DELETE = forgetPhone
 
 async function selfCheckIn(req: Request) {
   const body = await req.json().catch(() => null)
