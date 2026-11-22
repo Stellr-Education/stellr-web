@@ -28,12 +28,13 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { resetAreaSwitchState, TENANT_DB_AREAS_ENV } from '@/lib/tenancy/area-switch'
 import { READ_ONLY_CHECK_SQL, READ_ONLY_SQL, setTenantDbDriver, TENANT_DB_FLAG, type TenantSqlDriver } from '@/lib/tenancy/db'
 import { STELLR_TENANT_ID } from '@/lib/tenancy/constants'
-import { EventConfigReadError, loadEventCompanies, renameEventCompany, setEventCompanyCount } from './admin-config'
+import { EventConfigReadError, loadEventCompanies, moveEventParticipant, renameEventCompany, setEventCompanyCount } from './admin-config'
 
 const SLUG = 'nevada-sdc'
 const C1 = '11111111-1111-4111-8111-111111111111'
 const C2 = '22222222-2222-4222-8222-222222222222'
 const TENANT = 'c0ffee00-0000-4000-8000-0000000000b2'
+const P1 = '33333333-3333-4333-8333-333333333333'
 
 // ── The service-role client ─────────────────────────────────────────────────
 
@@ -209,6 +210,16 @@ describe('service: the default', () => {
     expect(calls).toEqual([{ table: 'event_companies', op: 'update', payload: { name: 'Apollo' }, filters: [['eq', 'id', C1], ['eq', 'event_slug', SLUG]] }])
     expect(await renameEventCompany(fakeSupabase({ failOp: 'event_companies.update' }).db, STELLR_TENANT_ID, SLUG, C1, 'A')).toBe(false)
   })
+  it("move: today's update by participant id, locking a hand placement and releasing it on null", async () => {
+    const { db, calls } = fakeSupabase()
+    expect(await moveEventParticipant(db, STELLR_TENANT_ID, SLUG, P1, C1)).toBe(true)
+    expect(await moveEventParticipant(db, STELLR_TENANT_ID, SLUG, P1, null)).toBe(true)
+    expect(calls).toEqual([
+      { table: 'participants', op: 'update', payload: { company_id: C1, company_locked: true }, filters: [['eq', 'id', P1]] },
+      { table: 'participants', op: 'update', payload: { company_id: null, company_locked: false }, filters: [['eq', 'id', P1]] },
+    ])
+    expect(await moveEventParticipant(fakeSupabase({ failOp: 'participants.update' }).db, STELLR_TENANT_ID, SLUG, P1, C1)).toBe(false)
+  })
 })
 
 describe('tenant: events-config:tenant', () => {
@@ -314,6 +325,27 @@ describe('tenant: events-config:tenant', () => {
     )
     const error = vi.spyOn(console, 'error').mockImplementation(() => {})
     expect(await renameEventCompany(fakeSupabase().db, TENANT, SLUG, 'junk', 'A')).toBe(false)
+    error.mockRestore()
+  })
+  it('move: one bound UPDATE confined to the event and its company, never the service client; a refusal is false', async () => {
+    flags('events-config:tenant')
+    const pg = pgLikeDriver(() => [{ id: P1 }])
+    setTenantDbDriver(pg.driver)
+    const noService = new Proxy({}, { get() { throw new Error('the service path ran in tenant mode') } }) as never
+    expect(await moveEventParticipant(noService, TENANT, SLUG, P1, C1)).toBe(true)
+    expect(pg.sent).toHaveLength(1)
+    expect(pg.sent[0].text).toMatch(/UPDATE public\.participants p/)
+    expect(pg.sent[0].text).toMatch(/r\.event_slug = \$\d+/)
+    expect(pg.sent[0].text).toMatch(/c\.event_slug = \$\d+/)
+    expect(pg.sent[0].values).toEqual([C1, true, P1, SLUG, C1, C1, SLUG])
+
+    setTenantDbDriver(
+      pgLikeDriver(() => {
+        throw Object.assign(new Error('x'), { code: '42501' })
+      }).driver,
+    )
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+    expect(await moveEventParticipant(noService, TENANT, SLUG, P1, null)).toBe(false)
     error.mockRestore()
   })
 })

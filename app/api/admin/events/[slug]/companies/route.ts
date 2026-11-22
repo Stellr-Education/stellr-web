@@ -9,6 +9,7 @@ import {
   findEventCompany,
   findEventParticipant,
   loadEventCompanies,
+  moveEventParticipant,
   renameEventCompany,
   setEventCompanyCount,
   teamProfileSubmittedAt,
@@ -31,9 +32,9 @@ import { refuseOutsideStellr } from '@/lib/tenancy/load-scoped'
 //          override.ts: let Auto-Assign place a student without a team profile)
 //          { action: 'override_all' }  every student not yet submitted
 //
-// The list, the count and a company's name are the 'events-config' area
-// (lib/events/admin-config.ts): today's queries unless TENANT_DB_AREAS names it.
-// Placing students stays on today's queries. Auto-Assign and the overrides read
+// The list, the count, a company's name and a student's move are the 'events-config'
+// area (lib/events/admin-config.ts): today's queries unless TENANT_DB_AREAS names it.
+// Auto-Assign and the overrides stay on today's queries. They read
 // team profiles, which tenant events do not take yet, so a tenant's staff are
 // refused those three.
 
@@ -143,8 +144,11 @@ async function changePlacement(req: Request, { params }: Params) {
     }
     // A hand placement sticks: Auto-Assign leaves it alone. Moving a student
     // back to unassigned releases them.
-    const { error } = await updateEventParticipant(db, participantId, { company_id: companyId, company_locked: companyId !== null })
-    if (error) return NextResponse.json({ error: 'Database error' }, { status: 500 })
+    // The 'events-config' area (C18 leftover): today's update, or the tenantDb write under
+    // the tenant policies when TENANT_DB_AREAS names the area in tenant mode.
+    if (!(await moveEventParticipant(db, crew.tenantId, slug, participantId, companyId as string | null))) {
+      return NextResponse.json({ error: 'Database error' }, { status: 500 })
+    }
     return NextResponse.json({ ok: true })
   }
 

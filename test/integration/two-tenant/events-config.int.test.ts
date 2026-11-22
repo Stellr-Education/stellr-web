@@ -9,12 +9,15 @@
 //     route calls them, keep to the caller's tenant: another tenant's event reads as empty,
 //     a write naming it is refused and lands nothing, and an update naming its company
 //     changes nothing;
-//   - the same writes on the tenant's own event land, stamped with that tenant.
+//   - the same writes on the tenant's own event land, stamped with that tenant;
+//   - a participant's move (the C18 leftover) keeps to the caller's tenant and this event's
+//     company, and lands on the tenant's own participant.
 
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import {
   loadEventCompanies,
+  moveEventParticipant,
   renameEventCompany,
   setEventCompanyCount,
   tenantEventCompanies,
@@ -29,7 +32,7 @@ let seeded: Seeded
 
 beforeAll(async () => {
   kit = await openTwoTenantKit()
-  seeded = await kit.seed('event_companies', 'event_settings')
+  seeded = await kit.seed('event_companies', 'event_settings', 'registrations', 'participants')
 })
 
 afterAll(async () => {
@@ -156,6 +159,45 @@ describe('the writes, through the area switch in tenant mode', () => {
       ])
       // The read the route makes sees the result.
       expect((await loadEventCompanies(noService, t.id, t.spare.slug)).map((r) => r.number)).toEqual([1, 2])
+    }
+  })
+})
+
+describe("a participant's move, through the area switch in tenant mode", () => {
+  const placement = async (participantId: string) => {
+    const [row] = await kit.admin<{ company_id: string | null; company_locked: boolean; event_slug: string }[]>`
+      SELECT p.company_id::text AS company_id, p.company_locked, r.event_slug
+      FROM public.participants p JOIN public.registrations r ON r.id = p.registration_id
+      WHERE p.id = ${participantId}`
+    return row
+  }
+
+  it("another tenant's participant, or another event's company, is left as it was", async () => {
+    tenantMode()
+    const stellrP = seeded.participants.stellr[0] as string
+    const canaryP = seeded.participants.canary[0] as string
+    const before = await placement(stellrP)
+    // As today's update: an id the caller cannot see matches nothing, and that is not an error.
+    expect(await moveEventParticipant(noService, kit.canary.id, before.event_slug, stellrP, seeded.event_companies.stellr[0] as string)).toBe(true)
+    expect(await moveEventParticipant(noService, kit.canary.id, before.event_slug, stellrP, null)).toBe(true)
+    expect(await placement(stellrP)).toEqual(before)
+
+    // The tenant's own participant, but a company of the other tenant's event: nothing lands.
+    const own = await placement(canaryP)
+    expect(await moveEventParticipant(noService, kit.canary.id, own.event_slug, canaryP, seeded.event_companies.stellr[0] as string)).toBe(true)
+    expect(await placement(canaryP)).toEqual(own)
+  })
+
+  it("on the tenant's own event the move lands, locks, and releases on null", async () => {
+    tenantMode()
+    for (const t of [kit.stellr, kit.canary]) {
+      const pid = seeded.participants[t.tag][0] as string
+      const company = seeded.event_companies[t.tag][0] as string
+      const { event_slug } = await placement(pid)
+      expect(await moveEventParticipant(noService, t.id, event_slug, pid, company)).toBe(true)
+      expect(await placement(pid)).toEqual({ company_id: company, company_locked: true, event_slug })
+      expect(await moveEventParticipant(noService, t.id, event_slug, pid, null)).toBe(true)
+      expect(await placement(pid)).toEqual({ company_id: null, company_locked: false, event_slug })
     }
   })
 })
