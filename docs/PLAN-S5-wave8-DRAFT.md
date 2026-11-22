@@ -216,6 +216,8 @@ Listed so nothing is lost; each needs its own slice or decision later.
 
 ## Open decisions this plan depends on
 
+**Answered.** The owner approved every recommendation below on 20 Nov 2026 ("Decisions: proceed with all recommendations"). All eleven `WD` rows are in `docs/S5-DECISION-REGISTER.md`, "Wave 8 (answered 20 Nov 2026)", which is the source; this table is the plan's record.
+
 `WD-<n>` are new with this draft; `BF-<n>` and `SQ-<n>` are in `docs/S5-DECISION-BACKFILL-DRAFT.md`. Every one is **owner decides**. The default is what the slice builds until the owner answers.
 
 | Id | Slice | Question | Proposed safe default |
