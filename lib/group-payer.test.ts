@@ -23,6 +23,23 @@ describe('payerOf', () => {
     expect(payerOf(person, reg)).toBe(expected)
   })
 
+  // A group sharing the teacher's cost: a person added later (join link, sheet
+  // sync, a staff or organiser roster add) has no payer recorded, and the group
+  // decides. Seen in the .35 drill, 22 Nov 2026: a staff roster add left payer
+  // NULL, and the student still paid their own way and lowered the share.
+  const SHARED = { member_pays_individually: true, late_joiner_payer: null, share_estimate: 2, share_first_paid_at: null }
+  const SHARED_PAID = { ...SHARED, share_first_paid_at: '2026-11-22T17:27:18Z' }
+  it.each<[string, Parameters<typeof payerOf>[0], Parameters<typeof payerOf>[1], string]>([
+    ['a student added later, link out', { payer: null, individual_payment_status: 'pending', event_role: 'participant' }, SHARED_PAID, 'self'],
+    ['a student added later, no link yet', { payer: null, individual_payment_status: null, event_role: 'participant' }, SHARED_PAID, 'self'],
+    ['a covered adult', { payer: null, individual_payment_status: 'covered', event_role: 'teacher' }, SHARED_PAID, 'shared'],
+    ['an adult added before any share is paid folds into the shares', { payer: null, individual_payment_status: null, event_role: 'teacher' }, SHARED, 'shared'],
+    ['an adult added after a share is paid pays their own way', { payer: null, individual_payment_status: null, event_role: 'teacher' }, SHARED_PAID, 'self'],
+    ['a recorded payer still wins', { payer: 'self', individual_payment_status: 'covered', event_role: 'teacher' }, SHARED_PAID, 'self'],
+  ])('shared cost: %s', (_name, person, reg, expected) => {
+    expect(payerOf(person, reg)).toBe(expected)
+  })
+
   it('a split group is one with later-joiner rules and no individual flag', () => {
     expect(isSplitGroup(SPLIT_SELF)).toBe(true)
     expect(isSplitGroup(INVOICE)).toBe(false)
