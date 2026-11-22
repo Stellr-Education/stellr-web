@@ -73,6 +73,17 @@ An entry that does not parse, names an undeclared area, gives a rate to `tenant`
 
 **CI.** `test/integration/two-tenant/events-config.int.test.ts` runs in the `tenant-db` job, which C18 made required in the workflow: no `continue-on-error` on the job or any step. Its scope step also runs for `lib/events/admin-config.ts` and the three routes (`test/ci-tenant-db-required.test.ts`). It passed on #624 and #625.
 
+### A10c volunteers: the `volunteers` area
+
+`lib/events/admin-volunteers.ts` holds the read behind GET `app/api/admin/events/[slug]/volunteers`: who raised interest in this event (`volunteer_event_interest`, status `interested`). Set it with `volunteers:shadow` or `volunteers:tenant` in `TENANT_DB_AREAS`. The tenant comes from `requireEventRoute`, never the request.
+
+- **Service path:** today's supabase-js query, with its `members(…)` embed. With defaults nothing else runs and no connection opens.
+- **Tenant path:** `member_id` and `created_at` through `tenantDb`, under the tenant policies. `tenant_app` has no grant on `members` (S7), so the route fills the names from Stellr's service-role client (`withVolunteerMembers`), which it holds only in Stellr's scope.
+- **Shadow:** the comparison drops the `members` embed (the tenant path cannot read it) and keys rows by `member_id`, a uuid. No name or email reaches `app_errors`.
+- **Who reaches it:** unchanged. A tenant's staff still get `refuseOutsideStellr`'s 503 on GET, POST and DELETE on every path. The names, the agreement and clearance pills and the assignments are Stellr's data, and since A10b a tenant's event takes no interest at all.
+- **Left on the service path:** assigning and removing (they write Stellr's mentoring containers, roles, Spaces and agreements, never `volunteer_event_interest`); the member's own "I'm interested" submit (`app/api/volunteer/interest`: a member acting for themselves, on Stellr's events only since A10b); the admin Volunteers console and the Friday digest (Stellr-wide, not event-scoped).
+- **No migration:** `tenant_app` already holds SELECT, INSERT, UPDATE and DELETE on `volunteer_event_interest`. `test/integration/two-tenant/volunteers.int.test.ts` proves isolation on both paths and the refusal of a cross-tenant write.
+
 ### Stellr-only routes refuse another tenant's event (waves 6 and 7)
 
 `refuseUnlessStellrEvent` (`lib/tenancy/load-scoped.ts`) reads the event's owner from the events mirror by slug, an unmirrored slug counting as Stellr's. `remind`, `docusign-reissue`, the guardian route, `offerings` and `merch/commit` under `app/api/admin/events/[slug]` ask it after `refuseOutsideStellr` and before any read about a person, any email and any envelope. Another tenant's event answers 404 for everyone, a Stellr admin included, **in every `LOADSCOPED_MODE`**, because `off` and `shadow` do not narrow the reads that follow. A failed owner read answers a retryable 503. For Stellr's own events the answer is today's, at the cost of one `events` read per request (#624).
