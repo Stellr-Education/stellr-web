@@ -94,3 +94,4 @@ Also, without a PR:
 - **P9 is live on dev** (`events-config:shadow:1`, flip log #871), and #870 (B22 fold) merged.
 - **The `.35` money drills ran on localhost** through the dev-only price map (#873): individual and group registrations, a paid shared-cost seat recorded through a replayed test-mode webhook, an A8 roster add, the true-up and unwind refunds. A roster add leaves `participants.payer` NULL by design; #874 pins `payerOf` for that case.
 - **The ENF-dev clock was clean at 16:23Z**; the flip waits for 29 Nov 00:06Z.
+- **Production shadow checks (owner, about 18:30Z):** `map-tenancy-roles.ts --check --production` reported drift 0; an admin sign-in and an event roster opened; no `AUTHZ %` rows in production `app_errors` since the 01:26Z flip. Still owed: an event-manager sign-in on production. The 7-day watch runs to 29 Nov 01:26Z.
