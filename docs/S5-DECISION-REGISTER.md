@@ -171,6 +171,166 @@ The owner, in chat on 22 Nov 2026: "proceed with your recommendations for anythi
 | W9-PLATFORM-DESTINED | The 2 routes still `platform_destined`: `events/slug-guard` and `schools/[id]` | Keep as they are | Approved as recommended | 22 Nov 2026 |
 | W9-REAL-HOSTS | Real tenant hosts: Vercel Pro (G1), the G5 subzone, Clerk session sharing, the production cookie-domain review | Hold until a partner event is booked | Approved as recommended: held | 22 Nov 2026 |
 
+## Backfill from the earlier waves (folded in 22 Nov 2026)
+
+The sections from here to "Settled elsewhere" hold the entries of `docs/S5-DECISION-BACKFILL-DRAFT.md` (#706), folded in on 22 Nov 2026 under the gates they block. Each keeps its draft id (`BF-<n>` for a wave decision, `SQ-<n>` for a scoping question, `T-44a` to `T-44d` for C13's follow-ups), with the slice and wave that raised it in brackets and its options in the question. `BF-33` and `BF-66` were already answered in this register, so they are not repeated. A row is marked settled only where a doc in the repo records the answer, or the build decided it. **The owner's 22 Nov 2026 answer (above) covered the rows that were in this register then, not these.** Every other row is open and goes to the owner about 5 at a time, with its default.
+
+## Gate: platform audit on production (`PLATFORM_AUDIT_ENABLED`)
+
+`W7-17` lets P1 go on `dev` with C13 and B16 open; every row here gates production only. `platform_audit_events` is append-only (`docs/PLATFORM-AUDIT.md`), so a row on the wrong chain, or holding a uuid it should not, cannot be corrected later.
+
+| Id | Question | Recommended default | Answer | Answered |
+|---|---|---|---|---|
+| BF-1 | (A14, wave 3) How do consent audit rows relate to the purge of a self-registered minor who never got consent, once `PLATFORM_AUDIT_ENABLED` and `MINOR_SELF_SIGNUP_ENABLED` are both on? Needs legal input. Options: (a) audit rows hold no member uuid for these actions; (b) keep the uuid and record a legal basis; (c) keep both flags from being on together until decided | (c): the two flags are not on together on production until answered | Open | open |
+| BF-2 | (A14, wave 3) Review the limits on upload signing before the audit flag goes on. Options: (a) keep today's limits; (b) tighten them behind their own flag | (a), with any change behind its own flag, because it is live behaviour | Open | open |
+| BF-3 | (B15, B18, S2; held in tracker `s5-programme.42`) Route limits for `schools/search` and `store/checkout`, both allow-listed in `lib/security/route-guards.ts` with a note that S5 adds a rate limit. Options: (a) set limit values and build B15; (b) the owner's written decision to go ahead without | (a), with the audit flag waiting for B15 on production | Open | open |
+| BF-4 | (B16, wave 4) May a member's registration payment and withdrawal audit rows, which carry the member's Clerk actor, go on the chain of the tenant that owns the event? Also covers webhook rows for a tenant's registration (A13a). Options: (a) the owning tenant's chain; (b) Stellr's chain; (c) the platform chain | (b) Stellr's chain, as built in B16 and A13a (#755), until decided | Open | open |
+| BF-5 | (B16, wave 4) Accept the Active CPU and row cost of one extra `auth()` and one `after()` write per audited member or community request? Are read-like GETs (downloads, survey open, withdraw preview) audited at all? Options: (a) accept, and audit those GETs; (b) accept, GETs not audited; (c) sample | Measure on `dev` during P1, then decide; GETs not audited meanwhile | Open for production. Partly settled: it gates production only (`W7-17`) | open |
+| BF-6 | (C13, wave 4) Member uuids in audit metadata for moderation, role and roster operations. These rows can concern minors and cannot be purged. Options: (a) keep uuids; (b) strip them before production; (c) keep with a recorded basis | (b) until decided: a small code change while the flag is off on production | Open for production. Partly settled: it gates production only (`W7-17`); a `docs/PLATFORM-AUDIT.md` sentence is still owed | open |
+| BF-7 | (C15, wave 4) Which chain do the `platform_destined` events belong on? Decide before audit is on with a second tenant. Options: (a) Stellr's; (b) the platform's; (c) the owning tenant's where known | (a), as built, until a second tenant has records | Open | open |
+| BF-8 | (C15, wave 4) Extend BF-1's answer and its legal input to `deletion.entity.delete`, `member.record.merge` and `deletion.request.review`, which store the uuid of an erased member or participant, possibly a minor, in a table with no retention path. Options: (a) the same answer as BF-1; (b) a separate answer | (a) | Open | open |
+| BF-9 | (C10, wave 3) `OPERATIONAL_WRITERS`' `lib/app-errors` entry (`lib/security/audit-coverage.ts`) also covers `authz_mismatch` rows, which carry a validated `members.id` and skip the scrubber. Options: (a) accept; (b) a separate named entry | (b) | Answered 21 Nov 2026 (owner, in chat): (a), the list approved as it stands. `docs/TENANCY-S5.md`, the C10 row of the wave 3 decisions; recorded in #843 | 21 Nov 2026 |
+| BF-10 | (Owner gates) Audit exemptions for anonymous writes: `contact`, `subscribe`, `lp-lead`, `white-paper`, `join-network`, `host-event`, `asset-request` and `csp-report`. Options: (a) approve the list with a reason per route; (b) audit them | (a) | Answered 21 Nov 2026 (owner, in chat): (a). The reasons are in `AUDIT_EXEMPTIONS`, built in #831; `docs/handovers/HANDOVER-s5-wave9-2026-11-21.md`, section 2 | 21 Nov 2026 |
+| BF-11 | (Owner gates) The sign-in consent gate: `childAwaitingConsent` and `childAwaitingConsentBlock` record through the activity log. Do they also need a platform audit event? Options: (a) yes; (b) the activity log is enough | (a): one event per block, with no member uuid until BF-1 is answered | Answered 21 Nov 2026 (owner, in chat): (b), no platform audit event, because the activity-log row records who and when. `docs/TENANCY-S5.md`, "Owner gates", the `OPERATIONAL_WRITERS` item | 21 Nov 2026 |
+| T-44c | (C13, wave 4) All 42 pilot handlers audit with the session actor inside `after()`, which is unproved: the session may not be readable after the response. Options: (a) prove one real row on `dev` during P1; (b) capture the actor before the response | (a), then (b) if the row lacks its actor | Open | open |
+| T-44d | (C13, wave 4) Active CPU: `recordAuditFailure` imports `lib/app-errors` eagerly; a lazy import keeps the mailer out of the 29 pilot routes' import closure (`docs/TENANCY-S5.md`, Risks, Active CPU). Options: (a) lazy import; (b) leave | (a) | Open | open |
+
+## Gate: any non-memory `RATE_LIMIT_STORE` on production
+
+| Id | Question | Recommended default | Answer | Answered |
+|---|---|---|---|---|
+| BF-12 | (A9, wave 4) Does check-in's by-name path get an unsuffixed per-IP cap ahead of the store call? A venue's shared IP would feel it. Options: (a) add the cap; (b) no cap, watch `rate_limit_hits` | Decide from P5's rows on `dev` | Open for production. Partly settled: no cap on `dev` before P5 (`W7-20`) | open |
+| BF-13 | (B4, wave 2) Does the nightly backup hold the hashed limiter counters? Options: (a) exclude `rate_limit_hits` from `ops/backups/backup.sh`; (b) keep them and say so in `docs/RUNBOOK-backups.md` | (a): counters are disposable and keyed by HMACs of IPs and names | Open | open |
+| SQ-15 | (Scoping) Should limiter keys on tenant hosts include the tenant id for every route, or only per-event routes? Options: (a) every route; (b) per-event routes only | (a): abuse on one tenant then never throttles another or Stellr | Open | open |
+
+## Gate: `AUTHZ_SOURCE=shadow`, then `postgres`, on production
+
+The production shadow flip itself is `W9-SHADOW` (approved 22 Nov 2026, above).
+
+| Id | Question | Recommended default | Answer | Answered |
+|---|---|---|---|---|
+| BF-14 | (C10, wave 3) Sampling for shadow decisions, before `lib/store/auth.ts` leaves `HELD_WRAPPERS` (C23). Options: (a) sample admin reads only; (b) no sampling, measured; (c) split `store/returns`' member PATCH from the catalogue check | (b) on `dev`, with Active CPU read | Answered 21 Nov 2026 (owner, in chat): every grant is compared, and denials are sampled at `AUTHZ_SHADOW_DENY_SAMPLE` (default 0.05). Built in #839. `docs/AUTHZ.md`, "Shadow reads are sampled" | 21 Nov 2026 |
+| BF-15 | (C15, wave 4) Route by route for the 9 `platform_destined` routes: owner-only, or Stellr staff? Options: (a) owner-only (`platform_admins`); (b) Stellr admins | (b), which keeps today's access | Answered 21 Nov 2026 (owner, in chat): (a). Seven routes on `assertPlatformAdmin`; `events/slug-guard` and `schools/[id]` stay `platform_destined` (`W9-PLATFORM-DESTINED`). `docs/AUTHZ.md`, precondition 10 and "The platform routes"; built in #843 | 21 Nov 2026 |
+| BF-16 | (C15, wave 4) May C25 convert these claim checks to `isStellrAdmin` while BF-15 is open? Options: (a) yes; (b) wait | (a) | Settled by build: C25 converted the claim checks (#830, #832, #838 to #840), and BF-15 (a) then moved seven of the routes to `platform_admin`, so the question no longer arises | 21 Nov 2026 |
+| BF-17 | (C9, wave 2) Run `scripts/map-tenancy-roles.ts --check` before shadow and decide what to do with stale rows. Should a Clerk revoke through `set-admin` go ahead when the Postgres write is refused? Options: (a) the revoke goes ahead, drift reported; (b) refuse the revoke | (a): removing access is never blocked; `--check` reports the drift | Open. As built, `set-admin` keeps the Clerk revoke and exits 2 (`docs/AUTHZ.md`, which says to revisit at C25). The production `--apply` ran 21 Nov 2026; the `--check` before shadow is part of `W9-SHADOW` | open |
+| BF-18 | (B20; held in tracker `s5-programme.42`) The `proxy.ts` admin prefilter under `postgres`: sync a Clerk claim from `tenant_memberships`, or relax the proxy to signed-in-only and rely on the page guards (`docs/AUTHZ.md`, precondition 8). Options: (a) sync the claim; (b) signed-in only | (a): keeps the proxy database-free and today's confinement | Open | open |
+| SQ-6 | (Scoping) Is the production flip to Postgres authority part of S5, or S6's "authority moves" item? Options: (a) S5 ships the switch and shadow, the flip is S6's first step; (b) all in S5 | (a), which matches `docs/TENANCY-S5.md`, Lane C | Open | open |
+| SQ-7 | (Scoping) An `event_manager` membership as an explicit row (dual-written) or implied by an assignment? Options: (a) an explicit row, assignments stay the authority for which events; (b) implied | (a) | Settled by build: (a). `docs/AUTHZ.md`, "Role mapping" | settled by build |
+| SQ-13 | (Scoping) The source of truth for event-manager scope inside `loadScoped`. Options: (a) `event_manager_assignments`; (b) `tenant_memberships` | (a) | Settled by build: (a). `docs/AUTHZ.md`: assignments stay the authority | settled by build |
+
+## Gate: routing on a real zone (`TENANT_ROUTING_ENABLED` with a zone attached)
+
+The real-host prerequisites themselves are held by `W9-REAL-HOSTS` (above).
+
+| Id | Question | Recommended default | Answer | Answered |
+|---|---|---|---|---|
+| BF-19 | (B5, wave 2) Add to "Real tenant hosts": routing stays off on any deployment with a zone until B5c and B10(d) pass, and A7, C6 and B10(c) pass. Options: (a) add it; (b) leave as is | (a) | Open. Partly settled: `docs/TENANCY-S5.md`, "Owner gates", Real tenant hosts, covers B6 and the icon decision | open |
+| BF-20 | (B5c, wave 4) Icons and the web manifest on tenant pages link Stellr's files; moving them changes Stellr's live icon URLs. Options: (a) leave until S10; (b) move them now | (a) until a real zone attaches; decide before that | Open | open |
+| BF-21 | (B6, B10, wave 4) Per-request rendering or ISR for tenant pages, once the first canary zone shows its Active CPU and CMS volume. Per-request closes B10(b). Options: (a) per-request with the enforcing nonce CSP; (b) ISR with a weaker host policy | (a), as built, measured during K9 phase B | Open | open |
+| BF-22 | (B10a, wave 3) Check (a) never compares signed-in or real-record pages with routing on. Options: (a) accept, checked by a person at D7 sign-off; (b) a slice | (a) | Open | open |
+| BF-23 | (B10, wave 4) Do the route-by-route Stellr-host outcomes in `e2e/tenancy/host-cases.ts` stay in the public repo as worded, or become totals and a hash? Which capability-token outcomes on Stellr's hosts are accepted at the gate? Options: (a) keep as worded; (b) totals and a hash | (b) if the repo is still public at the gate; tokens accepted only route by route with a reason | Open | open |
+| BF-24 | (C6, wave 2) Do per-route lists of differing refusals stay public or become totals and a hash (a CI artifact is not an option on a public repo)? Which capability-token outcomes are accepted before the S5 gate? Options as BF-23 | As BF-23; the 5 accepted reasons in `test/idor/idor-snapshot.json` reviewed by the owner | Open | open |
+| BF-25 | (Owner gates) The final tenant-host allow-list (`lib/tenancy/tenant-surface.ts`). Options: (a) as built, deny by default; (b) widen route by route | (a): each route leaves `pending` only with its own tenant-host case | Open | open |
+| BF-26 | (Owner gates) The tenant-tree segment: `%5Ft` for `/_t`, or `/t` | Built as `app/%5Ft` | Settled by build: `app/%5Ft` in B5 (#534), on production since #548 | 5 Nov 2026 |
+| BF-27 | (Owner gates) Where tenant staff work. Options: (a) an admin surface on their own host, after `lib/authz` membership checks and S6 MFA; (b) the platform app host with a tenant switcher | Neither yet: `/admin` is a 404 on tenant hosts until S6 (`docs/TENANCY-S5.md`, Risks) | Open | open |
+| SQ-1 | (Scoping) `llms.txt` on tenant hosts (robots and sitemap are answered: Disallow all until S10, `docs/TENANCY-S5-routing.md`). Options: (a) 404 until S10; (b) tenant-specific | (a) | Open | open |
+| SQ-5 | (Scoping; B25) The host-map cache TTL. Is a new or suspended tenant taking up to a minute per warm instance acceptable? Options: (a) 60 seconds; (b) 60 seconds plus a purge on suspension | (b) | Open. Wave 8's B25 built to this default (`docs/PLAN-S5-wave8-DRAFT.md`, "Open decisions") | open |
+| SQ-17 | (Scoping, recorded only as a risk until now) Static assets and `/api/img` bypass the proxy and stay Stellr-branded on tenant hosts (`docs/TENANCY-S5.md`, Risks, "Bypasses on tenant hosts"). Accept? | Accepted until S10's brand sweep | Open | open |
+| SQ-18 | (Scoping, recorded only as a risk until now) The 21 unscoped `next.config` redirects also apply on tenant hosts (`docs/TENANCY-S5.md`, Risks, "Bypasses on tenant hosts"). Accept? | Accepted until S10's brand sweep | Open | open |
+
+## Gate: the first non-owner tenant on production
+
+| Id | Question | Recommended default | Answer | Answered |
+|---|---|---|---|---|
+| BF-28 | (A3, wave 2) A tenant tightens an event and an existing participant no longer qualifies. Options: (a) keep refusing the change; (b) apply to new writes and report the affected people to staff | (a), as built (`docs/TENANCY-S5-registration.md`, Owner decisions) | Open | open |
+| BF-29 | (Owner gates) Live tenant events with no start date. Options: (a) refuse registration; (b) take age on today in the event's time zone | (a), as built: the API and the trigger both refuse | Open | open |
+| BF-30 | (A7, owner gates) Should `register/group` get `childAwaitingConsentBlock`, as `individual` and `group-join` have? Options: (a) yes, as its own tested change; (b) no | (a), not inside a refactor | Open | open |
+| BF-31 | (A0, A4, A5, wave 2) The remaining decisions on how the register routes treat an existing member's record and what they answer. Two were settled on 5 Nov (A5, A6); the rest are in the private slice reports, because the behaviour is live and the repo is public | Today's behaviour stands; the owner reviews the slice reports | Open | open |
+| BF-32 | (A5, wave 2) People an organiser enters on the group form: with no session, naming someone on file still links them to the group. What else is held back until they confirm? Options: (a) hold the link until the named person confirms; (b) link, but show nothing about them | (b), as built: their profile is not rewritten | Open | open |
+| BF-34 | (B0, wave 2) The access rule for a library file that has lost its last attachment. Options: (a) staff only; (b) its uploader and staff | (a) | Open | open |
+| BF-35 | (B3, wave 2) `alumni-upgrades`, `campaigns`, `campaign-drip` and `campaign-events` pick people from shared `members` with no tenant limit, so tenant registrants could receive Stellr marketing or Alumni grants. Options: (a) B23 limits them to Stellr's members; (b) accept | (a): B23 before the first tenant event | Open | open |
+| BF-36 | (B3, wave 2) Retention for inactive tenants: `survey-retention` is assumed to keep running for them. Options: (a) keep running; (b) stop with the tenant | (a): retention deletes, so stopping it would keep data longer | Open | open |
+| BF-37 | (B8, wave 3) Should a tenant event write `event_participations` and the activity log? Stellr's account and staff pages read them with no tenant scope. Options: (a) no; (b) yes, after a slice scopes those reads | (a), as built | Open: built as (a) in B8; the draft asked the owner to confirm | open |
+| BF-38 | (B11, wave 3) The agent-written reason on the service-role ratchet entry for `scripts/hubspot-sync-event-options.ts`. Options: (a) confirm the reason; (b) the script passes `allTenants: true` | (a): `allTenants` would let a manual `--apply` write another tenant's events to Stellr's portal | Open | open |
+| BF-39 | (C14, wave 3) Should a member purge also protect a login holding only a `duty_holder` membership or an `admin_duties` row? Today it counts `admin` and `event_manager`. Options: (a) extend; (b) keep | (a): protecting more logins from deletion is the safe side | Open | open |
+| BF-40 | (C14, wave 3) Add to Owner gates: before the first non-owner tenant on production, view-as refuses a target tied to that tenant until S6 support mode exists. Options: (a) add; (b) not | (a) | Open | open |
+| BF-41 | (C14 remainder; held in tracker `s5-programme.42`) The member layout and `NavUserButton` read Clerk claims. Options: (a) convert in C21; (b) leave until C25 | (a) | Open. C25 is done and `NavUserButton` is the last legacy idiom (tracker `s5-wave9.7`), so what is left is that menu | open |
+| BF-42 | (C0b, wave 3) `participants_membership_id_seq` also feeds `members.membership_id`, so numbers are shared across tenants. Options: (a) keep the shared counter; (b) per-tenant numbering | (a): numbers reveal only a count; revisit if a tenant objects | Open | open |
+| BF-43 | (C0b; held in tracker `s5-programme.42`) The composite foreign key: name its slice after A10 to A12, or record that the carry trigger is enough. Options: (a) a slice once every unhinted embed is hinted; (b) the carry trigger is enough | (b) until A11 and A12 land, then decide | Open | open |
+| BF-44 | (B5d; held in tracker `s5-programme.42`) Tenant-scoped data caches (cache keys and tags carry the tenant) for the 5 data-cache users. Options: (a) build in S5; (b) S8 or S9 | (b), with no tenant price or event data cached before then | Open | open |
+| BF-45 | (B17, wave 4) An alert contact for each tenant. With no active tenant admin, or after a failed lookup, admin alerts are dropped and logged. Options: (a) a per-tenant alert contact; (b) a platform-ops fallback that strips personal data | (b) until tenants are onboarded, then (a) as an onboarding field | Open. As built, the consent sweep's alert goes to Stellr's platform staff (`lib/registration/tenant-guardian-consent.ts`) | open |
+| AMD-NOTIFY-TENANT | (B17) The staff alert contact per tenant: who receives a tenant's staff alerts once the first non-owner tenant is live, and where it is set | A required onboarding field per tenant; until it is set, alerts go to Stellr's platform staff with personal data stripped (BF-45 (b)) | Open | open |
+| BF-46 | (B17, wave 4) Do a suspended tenant's admins still receive alerts about its records? `tenants.status` is not read today. Options: (a) yes; (b) no, platform ops instead | (b) | Open | open |
+| BF-47 | (B17, wave 4) When the events-mirror read fails while an event email is built, keep Stellr's assignments for the manager audience, or leave managers out of that send? Options: (a) keep, as now; (b) leave out | (b) for a non-Stellr event once one exists; (a) is safe while every event is Stellr's | Open | open |
+| BF-48 | (C13, wave 4) Are `training/assignments` and `training/tracking` release-1 tenant features? If they stay Stellr products, they and the pilot routes that read by event or cohort need a named gate or a C6 disposition entry. Options: (a) tenant features; (b) Stellr-only | (b), each with a disposition entry before the first non-owner tenant | Open | open |
+| BF-49 | (C16, wave 4) How far a guardian's credential opt-out recorded by one organiser reaches. As built it touches that tenant's rows only, except under `LOADSCOPED_MODE=off`, where Stellr's stays global. Options: (a) per tenant; (b) everywhere the child appears | (b) for a guardian's withdrawal of consent, which the privacy policy promises; needs a slice | Open | open |
+| BF-50 | (C16, wave 4) Does a media opt-out signed on another organiser's form bind a tenant's do-not-use list? As built it does, but the tenant's CSV can show the other form's signing date and reason. Options: (a) bind, show only "opted out"; (b) do not bind | (a), with the other form's date and reason hidden from the tenant | Open | open |
+| BF-51 | (C18, wave 6) How the companies area is confined for Stellr's admins before the first tenant event. Options: (a) `LOADSCOPED_MODE=enforce`; (b) `AUTHZ_SOURCE=postgres`; (c) an owner check (#624) | (a), already required before the consent flag (`W7-14`) | Open | open |
+| BF-52 | (C18m, the C18 merch decision) Store offerings and the merch batch on an event (`offerings`, `merch/commit`): do tenants get a store (C23), or is it Stellr-only for good? The definition of C18m is inferred; the owner confirms it (`docs/S5-DECISION-BACKFILL-DRAFT.md`, "What C18m means"). Options: (a) C23; (b) Stellr-only for good | (b): tenant staff get today's 503 and another tenant's event answers 404 | Open. `BF-33` (the catalogue) was answered 22 Nov 2026: Stellr-only for now | open |
+| BF-53 | (Owner gates) Cron fairness: how per-tenant crons share one run's time budget. Options: (a) round-robin with a per-tenant cap; (b) Stellr first | (a), with Stellr's run never starved (B3's failure isolation) | Open | open |
+| BF-54 | (Owner gates) The disposition register's split (51 / 9 / 55 / 16 in `docs/TENANCY-S5.md`, Owner gates): the owner reviews each class | Every unreviewed route stays `stellr_only` | Open | open |
+| BF-55 | (D6, wave 3) Name a slice for `group-invoice-sync` | B22 | Settled by build: B22, #701: `group-invoice-sync` runs per tenant, other tenants held until S9 | 14 Nov 2026 |
+| T-44a | (C13, wave 4) The space add-source action under `spaces/[id]` pulls event-participation cohorts with no tenant filter, so a tenant event's cohort could be added to a Stellr space. Options: (a) filter to Stellr's events; (b) a disposition entry: community is Stellr-only and tenant events write no participations (BF-37) | (a), a one-line Stellr-scope filter, plus the disposition entry | Open | open |
+| T-44b | (C13, wave 4) Remove-post and dismiss-flag act on a flag by id without checking it belongs to the space in the path. Options: (a) check the flag's space; (b) accept, admin-only | (a): it is also a plain IDOR fix for Stellr | Open | open |
+| SQ-2 | (Scoping) Is there a feature that moves a registration to another event (a transfer)? A3's companion trigger on `registrations` assumes such updates can happen. Options: (a) no such feature, the trigger stays as a backstop; (b) yes, specify it | (a) | Open | open |
+| SQ-3 | (Scoping) Does the in-app notification bell (`lib/notify.ts` writing `community_notifications`) count as social? `lib/registration-checkout.ts` reaches it today. Options: (a) social, banned on tenant surfaces, email only for tenant events; (b) not social | (a) | Open | open |
+| SQ-4 | (Scoping) Where the tenant "My events" page lives (under the tenant tree, not `/community/events`) and which lane owns it. Options: (a) Lane B under `app/%5Ft`; (b) Lane A | (a), built in S10 with the community decoupling | Open | open |
+| SQ-8 | (Scoping) Does any tenant role below admin grant portal access? Options: (a) no portal access below event manager; (b) yes | (a) | Open for tenants. Settled for Stellr: `duty_holder` never opens `/admin`, and tenants get no scopes in release 1 (`docs/AUTHZ.md`) | open |
+| SQ-12 | (Scoping) Before S7 tenant profiles, may tenant staff open a member detail page, or only the participant record under their event? Options: (a) the participant record only; (b) the member page | (a): the 16 `members/*` routes stay `stellr_only` | Open | open |
+| SQ-14 | (Scoping) `event-emails` uses Mountain time everywhere. Should tenant events use the event's time zone in S5, or wait for S8? Options: (a) S8; (b) S5 | (a): Stellr stays on Mountain either way; no tenant event email before S8 | Open | open |
+| SQ-16 | (Scoping; wave 8's C19a and C20b) Which admin areas are tenant features in release 1? | Credentials and surveys become tenant features later, behind `W7-9` and the survey hold (`W7-16`); scholarships, the store and DocuSign stay Stellr-only (decision 15; BF-52). Wave 8 built this default | Open | open |
+
+## Gate: priced tenant events (S9)
+
+| Id | Question | Recommended default | Answer | Answered |
+|---|---|---|---|---|
+| BF-56 | (A7, wave 5) A tenant event with an explicit $0 Stripe price is treated as priced and refused. Should $0 count as free? Options: (a) $0 is free; (b) priced, refused | (b), as built, until S9 | Open | open |
+| BF-57 | (A7, wave 5) The tenant tree's pay-seat page shows a Pay button the API refuses for a tenant's seat. Options: (a) hide the button; (b) S9 opens tenant payments | (a), before routing on any zone | Open | open |
+| BF-58 | (A7, A8, wave 5) Which slice gives the organiser-side payment writers (`changeGroupPaymentMethod` in `lib/group-payment-change.ts`, and the team payment-link route) their tenant checks? Options: (a) A8b in wave 8; (b) S9 | (a): checks land before any priced tenant event | Settled by build: (a). A8 and A8b (#768) refuse another tenant's group before anything is saved or billed (`lib/group-payment-change.ts`, `lib/group-billing.ts`) | 16 Nov 2026 |
+| BF-59 | (A8, wave 6) Before S9, should the roster writers also check the event's current price, not only the registration's money columns? Options: (a) yes; (b) no | (a) | Open | open |
+
+## Gate: guardian consent on production (`TENANT_GUARDIAN_CONSENT_ENABLED`)
+
+None of these gates `dev`, which uses a placeholder document (`W7-6`). They are the decisions in `docs/TENANCY-S5.md`, "Owner decisions wave 6 raised". That list's desk row is `BF-66` (answered 20 Nov 2026, above).
+
+| Id | Question | Recommended default | Answer | Answered |
+|---|---|---|---|---|
+| BF-60 | (A16) The consent document's wording, with legal input. Only platform staff can publish it | No document on production, so every tenant minor is refused; the owner and counsel draft it | Open | open |
+| BF-61 | (A16) Guardian identity assurance: an emailed link to an address that is none of the registrant's, plus the birth-year question and the attestation at signing. Options: (a) enough, matching Stellr's own minor consent; (b) stronger | (a) | Open | open |
+| BF-62 | (A16) Caps: 5 invitations a day per guardian address across every organiser; 30 an hour per organiser. Options: (a) as proposed; (b) other values | (a) | Open | open |
+| BF-63 | (A16) The consent window: 14 days, or until the event starts if sooner. Options: (a) as proposed; (b) other | (a) | Open | open |
+| BF-64 | (A16) The new wording: `GUARDIAN_REQUIRED_MESSAGE`, `GUARDIAN_CONSENT_BUSY_MESSAGE`, the door and desk refusals, the confirmation page line, the five registrant notices, and the document title. The owner approves or rewords | Built as proposed, flag off | Open | open |
+| BF-65 | (A16) Moving a participant to another registration needs a fresh guardian signature (as built, consent resets to pending). Options: (a) confirm; (b) carry the signature | (a) | Open | open |
+
+## Gate: `TENANT_DB_ENABLED` on production
+
+| Id | Question | Recommended default | Answer | Answered |
+|---|---|---|---|---|
+| BF-67 | (C11t, wave 6) Which PEM goes in `TENANT_DATABASE_CA_CERT`: the provider's root CA, or a bundle? Decided by the pooler TLS canary (P6). Options: (a) root CA; (b) bundle | (a) if it verifies; never a weaker `sslmode` (`W7-7`) | Settled by the canary, 21 Nov 2026: (a). It verified against the provider's root CA (TLSv1.3), so no bundle is needed. `docs/handovers/HANDOVER-s5-wave9-2026-11-21.md`, section 2; tracker `2026-11-21-s5-wave9.md`, "Closes" | 21 Nov 2026 |
+| BF-68 | (C18, wave 6) Add `tenant-db` to branch protection on `main`. Options: (a) add; (b) `dev` only | (a), with the owner's yes (`W7-32`) | Open for `main`. Partly settled: required on `dev` (tracker `s5-programme.5`) | open |
+| BF-69 | (`W7-18`) How `TENANT_DATABASE_URL`, which holds the password the owner keeps (`W7-7`), reaches the production Vercel project without passing through an agent. Options: (a) the owner enters it in the dashboard; (b) the owner runs the CLI | (a) | Open | open |
+
+## Gate: CI and the S5 sign-off
+
+| Id | Question | Recommended default | Answer | Answered |
+|---|---|---|---|---|
+| BF-70 | (C5a, wave 2) Turn on the required code-owner ruleset (`.github/CODEOWNERS` only requests review until then), and confirm a PR label is enough to raise a ratchet. Options: (a) ruleset now, label plus owner review to raise; (b) label alone | (a) (`docs/RUNBOOK-agent-controls.md`, section 2) | Open | open |
+| BF-71 | (`ci.yml`) `e2e-local` is report-only and not a required check. Options: (a) make it required once it agrees with `e2e`; (b) keep it report-only | (b) until its agreement runs are recorded | Open | open |
+| SQ-10 | (Scoping) Delete a converted area's service-role path once flipped and stable? After how many clean days? Options: (a) delete after N clean days; (b) keep both | (a), with N = 30, matching the 30-day checklist | Open | open |
+| SQ-11 | (Scoping) Typed rows for the SQL modules. Options: (a) hand-written types; (b) zod at the boundary; (c) a generated `lib/database.types.ts` | (a) until a generated file is approved | Open | open |
+
+## Gate: the SMMA sign-off
+
+| Id | Question | Recommended default | Answer | Answered |
+|---|---|---|---|---|
+| BF-72 | (D6, wave 3) The SMMA self-assessment, held privately (tracker `s5-programme.38`): public or private, and the AU under-16 feature set for Stellr's community | Stays private; tenant hosts keep the community fence (`docs/S5-CRONS-LIMITS-SMMA.md`) | Open | open |
+
+## Gate: S7 (tenant identities)
+
+| Id | Question | Recommended default | Answer | Answered |
+|---|---|---|---|---|
+| SQ-9 | (Scoping) Do group ownership (`ownsTeam` in `lib/team-access.ts`) and self-ownership queries become authz resource predicates in S5, or wait for S7 identities? Options: (a) wait for S7; (b) S5 | (a): they are participant-class, outside staff convergence | Open | open |
+
 ## Settled elsewhere
 
 Linked, not copied. The wording that counts is at the link.
@@ -179,10 +339,23 @@ Linked, not copied. The wording that counts is at the link.
 |---|---|---|---|
 | REF-1 | `TENANT_GUARDIAN_CONSENT_ENABLED` may go on in an environment only where Lane C's tenant-event refusals (#624) are live in that same environment | `docs/TENANCY-S5.md`, [Owner decisions for wave 7, settled 11 Nov 2026](TENANCY-S5.md#owner-decisions-for-wave-7-settled-11-nov-2026), and the A16 row of "Owner decisions wave 6 raised"; `docs/ENV-MATRIX.md`, the `TENANT_GUARDIAN_CONSENT_ENABLED` row; tracker `s5-programme.20` | 11 Nov 2026 |
 | REF-2 | Threat-model rating TB3 E (age-gate bypass) moved from M to L | `docs/THREAT-MODEL.md`, TB3 E and the review log entry of 11 Nov 2026; tracker `s5-programme.19` | 11 Nov 2026 |
+| REF-3 | B5's host-keyed matcher entry | `docs/TENANCY-S5.md`, "Owner decisions wave 2 raised" | 5 Nov 2026 |
+| REF-4 | B18's `teacher-grant` follow-up | `docs/TENANCY-S5.md`, "Owner decisions wave 3 raised"; merged in #566, promoted in #561 | 6 Nov 2026 |
+| REF-5 | A9's limiter store write in `OPERATIONAL_WRITERS` | #576; `docs/TENANCY-S5.md`, "Owner decisions wave 4 raised" | 9 Nov 2026 |
+| REF-6 | The tenant email share | `docs/TENANCY-S5.md`, "Owner decisions wave 4 raised" | 9 Nov 2026 |
+| REF-7 | `postgres` for C11 | `docs/TENANCY-S5.md`, "Owner decisions wave 4 raised" | 9 Nov 2026 |
+| REF-8 | A7's guardian-consent route, refusal copy and member-profile rule, which also settles B5b's prefill question | `docs/TENANCY-S5.md`, "Owner decisions wave 5 raised" | 10 Nov 2026 |
+| REF-9 | B14's admin copy and the signing engine's tenant sender | `docs/TENANCY-S5.md`, "Owner decisions wave 5 raised" | 10 Nov 2026 |
+| REF-10 | C16's follow-up on tenant payment-method changes after S9 | `docs/TENANCY-S5.md`, "Owner decisions wave 5 raised" | 10 Nov 2026 |
+| REF-11 | C11's `verify-full` rule, and the `tenant-db` job from C18 | `docs/TENANCY-S5.md`, "Owner decisions wave 5 raised" | 10 Nov 2026 |
+| REF-12 | A malformed id answers the route's own 404 | `docs/TENANCY-S5-data.md`, `LOADSCOPED_MODE` | as built |
+| REF-13 | Scopes stay Stellr-only in `admin_duties` | `docs/AUTHZ.md` | as built |
+| REF-14 | `/admin` is a 404 on tenant hosts until S6 | `docs/TENANCY-S5.md`, Risks | as built |
+| REF-15 | Robots and sitemap on tenant hosts: Disallow all until S10 | `docs/TENANCY-S5-routing.md` | as built |
 
 ## Not in this register yet
 
-- The decisions that gate a production consent flip, listed in `docs/TENANCY-S5.md` under "Owner decisions wave 6 raised" (the consent document's wording, guardian identity assurance, invitation caps, the consent window, the new wording, and the rest). They do not gate wave 7, which uses a placeholder document on `dev` only (W7-6).
-- The decisions held in tracker `s5-programme.42` (B15, B5d, B20, the C0b composite foreign key, the C14 remainder), which wave 7 leaves out of scope.
-- The rest of the 46 to 60 decisions across the earlier wave tables (`s5-programme.41`). Each is added here, under the gate it blocks, before it is brought to the owner. PR #706 (merged into `dev` on 14 Nov 2026) drafts 72 of them in `docs/S5-DECISION-BACKFILL-DRAFT.md`; they move here once that draft is reviewed.
-- B17's staff alert contact per tenant (`AMD-NOTIFY-TENANT`), which gates the first non-owner tenant's alerts.
+- The A16 readiness items in `docs/TENANCY-S5.md`, "Owner decisions wave 6 raised" (credentials and surveys leaving out consent-pending participants, the staff pending marker, the sweep's retry cap). They are preconditions tracked in tracker rows `s5-programme.22`, `.23` and `.26`, not decisions. That list's decisions are now `BF-60` to `BF-66` above.
+- The wave 8 plan's own defaults that this register does not list (`WD-2` to `WD-6`, `WD-8`, `WD-9`), in `docs/PLAN-S5-wave8-DRAFT.md`, "Open decisions this plan depends on".
+
+The backfill draft's entries were folded in on 22 Nov 2026 (`s5-programme.41`), including those held in tracker `s5-programme.42` (B15 is `BF-3`, B5d `BF-44`, B20 `BF-18`, the C0b composite foreign key `BF-43`, the C14 remainder `BF-41`) and B17's staff alert contact (`AMD-NOTIFY-TENANT`).
