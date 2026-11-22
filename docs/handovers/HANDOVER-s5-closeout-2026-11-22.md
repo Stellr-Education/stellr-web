@@ -79,3 +79,11 @@ Also, without a PR:
 - **P9 preparation:** 400 counted companies reads on dev, all 200, and 0 `app_errors` (flip log). P9 itself waits for the owner's yes and the meter read.
 - **P7 meter:** the CLI cannot read Hobby billing data, so the owner reads Active CPU in the dashboard.
 - **The `.35` registrations are paused for the owner.** The local app holds a real HubSpot token and a live Resend key, so a test registration would write to the real CRM and send mail to fake addresses. Proposed: run the local app with those two keys blank, then do one registration of each kind, one A8 roster round and the Stripe shared-cost drill on localhost (Stripe test mode). Test payments may not be made on the hosted dev site.
+
+## 8. Addendum, 22 Nov 2026, about 03:40Z
+
+- **#860 and #866 merged.** The readiness lock migration is applied to the **dev** database (ledger realigned to `20261122020000`); the lock is closed and both triggers exist.
+- **Vercel stopped deploying on merges after the repository move** (no deployment exists for any commit after about 03:00Z; the projects still name `aussie-spaceman/stellr-web`). This affects production promotions too. **Owner:** reconnect each Vercel project's Git link to `Stellr-Education/stellr-web`.
+- **Until then, deploy dev from the API**, which builds from GitHub: `vercel api /v13/deployments -X POST` with `{"name":"stellr-web-dev","project":"<dev project id>","target":"production","gitSource":{"type":"github","repoId":1258717958,"ref":"dev","sha":"<full sha>"}}`. A plain `vercel deploy` upload fails, because the prebuild's `git ls-files` needs `.git`. That is how `dpl_6mMhaDm4W6hGXE9touSubYiLLpCJ` (`464a4b3e`) went live at 03:41Z.
+- **Dev health after it:** `readiness` reads lock `closed`, `activeOtherTenants` 0, all six isolating switches `missing`, `violation` false. P7 is still `events-config:shadow:0.25`; config url and ca are `ok`.
+- **The `.35` registration rows are blocked:** dev reads the production Sanity dataset, whose events carry live Stripe prices (#868).
