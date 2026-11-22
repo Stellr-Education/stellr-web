@@ -340,6 +340,32 @@ describe("a tenant's admin", () => {
     expect(state.overrideOutstanding).not.toHaveBeenCalled()
   })
 
+  // A10c: the 'team-profiles' area (lib/team-profile/admin-data.ts). Shadow still refuses:
+  // its writes run on the service path. Only tenant mode opens the three to a tenant's staff,
+  // and then only through the tenant database (none here, so each answers its 500), never the
+  // service path's Auto-Assign or overrides.
+  it('on their own event: the refusal holds in team-profiles shadow mode, and lifts only in tenant mode', async () => {
+    const { POST } = await companies()
+    const bodies = [{ action: 'auto_assign' }, { action: 'override_all' }, { action: 'override', participantId: P1, overridden: false }]
+    vi.stubEnv('TENANT_DB_ENABLED', 'true')
+    vi.stubEnv('TENANT_DB_AREAS', 'team-profiles:shadow')
+    for (const body of bodies) expect((await POST(req(body), ctx('own'))).status, `shadow ${body.action}`).toBe(503)
+
+    vi.stubEnv('TENANT_DB_AREAS', 'team-profiles:tenant')
+    vi.stubEnv('TENANT_DATABASE_URL', '')
+    state.rows.participants = [{ id: P1, registrations: { event_slug: 'own' } }]
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+    for (const body of bodies) {
+      state.queries = []
+      const res = await POST(req(body), ctx('own'))
+      expect(res.status, `tenant ${body.action}`).toBe(500)
+      expect(queries('participants').filter((q) => q.op !== 'select'), body.action).toEqual([])
+    }
+    error.mockRestore()
+    expect(state.autoAssign).not.toHaveBeenCalled()
+    expect(state.overrideOutstanding).not.toHaveBeenCalled()
+  })
+
   // Placing a student stays on the service path for a tenant's staff, so the only thing
   // confining the write is the participant-in-event check (AUTH-3) and the company check.
   it("on their own event: moving another event's participant, or into another event's company, writes nothing", async () => {

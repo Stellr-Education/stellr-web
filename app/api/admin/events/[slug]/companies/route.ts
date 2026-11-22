@@ -13,10 +13,15 @@ import {
   renameEventCompany,
   setEventCompanyCount,
   teamProfileSubmittedAt,
-  updateEventParticipant,
 } from '@/lib/events/admin-config'
-import { autoAssign, AssignError } from '@/lib/team-profile/assign'
-import { CLEARED_OVERRIDE, overrideFields, overrideOutstanding } from '@/lib/team-profile/override'
+import { AssignError } from '@/lib/team-profile/assign'
+import {
+  autoAssignEvent,
+  overrideOutstandingEvent,
+  overrideParticipant,
+  teamProfilesOnTenantPath,
+} from '@/lib/team-profile/admin-data'
+import { CLEARED_OVERRIDE, overrideFields } from '@/lib/team-profile/override'
 import { loadSurveyEvent } from '@/lib/survey/events'
 import { refuseOutsideStellr } from '@/lib/tenancy/load-scoped'
 
@@ -34,9 +39,11 @@ import { refuseOutsideStellr } from '@/lib/tenancy/load-scoped'
 //
 // The list, the count, a company's name and a student's move are the 'events-config'
 // area (lib/events/admin-config.ts): today's queries unless TENANT_DB_AREAS names it.
-// Auto-Assign and the overrides stay on today's queries. They read
-// team profiles, which tenant events do not take yet, so a tenant's staff are
-// refused those three.
+// Auto-Assign and the overrides are the 'team-profiles' area (lib/team-profile/admin-data.ts,
+// S5 A10c): today's queries unless TENANT_DB_AREAS names it. A tenant's staff reach those
+// three only when the area is in tenant mode (the tenant database answers), under the tenant row
+// policies; on the service and shadow paths they are refused as before. Stellr's staff are
+// unaffected either way.
 
 const ROUTE = '/api/admin/events/[slug]/companies'
 
@@ -101,7 +108,7 @@ async function changePlacement(req: Request, { params }: Params) {
   const body = await req.json().catch(() => null)
   const action = body?.action
   if (typeof action === 'string' && /^[a-z_]{1,20}$/.test(action)) noteAuditSubject(req, { detail: { op: action } })
-  if (STELLR_ONLY_ACTIONS.has(action)) {
+  if (STELLR_ONLY_ACTIONS.has(action) && !teamProfilesOnTenantPath()) {
     const refused = refuseOutsideStellr(crew.scope)
     if (refused) return refused
   }
@@ -168,15 +175,16 @@ async function changePlacement(req: Request, { params }: Params) {
     const fields = overridden
       ? overrideFields({ userId: crew.userId, name: (await actorFromAuth()).actorLabel ?? null })
       : CLEARED_OVERRIDE
-    const { error } = await updateEventParticipant(db, participantId, fields)
-    if (error) return NextResponse.json({ error: 'Database error' }, { status: 500 })
+    if (!(await overrideParticipant(db, crew.tenantId, slug, participantId, fields))) {
+      return NextResponse.json({ error: 'Database error' }, { status: 500 })
+    }
     return NextResponse.json({ ok: true })
   }
 
   if (action === 'override_all') {
     try {
       const actor = await actorFromAuth()
-      const result = await overrideOutstanding(db, slug, { userId: crew.userId, name: actor.actorLabel ?? null })
+      const result = await overrideOutstandingEvent(db, crew.tenantId, slug, { userId: crew.userId, name: actor.actorLabel ?? null })
       return NextResponse.json({ ok: true, ...result })
     } catch (err) {
       console.error('[companies] override all failed:', err)
@@ -187,7 +195,7 @@ async function changePlacement(req: Request, { params }: Params) {
   if (action === 'auto_assign') {
     const event = await loadSurveyEvent(slug)
     try {
-      const result = await autoAssign(db, slug, event?.date ?? null)
+      const result = await autoAssignEvent(db, crew.tenantId, slug, event?.date ?? null)
       return NextResponse.json({ ok: true, ...result })
     } catch (err) {
       if (err instanceof AssignError) return NextResponse.json({ error: err.message }, { status: 400 })

@@ -25,10 +25,12 @@
 // row policies, confined in SQL to this event's participant and this event's company. The
 // route still runs findEventParticipant and findEventCompany first, on every path.
 //
-// Everything else here stays on the service-role client: the overrides and Auto-Assign
-// (they read team profiles, which tenant events do not take until A10c) and Stellr's store
-// (offerings and the merch batch), which a tenant's staff cannot reach (the routes answer
-// refuseOutsideStellr first) and which take a StellrOnlyDb for that reason.
+// The overrides and Auto-Assign are not here: since A10c they are the 'team-profiles' area,
+// in lib/team-profile/admin-data.ts (the override's service path still calls
+// updateEventParticipant below). Everything else here stays on the service-role client:
+// the confinement checks the routes run first, and Stellr's store (offerings and the merch
+// batch), which a tenant's staff cannot reach (the routes answer refuseOutsideStellr first)
+// and which takes a StellrOnlyDb for that reason.
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { errorCodeOf, readArea, writeArea } from '@/lib/tenancy/area-switch'
 import type { TenantDb } from '@/lib/tenancy/db'
