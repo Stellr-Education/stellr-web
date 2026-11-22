@@ -8,10 +8,9 @@ import { withCronAudit } from '@/lib/cron-audit'
 import { startCronRun } from '@/lib/cron-runs'
 import { runPerTenant, type TenantJob } from '@/lib/cron-tenants'
 import { getEventBySlugIn } from '@/lib/events/tenant-facade'
-import { syncDueGroupInvoices } from '@/lib/group-billing'
 import { syncAddonInvoice } from '@/lib/addons/invoice'
 import { sweepUnpaidAddons } from '@/lib/addons/sweep'
-import { settleDueShares } from '@/lib/teacher-share'
+import { settleDueShares, syncDueGroupInvoices } from '@/lib/billing-sweeps'
 import { STELLR_TENANT_ID } from '@/lib/tenancy/constants'
 
 // GET /api/cron/group-invoice-sync — runs daily (see vercel.json).
@@ -35,8 +34,8 @@ import { STELLR_TENANT_ID } from '@/lib/tenancy/constants'
 // Stellr's reads take Stellr's rows (NULL counts as Stellr), so a backlog of held
 // rows can never fill the 50 a pass takes and starve Stellr's.
 //
-// Both passes are the lib sweeps, syncDueGroupInvoices (lib/group-billing.ts) and
-// settleDueShares (lib/teacher-share.ts), given the job's tenant, the deadline and
+// Both passes are the lib sweeps, syncDueGroupInvoices and settleDueShares
+// (lib/billing-sweeps.ts), given the job's tenant, the deadline and
 // the abort check. test/cron-per-tenant-b22.test.ts proves the Stripe calls and
 // writes match the sweeps' unscoped run on a Stellr fixture. The held counts are
 // head counts: no held row is fetched.

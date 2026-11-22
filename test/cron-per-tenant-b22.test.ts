@@ -180,8 +180,7 @@ async function runRoute() {
 /** The sweeps the route ran before B22, exactly as it called them. */
 async function runBefore(db: unknown, stripe: Stripe) {
   vi.resetModules()
-  const { syncDueGroupInvoices } = await import('@/lib/group-billing')
-  const { settleDueShares } = await import('@/lib/teacher-share')
+  const { syncDueGroupInvoices, settleDueShares } = await import('@/lib/billing-sweeps')
   const tally = await syncDueGroupInvoices(db as never, stripe)
   const shares = await settleDueShares(db as never, stripe)
   return { ...tally, ...Object.fromEntries(Object.entries(shares).map(([k, v]) => [`share_${k}`, v])) }
