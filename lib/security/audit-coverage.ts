@@ -102,6 +102,7 @@ export const AUDIT_EXEMPTIONS: Readonly<Record<string, string>> = {
   'app/api/join-network/route.ts#POST': `${ANON}: emails the contact inbox and changes no record`,
   'app/api/host-event/route.ts#POST': `${ANON}: forwards a lead to HubSpot and emails the contact inbox`,
   'app/api/asset-request/route.ts#POST': `${ANON}: forwards a lead to HubSpot and emails the requested asset`,
+  'app/api/check-in/route.ts#DELETE': '"Not you?" at the check-in door: clears this phone\'s cookie and reads or writes no record. Unauthenticated and not rate-limited, so an audit row would let anyone flood the append-only chain (owner decision PR721-1, 22 Nov 2026)',
   'app/api/csp-report/route.ts#POST': "the browser's own CSP violation report: scrubbed to the function log, no actor and no record",
 }
 
