@@ -12,6 +12,7 @@ import { Collapsible, CollapsibleGroup, CollapseAllControls } from '@stellr/web-
 import { usableDefinition } from '@/lib/survey/distributions'
 import { normaliseDefinition, questionsFor, ROLES, versionName } from '@/lib/survey/definition'
 import { stellrRows } from '@/lib/tenancy/stellr-scope'
+import { StepUpDownloadLink } from '@/components/admin/step-up'
 
 // /admin/surveys — every event's post-event survey, the fundraising headline
 // numbers (handover §8) filterable by event and year, the exports (A3) and
@@ -130,8 +131,8 @@ export default async function AdminSurveysPage({ searchParams }: { searchParams:
         </label>
         <button className="rounded-lg bg-brand-blue px-3 py-1.5 font-medium text-white">Apply</button>
         <span className="ml-auto flex flex-wrap gap-2">
-          <a className="rounded-lg border border-brand-border bg-white px-3 py-1.5 text-brand-muted" href={`/api/admin/surveys/export${q({ format: 'long', event: eventSlug, year })}`}>CSV (long)</a>
-          <a className="rounded-lg border border-brand-border bg-white px-3 py-1.5 text-brand-muted" href={`/api/admin/surveys/export${q({ format: 'wide', event: eventSlug, year })}`}>CSV (wide)</a>
+          <StepUpDownloadLink className="rounded-lg border border-brand-border bg-white px-3 py-1.5 text-brand-muted" href={`/api/admin/surveys/export${q({ format: 'long', event: eventSlug, year })}`}>CSV (long)</StepUpDownloadLink>
+          <StepUpDownloadLink className="rounded-lg border border-brand-border bg-white px-3 py-1.5 text-brand-muted" href={`/api/admin/surveys/export${q({ format: 'wide', event: eventSlug, year })}`}>CSV (wide)</StepUpDownloadLink>
           <a className="rounded-lg border border-brand-border bg-white px-3 py-1.5 text-brand-muted" href={`/api/admin/surveys/testimonials${filterQs}`}>Quotable answers</a>
         </span>
       </form>

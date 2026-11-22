@@ -57,7 +57,8 @@ const MANIFEST_CLASS_COUNTS: Record<RouteClass, number> = {
   // +8 tenant_crew, -8 stellr_only: admin scholarships/[id] and its six actions (C20) and event-managers (C21), S5 wave 9
   tenant_crew: 63,
   // +2 on 17 Nov 2026: members/addons/[registrationId] and account/extras/[registrationId] (event add-ons)
-  participant: 134,
+  // +1 on 21 Nov 2026: account/two-step, the admin two-step prompt (F4 part B)
+  participant: 135,
   // +6 on 16 Nov 2026: the Classroom Qualifier hub, its two window pages, the library and the teacher stories list and detail.
   // +2 on 17 Nov 2026: register/addons-pay and register/[slug]/addons/pay/[token] (event add-ons, denied on tenant hosts)
   // +1 on 20 Nov 2026: the tenant tree's /sign/email page (BOUNCE)
@@ -85,7 +86,8 @@ const MANIFEST_CLASS_COUNTS: Record<RouteClass, number> = {
 // +7 on 17 Nov 2026: event add-ons (3 admin, 2 member, 2 pay link; members/addons pending like every member API, the rest denied).
 // +1 on 17 Nov 2026: admin events/[slug]/addons/bookings (tenant_crew, denied on tenant hosts like every admin route).
 // +1 on 20 Nov 2026: the tenant tree's /sign/email page (S5 wave 8, BOUNCE).
-const MANIFEST_TOTAL = 529
+// +1 on 21 Nov 2026: account/two-step, the admin two-step prompt (F4 part B; participant, denied on tenant hosts like the admin portal).
+const MANIFEST_TOTAL = 530
 
 // The decisions. Moving a route between them is a deliberate diff here.
 const DECISION_COUNTS: Record<TenantSurfaceDecision, number> = {
@@ -96,7 +98,8 @@ const DECISION_COUNTS: Record<TenantSurfaceDecision, number> = {
   pending: 49,
   bypass: 4,
   // +1: the tenant tree's /sign/email page, a tree file like its siblings (BOUNCE)
-  deny: 424,
+  // +1: account/two-step, the admin portal's two-step prompt (F4 part B)
+  deny: 425,
 }
 
 /** A concrete URL a manifest file serves, with sample values for its params. */

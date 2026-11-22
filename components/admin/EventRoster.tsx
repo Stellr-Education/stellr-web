@@ -23,6 +23,7 @@ import { STUDENT_ROLES } from '@/lib/membership-rules'
 import { Badge, Collapsible, CollapsibleGroup, CollapseAllControls } from '@stellr/web-ui'
 import { MemberLink, SchoolLink } from '@/components/admin/RecordLinks'
 import { ROSTER_OPT_OUT_DETAIL, ROSTER_OPT_OUT_LABEL, type RosterOptOut } from '@/lib/roster-optouts'
+import { StepUpDownloadLink } from '@/components/admin/step-up'
 
 // The staff marker for a participant whose guardian has not yet signed the consent
 // for another organiser's event (T-23; wording WD-6). Stellr's events have none.
@@ -286,12 +287,12 @@ export default function EventRoster({
         />
       )}
       {p.event_role === 'mentor' && p.compliance_pill === 'valid_bc' && (
-        <a
+        <StepUpDownloadLink
           href={`/api/admin/events/${eventSlug}/background-reports?participant=${p.id}`}
           className={card ? `${TAP} text-primary` : 'text-xs font-medium text-brand-blue hover:text-brand-blue-dark'}
         >
           {isAdmin ? 'Checkr Report' : 'Clearance PDF'}
-        </a>
+        </StepUpDownloadLink>
       )}
       {/* Fixes a typo or bounce on the same envelope: keeps
           signatures and uses no monthly envelope, so it comes
@@ -396,31 +397,31 @@ export default function EventRoster({
         >
           Email Engagement
         </Link>
-        <a
+        <StepUpDownloadLink
           href={exportHref}
           className="text-sm font-medium text-brand-blue hover:text-brand-blue border border-brand-blue rounded-lg px-3 py-1.5"
         >
           Export CSV
-        </a>
+        </StepUpDownloadLink>
         {/* Admins get both: Checkr's reports (admins only, FCRA) and the
             clearance summary an event team can be given. Event managers get
             the summary alone. */}
         {isAdmin && (
-          <a
+          <StepUpDownloadLink
             href={`/api/admin/events/${eventSlug}/background-reports`}
             title="Cover page plus each cleared mentor's Checkr report, fetched from Checkr now. Admins only."
             className="text-sm font-medium text-brand-blue hover:text-brand-blue border border-brand-blue rounded-lg px-3 py-1.5"
           >
             Mentor Reports (PDF)
-          </a>
+          </StepUpDownloadLink>
         )}
-        <a
+        <StepUpDownloadLink
           href={`/api/admin/events/${eventSlug}/background-reports?mode=summary`}
           title="Each mentor's clearance status and dates, with no Checkr report pages."
           className="text-sm font-medium text-brand-blue hover:text-brand-blue border border-brand-blue rounded-lg px-3 py-1.5"
         >
           Mentor Clearance (PDF)
-        </a>
+        </StepUpDownloadLink>
       </div>
 
       {/* Offered, but the student hasn't completed their details — so there is

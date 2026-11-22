@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import { supabaseServer } from '@/lib/supabase'
 import { requireEventRoute } from '@/lib/authz'
+import { requireStepUp } from '@/lib/authz/step-up'
 import { auditSubject, noteAuditSubject } from '@/lib/audit/route-subject'
 import { withAudit } from '@/lib/audit/route'
 import { stellrOnlyDb } from '@/lib/events/admin-records'
@@ -65,6 +66,9 @@ async function list(req: Request, { params }: Ctx) {
   }
   const lines = await loadEventBookings(c.db, slug)
   if (url.searchParams.get('format') === 'csv') {
+    // F4: the CSV manifest is a download of personal data (ADMIN_STEP_UP_ENFORCE); the JSON list is not gated.
+    const stepUp = await requireStepUp()
+    if (stepUp) return stepUp
     const addonId = url.searchParams.get('addonId')
     const chosen = lines.filter((l) => l.addonId === addonId)
     const event = await getEventBySlug(slug).catch(() => null)
