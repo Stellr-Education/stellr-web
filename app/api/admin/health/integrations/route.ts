@@ -4,7 +4,8 @@ import { vercelTarget } from '@/lib/env'
 import { integrationEnvironments, isRealProductionApp } from '@/lib/env-guards'
 import { supabaseServer } from '@/lib/supabase'
 import { supabaseKeySlots } from '@/lib/supabase-keys'
-import { resolveDerivationMode, tenancyReport, type DerivationModeReport } from '@/lib/tenancy/flags'
+import { readinessReport, resolveDerivationMode, tenancyReport, type DerivationModeReport, type ReadinessLockRead } from '@/lib/tenancy/flags'
+import { reportError } from '@/lib/app-errors'
 import { tenantRoutingConfig } from '@/lib/tenancy/host'
 import { loadScopedMode } from '@/lib/tenancy/load-scoped'
 import { isTenantDbEnabled } from '@/lib/tenancy/tenant-db-config'
@@ -28,6 +29,33 @@ async function readDerivationMode(): Promise<DerivationModeReport> {
   } catch {
     return resolveDerivationMode({ failed: true, value: undefined })
   }
+}
+
+/**
+ * The readiness lock (S5 .32): whether tenancy_settings.tenants_ready_at is set, and how many
+ * tenants other than the platform owner are active. Two service-role reads, each failing to
+ * 'unavailable' on its own, so the report still renders before the lock's migration is applied.
+ */
+async function readReadinessLock(): Promise<ReadinessLockRead> {
+  const failed = { failed: true, value: null }
+  let db: ReturnType<typeof supabaseServer>
+  try {
+    db = supabaseServer()
+  } catch {
+    return { readyAt: failed, activeOtherTenants: failed }
+  }
+  const signal = () => AbortSignal.timeout(DERIVATION_READ_TIMEOUT_MS)
+  const [lock, tenants] = await Promise.all([
+    db.from('tenancy_settings').select('tenants_ready_at').eq('id', true).abortSignal(signal()).maybeSingle().then(
+      (r) => ({ failed: !!r.error, value: (r.data as { tenants_ready_at?: unknown } | null)?.tenants_ready_at ?? null }),
+      () => failed,
+    ),
+    db.from('tenants').select('id', { count: 'exact', head: true }).eq('status', 'active').eq('is_platform_owner', false).abortSignal(signal()).then(
+      (r) => ({ failed: !!r.error, value: r.count }),
+      () => failed,
+    ),
+  ])
+  return { readyAt: lock, activeOtherTenants: tenants }
 }
 
 // GET /api/admin/health/integrations
@@ -62,6 +90,12 @@ async function readDerivationMode(): Promise<DerivationModeReport> {
 // need. The derivation mode costs one service-role read. Informational: it does not
 // feed `ok`. Each dev flip checks it after the redeploy (docs/TENANCY-S5.md).
 //
+// `readiness` (S5 .32) is the readiness lock: 'open', 'closed' or 'unavailable', the
+// count of active tenants other than the platform owner, and the isolating switches
+// (lib/tenancy/flags.ts, ISOLATING_SWITCHES) not in their isolating state, by id. When another
+// tenant is active while one is missing, `violation` is true and a TENANCY readiness row goes to
+// app_errors (no tenant named). Informational: it does not feed `ok`.
+//
 // `tenancy.tenantDb.config` (S5 wave 7, O3) appears only when TENANT_DB_ENABLED is
 // 'true': whether TENANT_DATABASE_URL and its CA pass the driver's checks, each 'ok'
 // or a fixed reason, never a value. The driver module is loaded for it by dynamic
@@ -86,7 +120,14 @@ export async function GET() {
     : []
 
   const routing = tenantRoutingConfig()
-  const report = tenancyReport(await readDerivationMode())
+  const [derivationMode, lockRead] = await Promise.all([readDerivationMode(), readReadinessLock()])
+  const report = tenancyReport(derivationMode)
+  const readiness = readinessReport(report, lockRead)
+  if (readiness.violation) {
+    await reportError(new Error(`TENANCY readiness: another tenant is active while isolating switches are not met: ${readiness.missing.join(', ')}`), {
+      route: 'TENANCY readiness',
+    })
+  }
   const tenancy = isTenantDbEnabled()
     ? { ...report, tenantDb: { ...report.tenantDb, config: (await import('@/lib/tenancy/driver')).tenantDbConfigStatus() } }
     : report
@@ -98,6 +139,7 @@ export async function GET() {
     tenantRouting: { enabled: routing.enabled, suffixError: routing.suffixError },
     loadScopedMode: loadScopedMode(),
     tenancy,
+    readiness,
     problems,
     ok: problems.length === 0,
   })

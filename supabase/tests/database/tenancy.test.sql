@@ -9,7 +9,7 @@
 BEGIN;
 SET LOCAL search_path = extensions, public;
 
-SELECT plan(420);
+SELECT plan(428);
 
 -- 1. Every table in public and entitlements is classified, and nothing else is.
 SELECT set_eq(
@@ -936,6 +936,40 @@ SELECT ok(NOT EXISTS (
 ), 'the derivation log is append-only: no unique key per day, so no writer waits on a shared counter row');
 SELECT ok((SELECT proconfig FROM pg_proc WHERE oid = 'public.tenancy_log_derivation(text, text, text, text)'::regprocedure) @> ARRAY['lock_timeout=250ms'],
   'the log writer caps any lock wait at 250 ms');
+SELECT is((SELECT tenants_ready_at FROM public.tenancy_settings), NULL::timestamptz, 'the readiness lock starts closed');
+SELECT throws_ok(
+  $q$INSERT INTO public.tenants (slug, legal_name, display_name, country, payment_region, currency, time_zone)
+     VALUES ('pgtap-early', 'Early Ltd', 'Early', 'US', 'US', 'usd', 'America/Denver')$q$,
+  '55000', NULL, 'with the lock closed, another tenant cannot be inserted active'
+);
+SELECT lives_ok(
+  $q$INSERT INTO public.tenants (slug, legal_name, display_name, country, payment_region, currency, time_zone, status)
+     VALUES ('pgtap-prov', 'Prov Ltd', 'Prov', 'US', 'US', 'usd', 'America/Denver', 'provisioning')$q$,
+  'with the lock closed, another tenant can still be set up as provisioning'
+);
+SELECT throws_ok(
+  $q$UPDATE public.tenants SET status = 'active' WHERE slug = 'pgtap-prov'$q$,
+  '55000', NULL, 'with the lock closed, a provisioning tenant cannot go active'
+);
+SELECT lives_ok(
+  $q$UPDATE public.tenants SET display_name = display_name, status = status WHERE is_platform_owner$q$,
+  'with the lock closed, the platform owner is untouched by it'
+);
+UPDATE public.tenancy_settings SET tenants_ready_at = now(), tenants_ready_note = 'pgTAP fixture (rolled back)';
+SELECT lives_ok(
+  $q$UPDATE public.tenants SET status = 'active' WHERE slug = 'pgtap-prov'$q$,
+  'with the lock open, the tenant can go active'
+);
+SELECT throws_ok(
+  $q$UPDATE public.tenancy_settings SET tenants_ready_at = NULL$q$,
+  '55000', NULL, 'the lock cannot close while another tenant is active'
+);
+UPDATE public.tenants SET status = 'suspended' WHERE slug = 'pgtap-prov';
+SELECT lives_ok(
+  $q$UPDATE public.tenancy_settings SET tenants_ready_at = NULL$q$,
+  'once that tenant is suspended, the lock can close'
+);
+UPDATE public.tenancy_settings SET tenants_ready_at = now(), tenants_ready_note = 'pgTAP fixture (rolled back)';
 SELECT throws_ok(
   $q$INSERT INTO public.tenants (slug, legal_name, display_name, country, payment_region, currency, time_zone, min_participant_age)
      VALUES ('pgtap-young', 'Young Ltd', 'Young', 'AU', 'AU', 'aud', 'Australia/Sydney', 13)$q$,

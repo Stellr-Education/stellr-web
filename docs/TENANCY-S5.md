@@ -1063,6 +1063,28 @@ Other things this slice leaves in place:
 
 **Two different TODO pairs.** Do not conflate them. The snapshot entries in `test/idor/idor-snapshot.json` are on community coaching request and training `[itemId]/flag`. The allow-list entries in `route-guards.ts` are `schools/search` and `store/checkout`. B9 and C6 close the first pair; B15 closes the second.
 
+## The readiness lock
+
+Programme row `.32`, built 22 Nov 2026 (migration `20261122020000_tenancy_readiness_lock.sql`). `public.tenants.status` defaults to `'active'`, so before this a second tenant was live the moment it was inserted, whatever the switches said.
+
+- **The database refuses** a tenant other than the platform owner going `active`, on insert or update, while `tenancy_settings.tenants_ready_at` is NULL (SQLSTATE 55000). `provisioning`, `suspended` and `archived` are always allowed, so a tenant can be set up before the lock opens. Only one platform owner can exist, so the owner flag is no way round it.
+- **The lock cannot close** (`tenants_ready_at` back to NULL) while any other tenant is active: suspend those first.
+- **The lock is an attestation.** The database cannot see the Vercel variables, so the owner sets `tenants_ready_at` (and `tenants_ready_note`: who, and against which check, with no personal data) only after reading the health route's `readiness` block on that environment's deployment and finding `missing` empty. The isolating switches are `ISOLATING_SWITCHES` in `lib/tenancy/flags.ts`:
+
+| Id | Switch | Isolating state |
+|---|---|---|
+| `authz_postgres` | `AUTHZ_SOURCE` | `postgres` |
+| `loadscoped_enforce` | `LOADSCOPED_MODE` | `enforce` |
+| `derivation_enforce` | `tenancy_settings.derivation_mode` | `enforce` |
+| `platform_audit` | `PLATFORM_AUDIT_ENABLED` | on |
+| `guardian_consent` | `TENANT_GUARDIAN_CONSENT_ENABLED`, `TENANT_EVENT_MAIL_ENABLED` | on, with its preconditions met |
+| `tenant_routing` | `TENANT_ROUTING_ENABLED`, `TENANT_HOST_SUFFIX` | on, with a usable zone suffix |
+
+- **Afterwards, the health route watches it.** `GET /api/admin/health/integrations` returns `readiness`: `lock` (`open`, `closed` or `unavailable`), `activeOtherTenants`, `missing` (ids from the table) and `violation`. `violation` is true when another tenant is active while a switch is missing, for example after a switch is turned back off. Each read that finds one writes a `TENANCY readiness` row to `app_errors`, with no tenant named. The check runs on each health read; there is no separate startup hook.
+- **On `dev`,** the owner opens the lock before K9's canary tenant goes active (`WD-K9`). Each K9 flip can then be read against `missing`. `scripts/seed-two-tenants.ts --profile flow` refuses before any write while the lock is closed.
+- **Test fixtures** that insert another tenant open the lock inside their own rolled-back transaction (pgTAP), or open it and close it again around their run (`test/integration/readiness-lock.ts`).
+- **What the set is** is owner decision `T-32` (`docs/S5-DECISION-REGISTER.md`), approved as built on 22 Nov 2026.
+
 ## Gates
 
 S5 finishes when all of these hold. Each names its proof.

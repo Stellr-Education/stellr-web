@@ -8120,6 +8120,8 @@ export type Database = {
           expand_applied_at: string | null
           id: boolean
           note: string | null
+          tenants_ready_at: string | null
+          tenants_ready_note: string | null
           updated_at: string
         }
         Insert: {
@@ -8127,6 +8129,8 @@ export type Database = {
           expand_applied_at?: string | null
           id?: boolean
           note?: string | null
+          tenants_ready_at?: string | null
+          tenants_ready_note?: string | null
           updated_at?: string
         }
         Update: {
@@ -8134,6 +8138,8 @@ export type Database = {
           expand_applied_at?: string | null
           id?: boolean
           note?: string | null
+          tenants_ready_at?: string | null
+          tenants_ready_note?: string | null
           updated_at?: string
         }
         Relationships: []
