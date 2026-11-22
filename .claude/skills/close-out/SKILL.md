@@ -26,7 +26,7 @@ never editing another session's rows, and docs-only changes skipping e2e in CI.
 
 ## People: the repo is public
 
-`aussie-spaceman/stellr-web` is a **public** repository. Everything you push
+`Stellr-Education/stellr-web` is a **public** repository. Everything you push
 can be read by anyone and is effectively permanent: files, commit messages, PR
 titles and bodies, and branch names. A commit pushed to a PR stays reachable
 through `refs/pull/*` even after its branch is deleted. Most of the people this
