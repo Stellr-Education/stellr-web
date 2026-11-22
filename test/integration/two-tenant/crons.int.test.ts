@@ -399,11 +399,14 @@ describe('group-invoice-sync', () => {
     expect(parent.result).not.toHaveProperty('tenants')
     expect(log.turns).toEqual([])
     expect(h.calls.filter((c) => c.fn === 'syncGroupInvoice').map((c) => c.arg)).toEqual([S.registration])
-    // Stellr's two passes read Stellr's rows only; the held counts come after them.
+    // Stellr's two passes read Stellr's rows only; the held counts are head counts
+    // after them, which fetch no row but count the canary's.
     const reads = log.entries.filter((e) => e.table === 'registrations' && e.op === 'select')
-    expect(reads.length).toBeGreaterThanOrEqual(4)
+    expect(reads.length).toBeGreaterThanOrEqual(2)
     for (const r of reads.slice(0, 2)) expect(r.tenants.map(tenantOf).filter((t) => t !== STELLR_TENANT_ID)).toEqual([])
-    expect(reads.slice(2).flatMap((r) => r.tenants)).toContain(canary.id)
+    const counts = log.entries.filter((e) => e.table === 'registrations' && e.op === 'count')
+    expect(counts.length).toBeGreaterThanOrEqual(2)
+    expect(counts.flatMap((r) => r.tenants)).toContain(canary.id)
     // Nothing was written to the canary's registration: it stays due for S9.
     expect(log.entries.filter((e) => e.op !== 'select' && e.op !== 'count' && e.tenants.includes(canary.id))).toEqual([])
     const [held] = await kit.admin<Row[]>`SELECT invoice_sync_due_at FROM public.registrations WHERE id = ${C.registration}::uuid`

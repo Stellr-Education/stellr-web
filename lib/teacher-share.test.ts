@@ -20,7 +20,6 @@ import {
   recordSeatShare,
   refreshShare,
   seatCharge,
-  settleDueShares,
   settleShare,
   shareCounts,
   shareFor,
@@ -30,6 +29,7 @@ import {
   type SharePerson,
 } from './teacher-share'
 import { payerOf } from './group-payer'
+import { settleDueShares } from '@/lib/billing-sweeps'
 
 type Row = Record<string, unknown>
 

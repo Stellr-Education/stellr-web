@@ -419,33 +419,6 @@ export function eventIsOver(event: { date?: string | null; endDate?: string | nu
   return now.getTime() >= dayAfter.getTime()
 }
 
-/** The daily sweep: settles every sharing group whose event is over. */
-export async function settleDueShares(db: Db, stripe: Stripe, limit = 50): Promise<Record<string, number>> {
-  const { data, error } = await db.from('registrations')
-    .select('id, event_slug')
-    .not('share_estimate', 'is', null)
-    .is('share_settled_at', null)
-    .neq('status', 'withdrawn')
-    .limit(limit)
-  if (error) throw new Error(error.message)
-  const tally: Record<string, number> = { settled: 0, not_due: 0, refunds: 0, refunds_failed: 0 }
-  const events = new Map<string, boolean>()
-  const due: Pick<RegistrationRow, 'id' | 'event_slug'>[] = data ?? []
-  for (const row of due) {
-    if (!events.has(row.event_slug)) {
-      const event = (await getEventBySlug(row.event_slug).catch(() => null)) as { date?: string; endDate?: string } | null
-      events.set(row.event_slug, eventIsOver(event))
-    }
-    if (!events.get(row.event_slug)) { tally.not_due++; continue }
-    const out = await settleShare(db, stripe, row.id)
-    if (!out) continue
-    tally.settled++
-    tally.refunds += out.refunded
-    tally.refunds_failed += out.failed
-  }
-  return tally
-}
-
 /**
  * The group stops sharing the teacher's cost: every share paid is refunded, the
  * covered adults are no longer covered, and the share columns are cleared. The

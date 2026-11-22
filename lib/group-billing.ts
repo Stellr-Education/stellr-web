@@ -1162,22 +1162,6 @@ async function settleGroupInvoice(
   return 'alerted'
 }
 
-/** The daily backstop: settles every update whose waiting function never finished. */
-export async function syncDueGroupInvoices(db: Db, stripe: Stripe, limit = 50): Promise<Record<string, number>> {
-  const { data, error } = await db.from('registrations')
-    .select('id')
-    .not('invoice_sync_due_at', 'is', null)
-    .lte('invoice_sync_due_at', new Date().toISOString())
-    .limit(limit)
-  if (error) throw new Error(error.message)
-  const tally: Record<string, number> = {}
-  for (const { id } of (data ?? []) as { id: string }[]) {
-    const result = await syncGroupInvoice(db, stripe, id)
-    tally[result] = (tally[result] ?? 0) + 1
-  }
-  return tally
-}
-
 // ── Admin: discount and reissue ──────────────────────────────────────────────
 
 export interface ResolvedDiscount { couponId: string; code: string; label: string; terms: CouponTerms }
