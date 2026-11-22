@@ -7,6 +7,7 @@ import { MemberLink } from '@/components/admin/RecordLinks'
 import type { AdminSurveyView, CompletionRow } from '@/lib/survey/admin'
 import { versionName } from '@/lib/survey/definition'
 import { formatDateInZone, formatInZone, zonedTimeToUtc } from '@/lib/survey/timezone'
+import { StepUpDownloadLink } from '@/components/admin/step-up'
 
 // The event's "Survey" tab (handover A1/A2): when the post-event survey goes
 // live and closes, who it will reach, bringing it forward, pausing or closing
@@ -488,8 +489,8 @@ export function EventSurveyPanel({ eventSlug, appUrl }: { eventSlug: string; app
           <h3 className="text-sm font-semibold text-brand-muted">Exports</h3>
           {view.isAdmin ? (
             <div className="flex flex-wrap gap-2 text-sm">
-              <a className="rounded-lg border border-brand-border bg-white px-3 py-1.5 text-brand-muted" href={`/api/admin/surveys/export?format=long&event=${eventSlug}`}>Answers CSV (long)</a>
-              <a className="rounded-lg border border-brand-border bg-white px-3 py-1.5 text-brand-muted" href={`/api/admin/surveys/export?format=wide&event=${eventSlug}`}>Answers CSV (wide)</a>
+              <StepUpDownloadLink className="rounded-lg border border-brand-border bg-white px-3 py-1.5 text-brand-muted" href={`/api/admin/surveys/export?format=long&event=${eventSlug}`}>Answers CSV (long)</StepUpDownloadLink>
+              <StepUpDownloadLink className="rounded-lg border border-brand-border bg-white px-3 py-1.5 text-brand-muted" href={`/api/admin/surveys/export?format=wide&event=${eventSlug}`}>Answers CSV (wide)</StepUpDownloadLink>
               <a className="rounded-lg border border-brand-border bg-white px-3 py-1.5 text-brand-muted" href={`/api/admin/surveys/testimonials?event=${eventSlug}`}>Quotable answers</a>
             </div>
           ) : (

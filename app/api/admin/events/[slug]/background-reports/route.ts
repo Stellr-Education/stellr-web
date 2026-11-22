@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { supabaseServer } from '@/lib/supabase'
 import { hasCapability, requireEventRoute } from '@/lib/authz'
+import { requireStepUp } from '@/lib/authz/step-up'
 import { refuseOutsideStellr } from '@/lib/tenancy/load-scoped'
 import { getEventBySlug } from '@/lib/events/repo'
 import { getBackgroundProvider } from '@/lib/background-provider'
@@ -34,6 +35,8 @@ export async function GET(req: Request, { params }: { params: Promise<{ slug: st
   if (!crew.ok) return crew.response
   const refused = refuseOutsideStellr(crew.scope)
   if (refused) return refused
+  const stepUp = await requireStepUp()
+  if (stepUp) return stepUp
 
   const search = new URL(req.url).searchParams
   const participantId = search.get('participant')

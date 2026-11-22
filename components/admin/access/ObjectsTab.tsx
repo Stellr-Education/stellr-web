@@ -5,6 +5,7 @@ import { ExternalLink, Plus, Trash2 } from 'lucide-react'
 import MemberPicker, { type PickedMember } from '@/components/admin/MemberPicker'
 import { MemberLink } from '@/components/admin/RecordLinks'
 import { toast } from '@/components/ui/Toast'
+import { useStepUpFetch } from '@/components/admin/use-step-up-fetch'
 import { NewObjectWizard } from './NewObjectWizard'
 
 // Objects tab — ONE container detail for every object type (design/admin-
@@ -203,13 +204,15 @@ function memberName(m: RosterEntry['members']): string {
 }
 
 function RosterPane({ object }: { object: ObjectListItem }) {
+  // F4: the roster read can ask for a re-verification (ADMIN_STEP_UP_ENFORCE).
+  const stepUpFetch = useStepUpFetch()
   const [kind, setKind] = useState<string>('container')
   const [rows, setRows] = useState<RosterEntry[] | null>(null)
   const [adding, setAdding] = useState(false)
   const [role, setRole] = useState('member')
 
   const load = useCallback(async () => {
-    const res = await fetch(`/api/admin/access/objects/${encodeURIComponent(object.ref)}/roster`)
+    const res = await stepUpFetch(`/api/admin/access/objects/${encodeURIComponent(object.ref)}/roster`)
     if (!res.ok) return setRows([])
     const j = await res.json()
     setKind(j.kind)
@@ -225,7 +228,7 @@ function RosterPane({ object }: { object: ObjectListItem }) {
     } else {
       setRows(j.roster ?? [])
     }
-  }, [object.ref])
+  }, [object.ref, stepUpFetch])
 
   useEffect(() => { void load() }, [load])
 
