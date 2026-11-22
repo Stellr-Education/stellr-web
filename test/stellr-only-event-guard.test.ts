@@ -42,6 +42,21 @@ const BEFORE_OPTION = new Set([
 
 const EVENTS_DIR = 'app/api/admin/events/[slug]'
 
+/**
+ * S5 A10c: the one handler that may answer before the option. The credentials GET gives
+ * another tenant's staff their own event's panel while the 'credentials' area is on the tenant
+ * path, every part read through tenantDb pinned to their tenant (lib/events/admin-credentials.ts).
+ * Only these calls, only in that handler, and the gate (credentialsOnTenantPath) must come
+ * before the read it gates. Everything else in the file still answers the option first.
+ */
+const TENANT_PATH_BEFORE_OPTION: Record<string, { gate: string; calls: ReadonlySet<string> }> = {
+  [`${EVENTS_DIR}/credentials/route.ts#GET`]: {
+    gate: 'credentialsOnTenantPath',
+    // The audience from the query string, the gate, the tenantDb read, and its error log.
+    calls: new Set(['get', 'new URL', 'credentialsOnTenantPath', 'loadTenantCredentialPanel', 'error', 'errorCodeOf']),
+  },
+}
+
 const STELLR_ACCOUNT_ROUTES = [
   `${EVENTS_DIR}/remind/route.ts`,
   `${EVENTS_DIR}/docusign-reissue/route.ts`,
@@ -88,8 +103,16 @@ function stellrOnlyViolations(fileName: string, src: string): string[] {
       continue
     }
     if (!h.origins.get(OPTION)?.has(OPTION_ORIGIN)) out.push(`${h.name}: ${OPTION} is not the one from ${OPTION_ORIGIN}`)
-    const early = calls.slice(0, at).filter((c) => !BEFORE_OPTION.has(c))
+    const tenantPath = TENANT_PATH_BEFORE_OPTION[`${fileName}#${h.name}`]
+    const early = calls.slice(0, at).filter((c) => !BEFORE_OPTION.has(c) && !tenantPath?.calls.has(c))
     if (early.length) out.push(`${h.name}: reaches ${early.join(', ')} before the Stellr-only option`)
+    if (tenantPath) {
+      const gated = calls.slice(0, at).filter((c) => tenantPath.calls.has(c) && c !== tenantPath.gate && c !== 'get' && c !== 'new URL')
+      const gateAt = calls.indexOf(tenantPath.gate)
+      if (gated.length && (gateAt < 0 || gateAt > calls.indexOf(gated[0]))) {
+        out.push(`${h.name}: reaches ${gated[0]} before ${tenantPath.gate}`)
+      }
+    }
   }
   return out
 }
@@ -199,5 +222,41 @@ async function run(req: Request, { params }: { params: Promise<{ slug: string }>
   return NextResponse.json(await getEventRoster(slug, null, {}))
 }`
     expect(stellrOnlyViolations(FIXTURE, src)).toEqual([])
+  })
+
+  describe("A10c's tenant-path allowance is narrow", () => {
+    const CREDENTIALS = `${EVENTS_DIR}/credentials/route.ts`
+    const tenantHeader = `${header}
+import { credentialsOnTenantPath, loadTenantCredentialPanel } from '@/lib/events/admin-credentials'
+`
+    const gated = (method: string, gate: string) => `${tenantHeader}
+export async function ${method}(_req: Request, { params }: { params: Promise<{ slug: string }> }) {
+  const { slug } = await params
+  const crew = await requireEventRoute(slug, { route: 'fixture' })
+  if (!crew.ok) return crew.response
+  ${gate}
+  const foreign = await stellrOnlyEvent(crew.scope, supabaseServer(), slug, 'fixture')
+  if (foreign) return foreign
+  return NextResponse.json(await getEventRoster(slug, null, {}))
+}`
+    const gatedRead = 'if (credentialsOnTenantPath(crew.scope)) return NextResponse.json(await loadTenantCredentialPanel(crew.tenantId, slug, "students"))'
+
+    it('the credentials GET may read through the gate before the option', () => {
+      expect(stellrOnlyViolations(CREDENTIALS, gated('GET', gatedRead))).toEqual([])
+    })
+
+    it('the same read without the gate fails', () => {
+      const src = gated('GET', 'await loadTenantCredentialPanel(crew.tenantId, slug, "students")')
+      expect(stellrOnlyViolations(CREDENTIALS, src)).toEqual(['GET: reaches loadTenantCredentialPanel before credentialsOnTenantPath'])
+    })
+
+    it('in another handler, or another route, it fails', () => {
+      expect(stellrOnlyViolations(CREDENTIALS, gated('POST', gatedRead))).toEqual([
+        'POST: reaches credentialsOnTenantPath, loadTenantCredentialPanel before the Stellr-only option',
+      ])
+      expect(stellrOnlyViolations(`${EVENTS_DIR}/badges/route.ts`, gated('GET', gatedRead))).toEqual([
+        'GET: reaches credentialsOnTenantPath, loadTenantCredentialPanel before the Stellr-only option',
+      ])
+    })
   })
 })
