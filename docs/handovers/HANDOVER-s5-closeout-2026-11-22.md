@@ -34,8 +34,7 @@ Also, without a PR:
 
 | Ask | Why |
 |---|---|
-| Review and merge **#860** (readiness lock) and **#859** (CODEOWNERS) | Both touch CODEOWNERS-owned files |
-| Answer **T-32**: the switch set the lock attests | Raised after the 22 Nov blanket yes, so that yes doesn't cover it |
+| Review and merge **#860** (readiness lock) and **#859** (CODEOWNERS) | Both touch CODEOWNERS-owned files. T-32, the lock's switch set, was approved as recommended on 22 Nov 2026 |
 | Production `AUTHZ_SOURCE=shadow`: run `npx tsx scripts/map-tenancy-roles.ts --check --production`, sign in on production as an admin and as an event manager, open an event, then read `authz_%` rows in `app_errors` (`docs/AUTHZ.md`, runbook steps 1, 3, 4). Watch for 7 days; `postgres` only after a clean week | Agents cannot read production |
 | Active CPU on `stellr-web-dev` about 24 h after 22 Nov 00:12Z (P7) | P7 stays at 0.25 until it is read |
 | The event-manager half of `.35`'s C16 row; a real registration of each kind on dev; the A8 roster round; the Stripe shared-cost drill | Each needs a person, or a session Claude does not have |
