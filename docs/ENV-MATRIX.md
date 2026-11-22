@@ -87,6 +87,7 @@ dev writes to production.
 | `STRIPE_SECRET_KEY` | `sk_live_…` | `sk_test_…` | Stripe → test mode |
 | `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` | `pk_live_…` | `pk_test_…` | Same |
 | `STRIPE_WEBHOOK_SECRET` | live endpoint | test endpoint | Separate webhook in test mode |
+| `STRIPE_DEV_PRICE_MAP` | **unset** (ignored with a live key or `NEXT_PUBLIC_APP_ENV=prod`) | optional: `{"price_live":"price_test", …}` | Dev and local only. Sanity holds live event prices; this swaps each for a test-mode copy in the Stripe client's HTTP layer, so priced registrations can be tried with test cards (`lib/stripe-dev-prices.ts`). A malformed value throws |
 | `NEXT_PUBLIC_SITE_URL` | unset → falls back to `https://www.stellreducation.org` | dev www URL | **Must be set on dev.** `proxy.ts` redirects public-only routes here; unset means dev bounces users to production |
 | `NEXT_PUBLIC_AUTH_APP_URL` | `https://app.stellreducation.org` | dev app URL | `APP_HOST` derives from this; it decides which host is the member app |
 | `CRON_SECRET` | prod secret | a *different* secret | Generate fresh. Sharing it lets a dev URL trigger prod-shaped calls |

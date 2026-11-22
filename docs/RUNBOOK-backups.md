@@ -1,6 +1,6 @@
 # Runbook: database and storage backups
 
-Status: written 3 Nov 2026 (multi-tenancy plan S1). Not yet installed: every step in §2 is an owner action.
+Status: written 3 Nov 2026 (multi-tenancy plan S1). **Installed 22 Nov 2026** (§7): private repo `Stellr-Education/stellr-backups`, bucket `stellr-backups`, first restore drill passed. Every step in §2 is an owner action.
 
 Supabase Free keeps **no database backups**. Until this runbook is installed, the only off-site copy is the e-sign replica (signed PDFs and the agreement tables, nightly, to Google Drive; `lib/esign/replicate.ts`). Everything else (members, registrations, payments, credentials) has no copy at all.
 
@@ -43,10 +43,13 @@ On the owner's own machine:
 
 ```sh
 brew install age
-age-keygen -o stellr-backup.agekey      # prints "Public key: age1…"
+cd ~ && umask 077 && age-keygen -o ~/stellr-backup.agekey      # prints "Public key: age1…"
 ```
 
-- Put `stellr-backup.agekey` in the password manager **and** on an offline copy (USB key or paper in a safe). Without it, no backup can be read. Delete the loose file once it is stored.
+Generate it in the home folder, **never inside a repository checkout**: on install day the first key file was made in the `stellr-web` folder, where it sat untracked and one `git add -A` from being published. `.gitignore` now ignores `*.agekey`, but do not rely on that.
+
+- Put `stellr-backup.agekey` in the password manager **as a file attachment** (or the `AGE-SECRET-KEY-1…` line alone in a password field), **and** on an offline copy (USB key or paper in a safe). Do not paste it as note text: on install day a pasted note kept only the public key, and a second paste kept only the `AGE-SECRET-KEY-1` prefix. Without the private key, no backup can be read.
+- **Prove the stored copy before deleting the loose file**: download or copy it back out, then `[ "$(age-keygen -y <stored copy>)" = "$(age-keygen -y ~/stellr-backup.agekey)" ] && echo SAVED-COPY-OK`. Do the same for the offline copy. Write the first characters of the public key on each copy, so the right key is easy to tell apart. Only then delete the loose file.
 - The public key (`age1…`) is the `AGE_RECIPIENT` secret. To let a second person restore if the owner is unavailable, generate a second key the same way, give it to them, and set `AGE_RECIPIENT` to both public keys separated by a space.
 
 ### 2.2 Cloudflare R2
@@ -54,10 +57,10 @@ age-keygen -o stellr-backup.agekey      # prints "Public key: age1…"
 1. Create a bucket, for example `stellr-backups`, with a North America location hint.
 2. **Bucket lock rules** (Settings → Bucket lock): the three prefixes and ages in §1, and nothing else. **Treat a lock period as permanent for every object written under it**: plan as if an object written under a 35-day rule stays 35 days whatever the rule later says (to confirm against Cloudflare's bucket lock documentation on the day; if a rule turns out to be removable, that is a weakness of the ransomware protection, not a way to shorten retention). Check each number before saving. Do not add a `monthly/` rule (§1).
 3. **Lifecycle rules**: delete objects under the same prefixes after the same ages. Never shorter than the lock.
-4. API token for the Action: **Object Read & Write**, this bucket only. Its key ID and secret are `R2_ACCESS_KEY_ID` / `R2_SECRET_ACCESS_KEY`; the account ID is `R2_ACCOUNT_ID`; the bucket name is `R2_BUCKET`.
+4. API token for the Action: **Object Read & Write**, this bucket only, no client IP filter. Its key ID and secret are `R2_ACCESS_KEY_ID` / `R2_SECRET_ACCESS_KEY`: the two values under "Use the following credentials for S3 clients", **not** the "Token value" above them. The account ID (`R2_ACCOUNT_ID`) is the 32-character code in every dashboard URL; it is not the token ID. The bucket name is `R2_BUCKET`. On install day the first run failed `AccessDenied` on PutObject because these values were mixed up.
 5. A second token, **Object Read only**, for restore drills on the owner's machine. Never put it in GitHub.
 
-Free tier: 10 GB storage. Expected use is well under 2 GB (to confirm after the first month: about 24 × 8 hourly + 35 nightly + 35 storage archives).
+Free tier: 10 GB storage. **Measured on install day:** hourly 0.5 MB, nightly 2 MB, storage 97 MB per archive. At steady state (192 hourly + 35 nightly + 35 storage) that is about **3.6 GB**, almost all of it the storage archives, and it grows with uploaded files. The original estimate of under 2 GB was wrong. Check R2 → bucket → Metrics monthly; at 8 GB, decide between paying for R2 storage (cents per GB) and keeping fewer storage archives (the latter needs a shorter lock rule, which only applies to new objects).
 
 ### 2.3 The read-only database role
 
@@ -87,6 +90,8 @@ ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public, entitlements
 ```
 
 and, if BYPASSRLS itself is refused, ask Supabase support or fall back to a `postgres` URL held only in the private repo. Record which one was used here.
+
+**Used on 22 Nov 2026: the first block as written.** `BYPASSRLS` and `GRANT pg_read_all_data` were both accepted (dry-run on the dev project in a rolled-back transaction first, then run on production by the owner); the fallback grants were not needed. Use a password of letters and digits only, so it needs no escaping in the URL. Test from the owner's machine before adding the secret: `psql "$PROD_DATABASE_URL" -X -c "select current_user, current_setting('transaction_read_only')"` should return `backup_reader | on`.
 
 `PROD_DATABASE_URL` = the **session pooler** URI (Supabase → Connect → Session pooler, port 5432) with the user `backup_reader.<project ref>` and that password. GitHub runners have no IPv6, so the direct connection does not work.
 
@@ -119,7 +124,7 @@ When `ops/backups/` changes in `stellr-web` (owner review via CODEOWNERS), copy 
 
 ### 2.7 Actions minutes
 
-GitHub Free gives a private repo 2,000 minutes a month, rounded up per job. Expected: hourly about 2 minutes × 720 runs = 1,440; nightly about 4 × 30 = 120; storage about 3 × 30 = 90. **About 1,650: tight.** Check Settings → Billing after the first week. If it runs over, the options are the GitHub Pro plan (3,000 minutes), or making the repo public (its scripts are already public in `stellr-web`, the archives are encrypted and in R2, and secrets stay secret; but anyone can then see run times and failures). Owner decision; do not drop the hourly schedule, which is what holds the 1-hour RPO.
+The repo is in the `Stellr-Education` organisation, which is on GitHub Free until the nonprofit Team plan (3,000 minutes) is approved. GitHub Free gives a private repo 2,000 minutes a month, rounded up per job. Expected: hourly about 2 minutes × 720 runs = 1,440; nightly about 4 × 30 = 120; storage about 3 × 30 = 90. **About 1,650: tight.** Check Settings → Billing after the first week. If it runs over, the options are the GitHub Pro plan (3,000 minutes), or making the repo public (its scripts are already public in `stellr-web`, the archives are encrypted and in R2, and secrets stay secret; but anyone can then see run times and failures). Owner decision; do not drop the hourly schedule, which is what holds the 1-hour RPO.
 
 ## 3. When a heartbeat alerts
 
@@ -146,6 +151,19 @@ It decrypts each archive into a temp directory (deleted on exit), starts a throw
 - `count(*)` per table against the manifest;
 - every e-sign audit chain (`esign_verify_audit`), and prints the audit anchor, the same value `exportTables` writes into the daily e-sign Drive export;
 - every stored file's size and SHA-256, and every signed agreement's file against `agreements.signed_pdf_sha256`, the check `scripts/esign-restore-drill.ts` makes against the Drive copies.
+
+**Without Docker** (the owner's Mac has none): run a throwaway PostgreSQL 17 from Homebrew instead, on a TCP port (a Unix socket in a long temp path exceeds macOS's 103-byte limit), with the C locale (initdb refuses the default otherwise):
+
+```sh
+export PATH=/opt/homebrew/opt/postgresql@17/bin:$PATH LC_ALL=C LANG=C
+PGD=$(mktemp -d); initdb -D "$PGD/data" -U postgres -A trust --locale=C -E UTF8 --no-instructions >/dev/null
+pg_ctl -D "$PGD/data" -o "-c listen_addresses=127.0.0.1 -c port=54329 -c unix_socket_directories=''" -l "$PGD/log" -w start
+SCRATCH_PGHOST=127.0.0.1 SCRATCH_PGPORT=54329 SCRATCH_PGUSER=postgres ops/backups/restore-drill.sh --identity "$KEY" \
+  --nightly latest --hourly latest --storage latest --report ~/Documents/stellr-drill-$(date +%Y-%m-%d).txt
+pg_ctl -D "$PGD/data" -w stop; rm -rf "$PGD"      # always: the scratch databases hold restored personal data
+```
+
+Write the key to a temp file for the drill (`umask 077; KEY=$(mktemp)`, then the stored copy into it) and `rm -f "$KEY"` afterwards. If `age` reports `apparent recipient found in identities file`, the file holds the public key, not the private one.
 
 `RESULT: PASS` is the gate. The report holds table names, counts and hashes only, so it can be filed. Some objects are refused during restore (Supabase-only extensions, `auth` functions, grants to roles the scratch server lacks); the drill counts them and judges by the data. Record each drill in §7 and in the information security program §10. Run `scripts/esign-restore-drill.ts` in the same session: together they cover both copies of the signed records.
 
@@ -183,9 +201,11 @@ It decrypts each archive into a temp directory (deleted on exit), starts a throw
 
 | Date | What | Who | Result |
 |---|---|---|---|
-| (to do) | Install (§2) | Owner | |
-| (to do) | Skip alarm proven (§2.6 step 5) | Owner | |
-| (to do) | First restore drill | Owner | |
+| 22 Nov 2026 | Install (§2) | Owner | Done. First manual runs 17:42 UTC: hourly 42 tables / 1,442 rows; nightly 170 tables / 14,602 rows; storage 5 buckets / 216 files. Heartbeats green. `backup_reader` created with the first §2.3 block |
+| 22 Nov 2026 | Skip alarm proven (§2.6 step 5) | Owner | **Proven.** Workflow disabled 17:47 UTC after the last ping at 17:42 UTC; the hourly heartbeat alerted the owner by 19:15 UTC (expected about 19:12: 1 h period + 30 min grace); workflow re-enabled at once. Scheduled runs resumed |
+| 22 Nov 2026 | First restore drill | Owner | **PASS** in 1 min 55 s: nightly 170/170 tables, hourly overlay 42/42 tables with 0 orphans, 14 audit chains verify, 216 files and 70 signed agreements match. Local Homebrew Postgres, not Docker (§4) |
+| 22 Nov 2026 | Backup age key | Owner | Held as a file attachment in the password manager (copy proven), an offline copy, and a cloud copy in the owner's end-to-end encrypted drive (owner's choice). A second key generated by mistake that day is unused |
+| (to do) | E-sign Drive drill (`scripts/esign-restore-drill.ts`) in the same session as a backup drill; compare its audit anchor with the backup drill's (22 Nov: `cc504b579ee6…`) | Owner | |
 | 20 Nov 2026 | E-sign Drive folder: service account found to be Content manager; permanent delete refused (404), exports never pruned | Agent | Fixed: job moves files to trash instead (Content manager is enough); §8 |
 | (to do) | `overlay-critical.sh --dry-run` against a scratch Supabase project (is `session_replication_role` allowed?) | Owner | |
 

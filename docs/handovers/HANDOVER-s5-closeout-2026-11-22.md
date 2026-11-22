@@ -87,3 +87,25 @@ Also, without a PR:
 - **Until then, deploy dev from the API**, which builds from GitHub: `vercel api /v13/deployments -X POST` with `{"name":"stellr-web-dev","project":"<dev project id>","target":"production","gitSource":{"type":"github","repoId":1258717958,"ref":"dev","sha":"<full sha>"}}`. A plain `vercel deploy` upload fails, because the prebuild's `git ls-files` needs `.git`. That is how `dpl_6mMhaDm4W6hGXE9touSubYiLLpCJ` (`464a4b3e`) went live at 03:41Z.
 - **Dev health after it:** `readiness` reads lock `closed`, `activeOtherTenants` 0, all six isolating switches `missing`, `violation` false. P7 is still `events-config:shadow:0.25`; config url and ca are `ok`.
 - **The `.35` registration rows are blocked:** dev reads the production Sanity dataset, whose events carry live Stripe prices (#868).
+
+## 9. Addendum, 22 Nov 2026, afternoon
+
+- **Merge deploys are reconnected (about 17:50Z).** The projects' Git link still pointed at the original June connection through the personal GitHub installation, so after the repository moved to `Stellr-Education`, GitHub's events no longer reached them (the last Git-sourced deployment was 02:04Z). The owner disconnected and reconnected both projects to `Stellr-Education/stellr-web` through the organisation's Vercel installation. The API now reads org `Stellr-Education`; `stellr-web` tracks `main` and `stellr-web-dev` tracks `dev` (reconnecting had set dev to `main`, corrected by hand). The API-deploy workaround in section 8 is no longer needed.
+- **P9 is live on dev** (`events-config:shadow:1`, flip log #871), and #870 (B22 fold) merged.
+- **The `.35` money drills ran on localhost** through the dev-only price map (#873): individual and group registrations, a paid shared-cost seat recorded through a replayed test-mode webhook, an A8 roster add, the true-up and unwind refunds. A roster add leaves `participants.payer` NULL by design; #874 pins `payerOf` for that case.
+- **The ENF-dev clock was clean at 16:23Z**; the flip waits for 29 Nov 00:06Z.
+- **Production shadow checks (owner, about 18:30Z):** `map-tenancy-roles.ts --check --production` reported drift 0; an admin sign-in and an event roster opened; no `AUTHZ %` rows in production `app_errors` since the 01:26Z flip. Still owed: an event-manager sign-in on production. The 7-day watch runs to 29 Nov 01:26Z.
+
+## 10. Close-out, 22 Nov 2026, about 19:30Z
+
+**Nothing from this run is promoted.** Everything is merged into `dev`: #869, #870, #871, #873, #874, #875 and #877. Dev serves `34f191f2` (#873), built from GitHub by the reconnected Vercel link, with no manual deploy.
+
+Gaps, honestly:
+- **The dev enforce flip was asked for and not done.** The ENF-dev clock was clean at 16:23Z, but WD-ENF needs seven clean days, so the flip waits for 29 Nov 00:06Z (row `s5-closeout.1`).
+- **The production shadow checks are one short.** No event-manager has signed in on production since the flip (row `s5-closeout.2`).
+- **The readiness-lock migration is not on production.** `20261122020000_tenancy_readiness_lock.sql` is on the dev DB only. It goes through the Production migration Action before the next promotion (row `s5-closeout.3`).
+- **The temporary keys made for the role check have not been confirmed deleted** (row `s5-closeout.4`).
+- **The `.35` paid path was proved on the shared-cost group seat, through a replayed webhook.** The individual drill opened a test Checkout, but its payment was not recorded separately. Drill rows stay on the dev DB: an individual registration (now withdrawn) and one shared-cost group, both on a test event's live slug with test-mode Stripe objects (row `s5-closeout.5`).
+- **The price map is localhost-only by design.** It is not set on hosted dev, and test payments stay off the hosted dev site.
+
+Tracker: `docs/handovers/tracker/2026-11-22-s5-closeout.md`.
