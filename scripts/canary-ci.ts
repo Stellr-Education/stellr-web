@@ -42,8 +42,6 @@ import * as https from 'node:https'
 import * as os from 'node:os'
 import * as path from 'node:path'
 import { createClerkClient } from '@clerk/backend'
-import { createClient } from '@supabase/supabase-js'
-import { supabaseSecretKey } from '../lib/supabase-keys'
 import {
   answerSanityQuery,
   assertCanaryCiTarget,
@@ -105,25 +103,6 @@ function runScript(args: string[]): void {
   if (r.status !== 0) throw new Error(`${args[0]} exited ${r.status ?? 'without a status'}`)
 }
 
-/**
- * The readiness lock (S5 .32) refuses an active tenant other than the platform owner until
- * tenancy_settings.tenants_ready_at is set. This job's database is the throwaway local stack
- * (assertCanaryCiTarget has already refused anything else), and the canary run exercises a
- * live second tenant, so the job attests it here. On dev the owner opens it; the seed script
- * itself never does.
- */
-async function openReadinessLockOnLocalStack(): Promise<void> {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL
-  const key = supabaseSecretKey()
-  if (!url || !key) throw new Error('the local stack URL or secret key is missing')
-  const db = createClient(url, key, { auth: { persistSession: false } })
-  const { error } = await db
-    .from('tenancy_settings')
-    .update({ tenants_ready_at: new Date().toISOString(), tenants_ready_note: 'canary-ci (CI local stack)' })
-    .eq('id', true)
-  if (error) throw new Error(`opening the readiness lock on the local stack: ${error.message}`)
-}
-
 async function seed(): Promise<void> {
   assertCanaryCiTarget(process.env)
   const zone = required('--zone')
@@ -131,8 +110,9 @@ async function seed(): Promise<void> {
   // The documents take the mirror row's dates, which the seed takes from its own
   // clock. Planned on either side of it: if Denver's day turned in between, stop.
   const before = planCanaryFlowSeed({ zone })
-  await openReadinessLockOnLocalStack()
-  runScript(['scripts/seed-two-tenants.ts', '--profile', 'flow', '--zone', zone, '--apply', '--clerk-lookup'])
+  // The readiness lock (S5 .32) refuses a live second tenant until it is attested. This job's
+  // database is the throwaway local stack, so the seed opens it here (on dev the owner does).
+  runScript(['scripts/seed-two-tenants.ts', '--profile', 'flow', '--zone', zone, '--apply', '--clerk-lookup', '--ci-open-readiness-lock'])
   runScript(['scripts/seed-two-tenants.ts', '--profile', 'flow', '--zone', zone, '--check'])
   const after = planCanaryFlowSeed({ zone })
   if (before.event.starts_at !== after.event.starts_at) throw new Error("the day turned during the seed, so the event's dates are not certain; re-run the job")

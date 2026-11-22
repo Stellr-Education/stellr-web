@@ -90,6 +90,9 @@ const ZONE = flagValue('--zone')
 const CHECK = process.argv.includes('--check')
 const REMOVE = process.argv.includes('--remove')
 const CLERK_LOOKUP = process.argv.includes('--clerk-lookup')
+// CI only (scripts/canary-ci.ts): open the readiness lock (S5 .32) on the throwaway local stack
+// before seeding. assertCanaryCiTarget refuses anything that is not a Supabase stack on this machine.
+const CI_OPEN_READINESS_LOCK = process.argv.includes('--ci-open-readiness-lock')
 
 /** `--name value` or `--name=value`; '' when the flag has no value, undefined when absent. */
 function flagValue(name: string): string | undefined {
@@ -278,6 +281,15 @@ async function mainFlow() {
   }
   const { supabaseServer } = await import('../lib/supabase')
   const { syncEventManagerAssigned, syncTenantAdminGranted } = await import('../lib/authz/role-sync')
+  if (CI_OPEN_READINESS_LOCK) {
+    assertCanaryCiTarget(process.env)
+    const { error } = await supabaseServer()
+      .from('tenancy_settings')
+      .update({ tenants_ready_at: new Date().toISOString(), tenants_ready_note: 'canary-ci (CI local stack)' })
+      .eq('id', true)
+    if (error) throw new Error(`opening the readiness lock on the local stack: ${error.message}`)
+    console.log('  readiness lock opened on the local stack (CI)')
+  }
   await applyCanaryFlowSeed(plan, {
     db: supabaseServer(),
     ensureClerkUser: CLERK ? ensureFlowClerkUser : CLERK_LOOKUP ? lookUpFlowClerkUser : undefined,
