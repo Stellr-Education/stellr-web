@@ -1,22 +1,30 @@
-import { describe, it, expect } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { Worker } from 'node:worker_threads'
 import { createRequire } from 'node:module'
 import { pathToFileURL } from 'node:url'
 import { deflateSync } from 'node:zlib'
 import { PDFDocument } from 'pdf-lib'
-import {
-  DICT_WINDOW,
-  LOAD_INFLATE_BUDGET,
-  LOAD_OBJECT_LIMIT,
-  MAX_FLATE_STREAMS,
-  MAX_MEMBER_PDF_PAGES,
-  MAX_OBJECT_STREAMS,
-  checkLoadInflation,
-  checkPdfPageLimit,
-  scanPdfPages,
-} from './pdf-page-count'
 import { GB, LINEAR_TEST_TIMEOUT_MS, MB, REFUSAL_MS, bombPdf, linearBudgetMs } from './pdf-bombs.test.helper'
 import { UNDER_MUTATION, expectWithin } from '@/test/time-budget'
+
+type Mod = typeof import('./pdf-page-count')
+let DICT_WINDOW: Mod['DICT_WINDOW']
+let LOAD_INFLATE_BUDGET: Mod['LOAD_INFLATE_BUDGET']
+let LOAD_OBJECT_LIMIT: Mod['LOAD_OBJECT_LIMIT']
+let MAX_FLATE_STREAMS: Mod['MAX_FLATE_STREAMS']
+let MAX_MEMBER_PDF_PAGES: Mod['MAX_MEMBER_PDF_PAGES']
+let MAX_OBJECT_STREAMS: Mod['MAX_OBJECT_STREAMS']
+let checkLoadInflation: Mod['checkLoadInflation']
+let checkPdfPageLimit: Mod['checkPdfPageLimit']
+let scanPdfPages: Mod['scanPdfPages']
+
+// The module is loaded afresh before each test: its module-level constants
+// and tables are evaluated at load, and a mutation run (stryker.config.mjs)
+// switches a mutant on only after a file's static imports have run.
+beforeEach(async () => {
+  vi.resetModules()
+  ;({ DICT_WINDOW, LOAD_INFLATE_BUDGET, LOAD_OBJECT_LIMIT, MAX_FLATE_STREAMS, MAX_MEMBER_PDF_PAGES, MAX_OBJECT_STREAMS, checkLoadInflation, checkPdfPageLimit, scanPdfPages } = await import('./pdf-page-count'))
+})
 
 // Under Stryker (nightly mutation testing) the linear-time suites take
 // minutes per mutant, so they are skipped there; see test/time-budget.ts.
