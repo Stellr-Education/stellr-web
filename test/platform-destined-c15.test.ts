@@ -225,9 +225,9 @@ describe('the class', () => {
     expect(CLASS_REQUIREMENTS.platform_admin.kinds).toEqual(['platform'])
   })
 
-  it('platform_admin holds exactly the seven BF-15 moved, S6-SUP\'s support session route and S6-BG\'s two', () => {
+  it('platform_admin holds exactly the seven BF-15 moved, S6-SUP\'s support session route, S6-BG\'s two and S6-CON\'s status route', () => {
     expect(Object.entries(ROUTE_MANIFEST).filter(([, c]) => c === 'platform_admin').map(([f]) => f).sort()).toEqual(
-      [...MOVED, 'app/api/admin/support/session/route.ts', 'app/api/admin/support/consent/route.ts', 'app/api/admin/support/break-glass/route.ts'].sort(),
+      [...MOVED, 'app/api/admin/support/session/route.ts', 'app/api/admin/support/consent/route.ts', 'app/api/admin/support/break-glass/route.ts', 'app/api/admin/platform/tenants/[id]/status/route.ts'].sort(),
     )
   })
 })

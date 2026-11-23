@@ -44,7 +44,8 @@ const MANIFEST_CLASS_COUNTS: Record<RouteClass, number> = {
   //   deletion-requests/[id], duties, impersonation, members/merge, privacy-requests/[id])
   // +1 platform_admin: S6-SUP's admin support/session (22 Nov 2026), denied on tenant hosts (S6-Q7)
   // +2 platform_admin: S6-BG's admin support/consent and support/break-glass (23 Nov 2026), denied on tenant hosts (S6-Q7)
-  platform_admin: 10,
+  // +1 platform_admin: S6-CON's admin platform/tenants/[id]/status (23 Nov 2026), denied on tenant hosts (S6-Q7)
+  platform_admin: 11,
   platform_destined: 2,
   // +1 tenant_crew, -1 stellr_only: admin registrations/[id]/payment-method (C16 follow-up)
   // +3 tenant_crew, -3 stellr_only: admin events/[slug]/{companies,offerings,merch/commit} (C18)
@@ -72,7 +73,8 @@ const MANIFEST_CLASS_COUNTS: Record<RouteClass, number> = {
   // -1 on 14 Nov 2026: the embedded Sanity Studio page left the app for Sanity's hosting.
   // -7 on 16 Nov 2026: C19a (see tenant_crew).
   // -8 on 20 Nov 2026: C20 and C21 (see tenant_crew).
-  stellr_only: 145,
+  // +2 stellr_only: S6-CON's console pages, admin/platform and admin/platform/tenants/[id] (23 Nov 2026)
+  stellr_only: 147,
 }
 // +3 on 9 Nov 2026: members/compliance/external-check (participant) and the
 // admin members/[id]/event-manager and members/[id]/external-check (stellr_only).
@@ -94,7 +96,8 @@ const MANIFEST_CLASS_COUNTS: Record<RouteClass, number> = {
 // +1 on 22 Nov 2026: the usage-rollup cron (S6-USE; cron, denied on tenant hosts like every cron).
 // +1 on 22 Nov 2026: admin support/session (S6-SUP; platform_admin, denied on tenant hosts like every admin route, S6-Q7).
 // +3 on 23 Nov 2026: S6-BG's admin support/consent and support/break-glass (platform_admin, denied on tenant hosts, S6-Q7) and support-consents/[id] (tenant_crew, pending until the first tenant admin).
-const MANIFEST_TOTAL = 535
+// +3 on 23 Nov 2026: S6-CON's console, two admin pages (stellr_only) and the status API (platform_admin), all denied on tenant hosts (S6-Q7).
+const MANIFEST_TOTAL = 538
 
 // The decisions. Moving a route between them is a deliberate diff here.
 const DECISION_COUNTS: Record<TenantSurfaceDecision, number> = {
@@ -110,7 +113,8 @@ const DECISION_COUNTS: Record<TenantSurfaceDecision, number> = {
   // +1: the usage-rollup cron (S6-USE)
   // +1: admin support/session (S6-SUP): support mode runs on the platform host only (S6-Q7)
   // +2: admin support/consent and support/break-glass (S6-BG), platform host only (S6-Q7)
-  deny: 429,
+  // +3: S6-CON's console pages and status API, platform host only (S6-Q7)
+  deny: 432,
 }
 
 /** A concrete URL a manifest file serves, with sample values for its params. */

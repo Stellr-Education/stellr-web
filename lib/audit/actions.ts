@@ -23,6 +23,10 @@ export const AUDIT_ACTIONS = [
   'support.consent.decline',
   'support.break_glass.open',
   'support.break_glass.renew',
+  // S6-CON: the super-admin console suspends and resumes a tenant
+  // (app/api/admin/platform/tenants/[id]/status), on the TENANT's chain
+  'platform.tenant.suspend',
+  'platform.tenant.resume',
 
   // Crons (B12) and webhooks (A13)
   'cron.run.finish',
