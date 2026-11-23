@@ -25,7 +25,7 @@ export const TENANT_DB_AREAS_ENV = 'TENANT_DB_AREAS'
  * TENANT_DB_AREAS and is a type error at a call site. C18 owns the first one;
  * nothing calls dataPath, readArea or writeArea with it yet.
  */
-export const DATA_AREAS = ['events-config', 'events-read'] as const
+export const DATA_AREAS = ['events-config', 'events-read', 'volunteers', 'team-profiles', 'credentials', 'surveys'] as const
 export type DataArea = (typeof DATA_AREAS)[number]
 
 export type DataPath = 'service' | 'shadow' | 'tenant'

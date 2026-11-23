@@ -790,6 +790,19 @@ function coverageOf(method: string, sf: ts.SourceFile, ctx: Ctx, facts: HandlerF
 }
 
 /**
+ * S6-AW (test/assert-writable-guard.test.ts): the exported method is withAudit, or
+ * withCronAudit, alone or as the only argument of another wrapper, on the same terms
+ * as 'mandatory' coverage. Both run withAudit, which refuses an admin mutation during
+ * a support-read session (lib/authz/writable.ts) before the handler runs.
+ */
+export function isAuditWrapped(file: string, src: string, method: string): boolean {
+  const f = file.replace(/\\/g, '/')
+  const sf = parseSource(f, src)
+  const value = exportedValue(sf, method)
+  return !!value && isWrappedInAudit(value, moduleContext(sf, f, graphFor(NO_PROJECT)))
+}
+
+/**
  * Every mutating handler of one route file, with whether an audit write is certain
  * to run. `project` lets a GET's writes and an early return's effects be followed
  * into other modules; without it, only this file is read.

@@ -3,7 +3,8 @@ import { crewActorType } from '@/lib/activity-log'
 import { supabaseServer } from '@/lib/supabase'
 import { requireEventCrew } from '@/lib/authz'
 import { getSignedInMember } from '@/lib/community'
-import { revokeCredential, holderIsMinor, CREDENTIAL_COLUMNS, type CredentialRow } from '@/lib/credentials'
+import { holderIsMinor, CREDENTIAL_COLUMNS, type CredentialRow } from '@/lib/credentials'
+import { revokeEventCredential } from '@/lib/events/admin-credentials'
 import { logActivity } from '@/lib/activity-log'
 import { sendEmail, credentialRevokedEmail } from '@/lib/email'
 import { recipientForCredential } from '@/lib/credentials-notify'
@@ -57,7 +58,9 @@ async function revoke(req: Request, { params }: { params: Promise<{ id: string }
   // resolves to the viewed member while a view-as ticket is live, which would
   // record the member (often a minor) as the person who revoked (S0, Nov 2026).
   const actor = await getSignedInMember()
-  const row = await revokeCredential(db, id, reason, actor?.id ?? null)
+  // The 'credentials' area (S5 A10c): today's update unless TENANT_DB_AREAS moves it; on the
+  // tenant path, an UPDATE through tenantDb pinned to the caller's own tenant.
+  const row = await revokeEventCredential(db, crew.tenantId, id, reason, actor?.id ?? null)
   if (!row) return NextResponse.json({ error: 'Already revoked' }, { status: 409 })
 
   // The member's activity log is global, and a tenant's records stay off it (owner decision B8).

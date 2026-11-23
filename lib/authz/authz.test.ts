@@ -59,7 +59,7 @@ describe('defaults and stubs', () => {
   it('currentTenantId is Stellr until the routing lane lands', () => {
     expect(authz.currentTenantId()).toBe(STELLR_TENANT_ID)
   })
-  it('assertWritable passes in S5', () => {
+  it('assertWritable passes with no support session (none exists before S6-SUP)', () => {
     expect(() => authz.assertWritable()).not.toThrow()
   })
   it('re-exports the DB-free claim reader', () => {

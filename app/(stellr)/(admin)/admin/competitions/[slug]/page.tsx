@@ -20,7 +20,8 @@ import { EventSurveyPanel } from '@/components/admin/competitions/EventSurveyPan
 import { AUTH_APP_URL } from '@/lib/env'
 import EventCompanies, { type CompanyRow } from '@/components/admin/EventCompanies'
 import EventTeamProfiles from '@/components/admin/EventTeamProfiles'
-import { loadCompanyPlan, type CompanyPlan } from '@/lib/team-profile/assign'
+import type { CompanyPlan } from '@/lib/team-profile/assign'
+import { loadTeamProfilePlan } from '@/lib/team-profile/admin-data'
 import EventBadges from '@/components/admin/EventBadges'
 import EventCertificates from '@/components/admin/EventCertificates'
 import EventAwards from '@/components/admin/EventAwards'
@@ -151,7 +152,8 @@ export default async function AdminEventDetailPage({
   // ── Team profiles + best-fit suggestions (roster tab, live events only) ───
   let companyPlan: CompanyPlan | null = null
   if (tab === 'roster' && !isCampaign) {
-    companyPlan = await loadCompanyPlan(db, slug, event.date ?? null).catch((err) => {
+    // The 'team-profiles' area (S5 A10c): today's read unless TENANT_DB_AREAS names it.
+    companyPlan = await loadTeamProfilePlan(db, access.tenantId, slug, event.date ?? null).catch((err) => {
       console.error('[competitions] team profile plan failed:', err)
       return null
     })

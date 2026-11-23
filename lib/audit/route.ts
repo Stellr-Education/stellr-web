@@ -32,6 +32,7 @@
 // tests mock it. If it cannot read the session there, the row says actor_unresolved,
 // so the first route to use it checks a real row on dev, or passes { userId }.
 import { runAfterResponse } from '@/lib/after-response'
+import { writeRefusal } from '@/lib/authz/writable'
 import { STELLR_TENANT_ID } from '@/lib/tenancy/constants'
 import type { AuditAction } from './actions'
 import type { OwnerRef } from './webhook'
@@ -271,6 +272,9 @@ function thrownStatus(err: unknown): number {
  * returns AUDIT_SKIP records nothing for that answer. A 4xx after a partial
  * write is not recorded: a handler that can do that should report it as a 5xx.
  *
+ * S6-AW: on the admin API, a support-read session is answered 403
+ * (support_read_only) before the handler runs (lib/authz/writable.ts).
+ *
  * A cron's guardCron stays the first statement of the handler given here: that is
  * where test/route-manifest.test.ts reads it.
  */
@@ -291,6 +295,12 @@ export function withAudit<Args extends unknown[], R extends Response>(
     }
   }
   return async (...args: Args) => {
+    // S6-AW: an admin mutation is refused, before the handler runs, while a
+    // support-read session is active (lib/authz/writable.ts). None can exist
+    // until S6-SUP, so today this is one null check. Next passes the Request
+    // first. A 403 is a refusal, so nothing is recorded.
+    const readOnly = writeRefusal(args[0])
+    if (readOnly) return readOnly as R
     let response: R
     try {
       response = await handler(...args)

@@ -6,10 +6,10 @@ import { auditSubject, noteAuditSubject } from '@/lib/audit/route-subject'
 import { withAudit } from '@/lib/audit/route'
 import { getSignedInMember } from '@/lib/community'
 import { adminSurveyView } from '@/lib/survey/admin'
-import { logSurveyAccess, writeAudit } from '@/lib/survey/audit'
+import { writeAudit } from '@/lib/survey/audit'
+import { loadDistributionForEvent, logSurveyView, setDistributionGateCertificate, surveyAdminDb, surveysOnTenantPath } from '@/lib/survey/admin-data'
 import {
   closeEarly,
-  distributionForEvent,
   loadDefinition,
   openAfterEvent,
   pauseDistribution,
@@ -24,6 +24,7 @@ import { loadSurveyEvent } from '@/lib/survey/events'
 import { runOne } from '@/lib/survey/run'
 import { resendInvitation, type InvitationRow } from '@/lib/survey/send'
 import { loadRecord, refuseOutsideStellr, scopedRowWrite } from '@/lib/tenancy/load-scoped'
+import { isStellrScope } from '@/lib/tenancy/scope-context'
 import { loadEventTenantId } from '@/lib/authz/principal'
 
 // /api/admin/events/[slug]/survey — the event's "Survey" tab (admins and the
@@ -36,11 +37,23 @@ import { loadEventTenantId } from '@/lib/authz/principal'
 //        that ended without a survey) | minor_agreement_override {on}
 // Every change is written to audit_log; viewing the table to survey_access_log.
 //
-// Both refuse a tenant's staff. Opening this tab makes the event's distribution, and the
-// survey cron then sends it through Stellr's sender on Stellr's definition: A10 and B13 are
-// what make that a tenant's own.
+// Both refuse a tenant's staff while the 'surveys' area (lib/survey/admin-data.ts, S5 A10c)
+// is not on the tenant path. Opening this tab makes the event's distribution, and the survey
+// cron then sends it through Stellr's sender on Stellr's definition: A10 and B13 are what
+// make that a tenant's own. On the tenant path a tenant's staff get the tab narrowed to what
+// the area reads (the distribution and the completion table, lib/survey/admin.ts) and the
+// distribution's own settings (go-live, pause, resume, close, audiences, the certificate
+// gate). Everything that sends, and the minors' agreement override, stays refused for them.
 
 const ROUTE = '/api/admin/events/[slug]/survey'
+
+/** Refused for another tenant's staff on every path: they send, or decide on Stellr's agreements. */
+const STELLR_ONLY_ACTIONS: ReadonlySet<string> = new Set(['send_now', 'resend', 'open_after_event', 'minor_agreement_override'])
+
+/** refuseOutsideStellr, lifted only while the 'surveys' area answers through tenantDb. */
+function refuseUnlessSurveysTenant(scope: Parameters<typeof refuseOutsideStellr>[0]): Response | null {
+  return surveysOnTenantPath() ? null : refuseOutsideStellr(scope)
+}
 
 type Ctx = { params: Promise<{ slug: string }> }
 export const maxDuration = 60
@@ -55,12 +68,13 @@ async function readSurvey(req: Request, { params }: Ctx) {
   const crew = await requireEventRoute(slug, { route: ROUTE })
   if (!crew.ok) return crew.response
   noteAuditSubject(req, { userId: crew.userId, tenantId: crew.tenantId, eventSlug: slug })
-  const refused = refuseOutsideStellr(crew.scope)
+  const refused = refuseUnlessSurveysTenant(crew.scope)
   if (refused) return refused
   const db = supabaseServer()
-  const view = await adminSurveyView(db, slug, new Date(), () => loadEventTenantId(db, slug))
+  const scope = { tenantId: crew.tenantId, stellr: isStellrScope(crew.scope) }
+  const view = await adminSurveyView(db, slug, new Date(), () => loadEventTenantId(db, slug), scope)
   if (view.rows.length) {
-    await logSurveyAccess(db, { actor: crew.userId, tenantId: crew.tenantId, action: 'view', eventSlug: slug, distributionId: view.distribution?.id, rowCount: view.rows.length, detail: { what: 'completion_table' } })
+    await logSurveyView(db, crew.tenantId, { actor: crew.userId, eventSlug: slug, distributionId: view.distribution?.id ?? null, rowCount: view.rows.length })
   }
   noteAuditSubject(req, { id: view.distribution?.id ?? null })
   return NextResponse.json({ ...view, isAdmin: crew.isAdmin || (await hasCapability('competitions:write', { route: ROUTE })) })
@@ -90,14 +104,19 @@ async function changeSurvey(req: Request, { params }: Ctx) {
   const crew = await requireEventRoute(slug, { route: ROUTE })
   if (!crew.ok) return crew.response
   noteAuditSubject(req, { userId: crew.userId, tenantId: crew.tenantId, eventSlug: slug })
-  const refused = refuseOutsideStellr(crew.scope)
+  const refused = refuseUnlessSurveysTenant(crew.scope)
   if (refused) return refused
   const parsed = Body.safeParse(await req.json().catch(() => null))
   if (!parsed.success) return NextResponse.json({ error: 'Invalid request' }, { status: 400 })
   const body = parsed.data
   noteAuditSubject(req, { detail: { survey_action: body.action } })
+  if (STELLR_ONLY_ACTIONS.has(body.action)) {
+    const outside = refuseOutsideStellr(crew.scope)
+    if (outside) return outside
+  }
 
   const db = supabaseServer()
+  const store = surveyAdminDb(db, crew.tenantId)
   const me = await getSignedInMember().catch(() => null)
   const actor: Actor = { memberId: me?.id ?? null, label: crew.userId }
 
@@ -120,13 +139,13 @@ async function changeSurvey(req: Request, { params }: Ctx) {
     }
   }
 
-  const d = await distributionForEvent(db, slug)
+  const d = await loadDistributionForEvent(db, crew.tenantId, slug)
   if (!d) return NextResponse.json({ error: 'This event has no survey yet.' }, { status: 404 })
   noteAuditSubject(req, { id: d.id })
 
   switch (body.action) {
     case 'send_now': {
-      const r = await setEarlierGoLive(db, d, 'now', actor)
+      const r = await setEarlierGoLive(store, d, 'now', actor)
       if (!r.ok) return NextResponse.json({ error: r.error }, { status: r.status })
       try {
         const run = await runOne(db, d.id)
@@ -137,39 +156,44 @@ async function changeSurvey(req: Request, { params }: Ctx) {
       }
     }
     case 'set_go_live': {
-      const r = await setEarlierGoLive(db, d, new Date(body.at), actor)
+      const r = await setEarlierGoLive(store, d, new Date(body.at), actor)
       return r.ok ? NextResponse.json({ ok: true }) : NextResponse.json({ error: r.error }, { status: r.status })
     }
     case 'reset_go_live': {
-      const r = await resetGoLive(db, d, actor)
+      const r = await resetGoLive(store, d, actor)
       return r.ok ? NextResponse.json({ ok: true }) : NextResponse.json({ error: r.error }, { status: r.status })
     }
     case 'pause': {
-      const r = await pauseDistribution(db, d, actor)
+      const r = await pauseDistribution(store, d, actor)
       return r.ok ? NextResponse.json({ ok: true }) : NextResponse.json({ error: r.error }, { status: r.status })
     }
     case 'resume': {
-      const r = await resumeDistribution(db, d, actor)
+      const r = await resumeDistribution(store, d, actor)
       return r.ok ? NextResponse.json({ ok: true }) : NextResponse.json({ error: r.error }, { status: r.status })
     }
     case 'close': {
-      const r = await closeEarly(db, d, actor)
+      const r = await closeEarly(store, d, actor)
       return r.ok ? NextResponse.json({ ok: true }) : NextResponse.json({ error: r.error }, { status: r.status })
     }
     case 'audiences': {
-      const r = await setAudiences(db, d, body.audiences, actor)
+      const r = await setAudiences(store, d, body.audiences, actor)
       return r.ok ? NextResponse.json({ ok: true }) : NextResponse.json({ error: r.error }, { status: r.status })
     }
     case 'gate_certificate': {
       if (!canManage) return NextResponse.json({ error: 'Admins only.' }, { status: 403 })
-      await scopedRowWrite(crew.scope, 'survey_distributions', d.id, { db }).update({ gate_certificate: body.on })
+      await setDistributionGateCertificate(
+        () => scopedRowWrite(crew.scope, 'survey_distributions', d.id, { db }).update({ gate_certificate: body.on }),
+        crew.tenantId,
+        d.id,
+        body.on,
+      )
       await writeAudit(db, { table: 'survey_distributions', recordId: d.id, action: 'UPDATE', actor: actor.label, data: { event: 'gate_certificate', on: body.on } })
       return NextResponse.json({ ok: true })
     }
     case 'minor_agreement_override': {
       // A safeguarding decision about minors' agreements: admins only, Staff included out.
       if (!crew.isAdmin) return NextResponse.json({ error: 'Admins only.' }, { status: 403 })
-      const r = await setMinorAgreementOverride(db, d, body.on, actor)
+      const r = await setMinorAgreementOverride(store, d, body.on, actor)
       return r.ok ? NextResponse.json({ ok: true }) : NextResponse.json({ error: r.error }, { status: r.status })
     }
     case 'resend': {

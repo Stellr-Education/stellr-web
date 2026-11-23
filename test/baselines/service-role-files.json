@@ -1795,7 +1795,7 @@
     },
     "scripts/seed-two-tenants.ts": {
       "class": "script",
-      "reason": "auto: operator script, run by hand; tables: tenant_memberships, tenants"
+      "reason": "auto: operator script, run by hand; tables: tenancy_settings, tenant_memberships, tenants"
     },
     "scripts/seed-welcome-drips.ts": {
       "class": "script",

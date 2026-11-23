@@ -289,17 +289,48 @@ export interface Actor {
 
 type ActionResult = { ok: true; distribution: DistributionRow } | { ok: false; status: number; error: string }
 
+/** One write of the distribution row: the rows it changed, or the error to answer. */
+export type DistributionUpdate = (
+  id: string,
+  patch: Record<string, unknown>,
+  onlyIfStatus?: DistributionRow['status'][],
+) => Promise<{ data: DistributionRow[] | null; error: { message: string } | null }>
+
+/**
+ * Where an admin action writes the distribution row (S5 A10c). The admin survey route passes
+ * one from lib/survey/admin-data.ts, which writes through the 'surveys' area; `db` still
+ * takes the audit_log row. A bare client writes through itself, as before.
+ */
+export interface SurveyAdminDb {
+  db: SupabaseClient
+  updateDistribution: DistributionUpdate
+}
+
+type AdminDb = SupabaseClient | SurveyAdminDb
+
+const isSurveyAdminDb = (x: AdminDb): x is SurveyAdminDb => typeof (x as Partial<SurveyAdminDb>).updateDistribution === 'function'
+
+/** Today's write of the distribution row, through the service client, unchanged. */
+export function serviceDistributionUpdate(db: SupabaseClient): DistributionUpdate {
+  return async (id, patch, onlyIfStatus) => {
+    let q = db.from('survey_distributions').update(patch).eq('id', id)
+    if (onlyIfStatus) q = q.in('status', onlyIfStatus)
+    const { data, error } = await q.select('*')
+    return { data: (data as DistributionRow[] | null) ?? null, error }
+  }
+}
+
 async function patchDistribution(
-  db: SupabaseClient,
+  target: AdminDb,
   d: DistributionRow,
   patch: Record<string, unknown>,
   actor: Actor,
   event: string,
   onlyIfStatus?: DistributionRow['status'][],
 ): Promise<ActionResult> {
-  let q = db.from('survey_distributions').update(patch).eq('id', d.id)
-  if (onlyIfStatus) q = q.in('status', onlyIfStatus)
-  const { data, error } = await q.select('*')
+  const db = isSurveyAdminDb(target) ? target.db : target
+  const update = isSurveyAdminDb(target) ? target.updateDistribution : serviceDistributionUpdate(db)
+  const { data, error } = await update(d.id, patch, onlyIfStatus)
   if (error) return { ok: false, status: 500, error: error.message }
   if (!data?.length) return { ok: false, status: 409, error: 'The survey changed while you were looking at it. Reload and try again.' }
   await writeAudit(db, {
@@ -317,7 +348,7 @@ async function patchDistribution(
  * closes_at follows (trigger). Recorded as a manual override.
  */
 export async function setEarlierGoLive(
-  db: SupabaseClient,
+  db: AdminDb,
   d: DistributionRow,
   requested: Date | 'now',
   actor: Actor,
@@ -355,7 +386,7 @@ export async function setEarlierGoLive(
 }
 
 /** Return a manually-set go-live to the automatic one (event date, 00:00 local). */
-export async function resetGoLive(db: SupabaseClient, d: DistributionRow, actor: Actor): Promise<ActionResult> {
+export async function resetGoLive(db: AdminDb, d: DistributionRow, actor: Actor): Promise<ActionResult> {
   if (d.status !== 'scheduled') return { ok: false, status: 409, error: 'Only a scheduled survey can be reset.' }
   return patchDistribution(
     db,
@@ -367,19 +398,19 @@ export async function resetGoLive(db: SupabaseClient, d: DistributionRow, actor:
   )
 }
 
-export async function setAudiences(db: SupabaseClient, d: DistributionRow, audiences: Audience[], actor: Actor): Promise<ActionResult> {
+export async function setAudiences(db: AdminDb, d: DistributionRow, audiences: Audience[], actor: Actor): Promise<ActionResult> {
   if (d.status !== 'scheduled' && d.status !== 'paused') return { ok: false, status: 409, error: 'Audiences can be changed only before go-live.' }
   const clean = [...new Set(audiences)].filter((a) => a === 'student' || a === 'mentor' || a === 'adult')
   if (!clean.length) return { ok: false, status: 400, error: 'Choose at least one audience.' }
   return patchDistribution(db, d, { audiences: clean }, actor, 'set_audiences', ['scheduled', 'paused'])
 }
 
-export async function pauseDistribution(db: SupabaseClient, d: DistributionRow, actor: Actor, now = new Date()): Promise<ActionResult> {
+export async function pauseDistribution(db: AdminDb, d: DistributionRow, actor: Actor, now = new Date()): Promise<ActionResult> {
   if (d.status !== 'scheduled') return { ok: false, status: 409, error: 'Only a scheduled survey can be paused.' }
   return patchDistribution(db, d, { status: 'paused', paused_at: now.toISOString() }, actor, 'pause', ['scheduled'])
 }
 
-export async function resumeDistribution(db: SupabaseClient, d: DistributionRow, actor: Actor): Promise<ActionResult> {
+export async function resumeDistribution(db: AdminDb, d: DistributionRow, actor: Actor): Promise<ActionResult> {
   if (d.status !== 'paused') return { ok: false, status: 409, error: 'This survey isn’t paused.' }
   return patchDistribution(db, d, { status: 'scheduled', paused_at: null, schedule_flag: d.schedule_flag === 'event_cancelled' ? 'event_cancelled' : d.schedule_flag }, actor, 'resume', ['paused'])
 }
@@ -390,7 +421,7 @@ export async function resumeDistribution(db: SupabaseClient, d: DistributionRow,
  * invited from the next run on; turning it off invites nobody new but does not
  * withdraw invitations already sent. Quoting still needs V2.3.
  */
-export async function setMinorAgreementOverride(db: SupabaseClient, d: DistributionRow, on: boolean, actor: Actor, now = new Date()): Promise<ActionResult> {
+export async function setMinorAgreementOverride(db: AdminDb, d: DistributionRow, on: boolean, actor: Actor, now = new Date()): Promise<ActionResult> {
   if (d.status === 'closed') return { ok: false, status: 409, error: 'This survey is closed.' }
   return patchDistribution(
     db,
@@ -402,7 +433,7 @@ export async function setMinorAgreementOverride(db: SupabaseClient, d: Distribut
   )
 }
 
-export async function closeEarly(db: SupabaseClient, d: DistributionRow, actor: Actor, now = new Date()): Promise<ActionResult> {
+export async function closeEarly(db: AdminDb, d: DistributionRow, actor: Actor, now = new Date()): Promise<ActionResult> {
   if (d.status === 'closed') return { ok: false, status: 409, error: 'This survey is already closed.' }
   return patchDistribution(db, d, { status: 'closed', closed_at: now.toISOString(), closed_by: actor.label }, actor, 'close_early', ['scheduled', 'open', 'paused'])
 }

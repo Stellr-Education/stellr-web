@@ -2,9 +2,16 @@
  * What the admin "Survey" tab shows for one event (handover A1/A2): the
  * schedule, who will be (or was) invited, who can't be, and per-person
  * progress. Admins and the event's assigned managers see it.
+ *
+ * The distribution and the completion table read through the 'surveys' area
+ * (lib/survey/admin-data.ts, S5 A10c). Another tenant's staff, who reach the tab only
+ * when that area is on the tenant path, get those two and nothing read through the
+ * service client: no schedule sync, no recipient preview (it reads members), no
+ * definition and no late-open preview.
  */
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { distributionForEvent, ensureDistribution, planFor, statusNow, type DistributionRow } from './distributions'
+import { ensureDistribution, planFor, statusNow, type DistributionRow } from './distributions'
+import { loadCompletionInvitations, loadDistributionForEvent, type CompletionInvitation } from './admin-data'
 import { loadSurveyEvent } from './events'
 import { autoOpensAt, closesAtFor, lateOpenDeadline } from './schedule'
 import { buildRecipientPlan, type RecipientPlan } from './recipients'
@@ -73,14 +80,19 @@ export interface AdminSurveyView {
  * there is no row to read it from, and another tenant's preview leaves out its
  * consent-pending students as the plan made on opening would (S5 A10b). It is asked only
  * for that preview. Left out, the event is Stellr's and nothing is read.
+ *
+ * `scope` is whose staff is asking (the route's crew): its tenant reads the 'surveys' area,
+ * and `stellr: false` gives the narrowed view in the file header. Left out, Stellr's staff.
  */
 export async function adminSurveyView(
   db: SupabaseClient,
   slug: string,
   now = new Date(),
   eventTenant: () => Promise<string> = async () => STELLR_TENANT_ID,
+  scope: SurveyViewScope = { tenantId: STELLR_TENANT_ID, stellr: true },
 ): Promise<AdminSurveyView> {
-  let d = await distributionForEvent(db, slug)
+  let d = await loadDistributionForEvent(db, scope.tenantId, slug)
+  if (!scope.stellr) return tenantStaffView(db, scope.tenantId, d, now)
   let reason: string | null = null
   // Keep it in step with Sanity (date moved, cancelled) — or create it, for an
   // event that predates the survey feature.
@@ -128,36 +140,32 @@ export async function adminSurveyView(
     headcountOnlyAdults: plan.headcountOnlyAdults,
   }
 
-  const { data: invs, error } = await db
-    .from('survey_invitations')
-    .select(
-      'id, member_id, first_name, respondent_role, adult_relationship, email, send_via, status, sent_at, first_opened_at, opened_from, last_activity_at, reminder_count, resume_reminder_count, reminders_opted_out_at, last_send_error, participants(first_name, last_name, member_id), members(first_name, last_name), survey_responses(started_at, submitted_at)',
-    )
-    .eq('distribution_id', d.id)
-  if (error) throw new Error(`Reading invitations failed: ${error.message}`)
+  const { rows, totals } = completion(await loadCompletionInvitations(db, scope.tenantId, d.id))
 
-  type Inv = {
-    id: string
-    member_id: string | null
-    first_name: string | null
-    respondent_role: CompletionRow['role']
-    adult_relationship: string | null
-    email: string
-    send_via: 'self' | 'guardian'
-    status: string
-    sent_at: string | null
-    first_opened_at: string | null
-    opened_from: string | null
-    last_activity_at: string | null
-    reminder_count: number
-    resume_reminder_count: number
-    reminders_opted_out_at: string | null
-    last_send_error: string | null
-    participants: { first_name: string | null; last_name: string | null; member_id?: string | null } | null
-    members: { first_name: string | null; last_name: string | null } | null
-    survey_responses: { started_at: string | null; submitted_at: string | null } | { started_at: string | null; submitted_at: string | null }[] | null
+  return {
+    distribution: d,
+    status,
+    autoOpensAt: autoOpensAt(d.event_date, d.event_time_zone).toISOString(),
+    reason: null,
+    definition: defRow ? { key: defRow.key as string, version: defRow.version as number, versionLabel: (defRow.version_label as string | null) ?? null, status: defRow.status as string } : null,
+    preview,
+    lateOpen: null,
+    totals,
+    rows,
   }
-  const rows: CompletionRow[] = ((invs ?? []) as unknown as Inv[]).map((i) => {
+}
+
+/** Whose staff the view is for: see adminSurveyView. */
+export interface SurveyViewScope {
+  tenantId: string
+  stellr: boolean
+}
+
+const EMPTY_TOTALS: AdminSurveyView['totals'] = { invited: 0, sent: 0, opened: 0, started: 0, submitted: 0, queued: 0, optedOut: 0 }
+
+/** The completion table and its totals, from the invitations as read. */
+function completion(invs: CompletionInvitation[]): { rows: CompletionRow[]; totals: AdminSurveyView['totals'] } {
+  const rows: CompletionRow[] = invs.map((i) => {
     const resp = Array.isArray(i.survey_responses) ? i.survey_responses[0] : i.survey_responses
     const person = i.participants ?? i.members
     const name = [person?.first_name ?? i.first_name, person?.last_name].filter(Boolean).join(' ') || i.email
@@ -185,7 +193,7 @@ export async function adminSurveyView(
   })
   rows.sort((a, b) => a.role.localeCompare(b.role) || a.name.localeCompare(b.name))
 
-  const totals = { ...empty, invited: rows.length }
+  const totals = { ...EMPTY_TOTALS, invited: rows.length }
   for (const r of rows) {
     if (r.sentAt) totals.sent++
     if (r.openedAt) totals.opened++
@@ -194,14 +202,22 @@ export async function adminSurveyView(
     if (r.status === 'queued') totals.queued++
     if (r.remindersOff) totals.optedOut++
   }
+  return { rows, totals }
+}
 
+/** Another tenant's staff: the distribution and its completion table, both through the 'surveys' area. */
+async function tenantStaffView(db: SupabaseClient, tenantId: string, d: DistributionRow | null, now: Date): Promise<AdminSurveyView> {
+  if (!d) {
+    return { distribution: null, status: null, autoOpensAt: null, reason: 'not scheduled', definition: null, preview: null, lateOpen: null, totals: EMPTY_TOTALS, rows: [] }
+  }
+  const { rows, totals } = completion(await loadCompletionInvitations(db, tenantId, d.id))
   return {
     distribution: d,
-    status,
+    status: statusNow(d, now),
     autoOpensAt: autoOpensAt(d.event_date, d.event_time_zone).toISOString(),
     reason: null,
-    definition: defRow ? { key: defRow.key as string, version: defRow.version as number, versionLabel: (defRow.version_label as string | null) ?? null, status: defRow.status as string } : null,
-    preview,
+    definition: null,
+    preview: null,
     lateOpen: null,
     totals,
     rows,

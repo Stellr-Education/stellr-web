@@ -3,10 +3,11 @@
 import { useEffect, useState } from 'react'
 import { formatDateShort } from '@/lib/utils'
 import { isMinorOn } from '@/lib/age'
-import { describeEnvelope, PILL_CLASSES, type RecipientLike } from '@/lib/docusign-status'
+import { describeEnvelope, showsSignerList, PILL_CLASSES, type RecipientLike } from '@/lib/docusign-status'
 import { downloadSignedRecord } from '@/lib/esign/download-client'
 import { slug } from '@/lib/esign/filenames'
 import { AGREEMENT_TITLE } from '@/lib/esign/native/plan'
+import { AgreementSigners } from '@/components/esign/AgreementSigners'
 
 interface Envelope {
   id: string
@@ -61,12 +62,31 @@ export function EnvelopeStatusBadge({ status }: { status: string }) {
   return <span className={`inline-flex text-xs px-2 py-0.5 rounded-full font-medium ${cls}`}>{label}</span>
 }
 
-// Signer-progress pill, derived by lib/docusign-status — the same function the
-// roster, the admin table and the reminder cron use. The portal used to compute
-// this here from two integers, which is why it could say "1 of 2 signed" but
-// never name the person the family actually needed to chase.
-function EnvelopeProgressBadge({ env }: { env: Envelope }) {
+// Where the agreement is up to, from lib/docusign-status: the same function the
+// roster, the admin table and the reminder cron use.
+//
+// While signing is in progress the card shows one line per signer (icon, role,
+// status) instead of a pill and a sentence: the reader needs to know who has
+// signed and who has not, at a glance. A bounce used to show only "Email
+// Bounced" and hide a parent who had already signed (22 Nov 2026). Settled
+// states (complete, on file, voided, declined, couldn't send) keep the pill.
+
+function EnvelopeProgress({ env, admin }: { env: Envelope; admin?: boolean }) {
   const d = describeEnvelope(env, env.recipients ?? [])
+  if (showsSignerList(d)) {
+    return (
+      <div className="basis-full space-y-1.5">
+        <AgreementSigners signers={d.signers} />
+        {d.bounced.length > 0 && (
+          <p className="text-xs leading-snug text-content-muted">
+            {admin
+              ? 'Use Correct email on the event roster. Signatures already given are kept.'
+              : 'Signatures already given are kept. Contact us to correct the address.'}
+          </p>
+        )}
+      </div>
+    )
+  }
   return (
     <>
       <span className={`inline-flex text-xs px-2 py-0.5 rounded-full font-medium ${PILL_CLASSES[d.pill]}`}>
@@ -109,7 +129,7 @@ function getExpiryInfo(completedAt: string, type: string, version: string | null
 }
 
 const URGENCY_CLS: Record<string, string> = {
-  ok:      'text-green-600',
+  ok:      'text-enviro-green-text', // token green: green-600 was 3.3:1 on white (axe)
   soon:    'text-brand-gold-ink font-medium',
   expired: 'text-red-600 font-medium',
 }
@@ -146,7 +166,12 @@ export function DocusignsSection({ dateOfBirth, eventRole, initialEnvelopes, adm
 
   const graduated      = memberHasGraduated(dateOfBirth, eventRole)
   const hasMinorForms  = envelopes.some(e => (e.envelope_type ?? 'minor') === 'minor')
-  const hasPending     = envelopes.some(e => e.status === 'sent' || e.status === 'delivered')
+  const pending        = envelopes.filter(e => e.status === 'sent' || e.status === 'delivered')
+  // The reminder cron skips a bounced envelope (a resend cannot reach it), so
+  // promising a reminder there was false.
+  const isBounced      = (e: Envelope) => describeEnvelope(e, e.recipients ?? []).pill === 'bounced'
+  const hasPending     = pending.some(e => !isBounced(e))
+  const hasBounced     = pending.some(isBounced)
 
   return (
     <div className="bg-white rounded-xl border border-brand-border p-6">
@@ -202,7 +227,7 @@ export function DocusignsSection({ dateOfBirth, eventRole, initialEnvelopes, adm
               {/* Under the details on a phone; beside them from sm. The status
                   detail ("Waiting on …") wraps instead of widening the row. */}
               <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 sm:mt-0.5 sm:max-w-[45%] sm:justify-end">
-                <EnvelopeProgressBadge env={env} />
+                <EnvelopeProgress env={env} admin={adminDownload} />
                 {env.signNowUrl && (
                   <a
                     href={env.signNowUrl}
@@ -226,9 +251,11 @@ export function DocusignsSection({ dateOfBirth, eventRole, initialEnvelopes, adm
         })}
       </div>
 
-      {hasPending && (
+      {(hasPending || hasBounced) && (
         <p className="text-xs text-brand-muted-soft mt-4 pt-3 border-t border-brand-hairline">
-          A reminder will be sent automatically if the form isn&apos;t signed within 7 days.
+          {hasPending
+            ? <>A reminder will be sent automatically if the form isn&apos;t signed within 7 days.</>
+            : <>Reminders are paused until the bounced email address is corrected.</>}
         </p>
       )}
     </div>

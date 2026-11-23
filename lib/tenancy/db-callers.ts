@@ -53,4 +53,27 @@ export const TENANT_DB_CALLERS: readonly string[] = [
   // to not importing it, and drives it over a stand-in driver (it reaches
   // tenantDb only through the script, so it is not listed itself).
   'scripts/tenant-db-canary.ts',
+  // An event's volunteer interest (S5 A10c): the 'volunteers' area, through readArea. The
+  // events/[slug]/volunteers route reaches it only through this module. Its two-tenant test
+  // is test/integration/two-tenant/volunteers.int.test.ts (through the kit and this module).
+  'lib/events/admin-volunteers.ts',
+  'lib/events/admin-volunteers.test.ts',
+  // The 'team-profiles' area (S5 A10c): the admin team-profile plan, Auto-Assign and the
+  // overrides, through readArea and writeArea. Its two-tenant test
+  // (test/integration/two-tenant/team-profiles.int.test.ts) reaches tenantDb only through the
+  // kit and this module, so it is not listed itself.
+  'lib/team-profile/admin-data.ts',
+  'lib/team-profile/admin-data.test.ts',
+  // The 'credentials' area (S5 A10c): an event's issued-credentials list, the tenant panel
+  // and revoke, through readArea and writeArea. Its two-tenant test
+  // (test/integration/two-tenant/credentials.int.test.ts) reaches tenantDb only through the
+  // kit and this module, so it is not listed itself.
+  'lib/events/admin-credentials.ts',
+  'lib/events/admin-credentials.test.ts',
+  // Event survey admin data (S5 A10c): the 'surveys' area, behind the event's Survey tab.
+  // The route and lib/survey/admin.ts reach it only through this module. Its two-tenant test
+  // (test/integration/two-tenant/surveys.int.test.ts) reaches tenantDb only through the kit
+  // and this module, so it is not listed itself.
+  'lib/survey/admin-data.ts',
+  'lib/survey/admin-data.test.ts',
 ]
