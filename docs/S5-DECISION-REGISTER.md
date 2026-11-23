@@ -342,18 +342,18 @@ None of these gates `dev`, which uses a placeholder document (`W7-6`). They are 
 
 ## S6 decisions
 
-Added 22 Nov 2026 with S6-D (`docs/S6-DESIGN.md`, section 1). **Open, default in force:** S6 builds the default until the owner answers. The owner's 22 Nov 2026 blanket yes (#855) predates these rows and does not cover them. S6-Q1 is answered in `docs/PLAN-S6-DRAFT.md` (owner, 21 Nov 2026: (a)).
+Added 22 Nov 2026 with S6-D (`docs/S6-DESIGN.md`, section 1). **Open, default in force:** S6 builds the default until the owner answers. The owner's 22 Nov 2026 blanket yes (#855) predates these rows and does not cover them. S6-Q1 is answered in `docs/PLAN-S6-DRAFT.md` (owner, 21 Nov 2026: (a)). **MFA enforcement parked (owner, 23 Nov 2026):** Clerk Pro will not be bought until the Australian counterparts commit, so `ADMIN_MFA_ENFORCE` stays off everywhere and S6-Q2 waits with it; step-up (`ADMIN_STEP_UP_ENFORCE`, first factor) is unaffected.
 
 | Id | Question | Recommended default | Answer | Answered |
 |---|---|---|---|---|
-| S6-Q2 | Which roles must have MFA at request time? (a) admin and Staff; (b) also event managers; (c) everyone with portal access | (a) first for Stellr, then event managers; (c) for tenant admins once they exist | Open: default in force | |
+| S6-Q2 | Which roles must have MFA at request time? (a) admin and Staff; (b) also event managers; (c) everyone with portal access | (a) first for Stellr, then event managers; (c) for tenant admins once they exist | **Parked** with MFA enforcement until Clerk Pro (owner, 23 Nov 2026) | |
 | S6-Q3 | Who is on `platform_admins`, route by route, under `AUTHZ_SOURCE=postgres`? | The two platform admins mapped on production on 21 Nov 2026; BF-15 (a)'s seven routes `platform_admin` only; other admin routes keep the Stellr admin check until C25 | Open: default in force | |
 | S6-Q4 | How a tenant consents to break-glass write: (a) in-app approval by a tenant admin, logged; (b) written consent recorded by staff | (a); with no tenant admin, break-glass is refused | Open: default in force | |
 | S6-Q5 | Break-glass time limit: 15, 30 or 60 minutes | 30 minutes, renewable once with a fresh reason and step-up | Open: default in force | |
 | S6-Q6 | Which usage figures the console shows, and how long `usage_events` is kept | Counts only (registrations, events, emails, identities); gross volume and fees after S9; raw events 90 days, daily roll-ups kept | Open: default in force | |
 | S6-Q7 | Where support mode runs: (a) the platform host; (b) the tenant's host | (a); `/admin` stays a 404 on tenant hosts (REF-14) | Open: default in force | |
 | S6-Q8 | Does view-as stay for Stellr once support mode exists? (a) keep for Stellr, support mode for tenants; (b) replace | (a); view-as refuses a target tied to a non-owner tenant (BF-40) | Open: default in force | |
-| S6-Q9 | Is the authority flip (C25) S6's first production step, or the end of S5? | (a) S6's first step, after the production shadow week (to 29 Nov 2026 01:26Z) | Open: default in force | |
+| S6-Q9 | Is the authority flip (C25) S6's first production step, or the end of S5? | (a) S6's first step, after the production shadow week (to 29 Nov 2026 01:26Z) | **Owner, 23 Nov 2026: flip now**, ahead of the 7-day window. Dev flipped first (`AUTHZ_SOURCE=postgres` on stellr-web-dev, 23 Nov 2026); production follows once its mismatch rows and drift check are read | 2026-11-23 |
 | S6-Q10 | The `proxy.ts` admin prefilter under `postgres` (B20): (a) sync a Clerk claim from Postgres; (b) signed-in only | (a): the proxy stays database-free | Open: default in force | |
 | S6-Q11 | Where the audit chain's recorded heads are kept: (a) a scheduled job; (b) by hand at each promotion | (b) until a cron's Active CPU is measured | Open: default in force | |
 | S6-Q12 | Where a tenant admin answers a break-glass request (S6-BG, 23 Nov 2026): `app/api/support-consents/[id]` works only on the tenant's own host. (a) keep it `pending` on the tenant-host list (denied) until the first tenant-admin account and its request list exist; (b) allow it now | (a): no tenant admin exists, so nothing is lost, and the allow list stays the owner's to widen (`lib/tenancy/tenant-surface.ts`) | Open: default in force | |
