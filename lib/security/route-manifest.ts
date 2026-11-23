@@ -221,6 +221,7 @@ export const ROUTE_MANIFEST: Record<string, RouteClass> = {
   'app/api/admin/platform/tenants/[id]/status/route.ts': 'platform_admin',
   // S6-CON-b: set a per-tenant switch from the super-admin console (platform host only).
   'app/api/admin/platform/tenants/[id]/flags/route.ts': 'platform_admin',
+  'app/api/admin/platform/tenants/[id]/email/route.ts': 'platform_admin',
   // S6-SUP-UI: break-glass's first change, a company rename through tenantBreakGlassDb.
   'app/api/admin/platform/support/company-name/route.ts': 'platform_admin',
   'app/api/admin/support/consent/route.ts': 'platform_admin',

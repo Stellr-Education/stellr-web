@@ -32,6 +32,11 @@ export const AUDIT_ACTIONS = [
   'platform.tenant.resume',
   // S6-CON-b: a per-tenant switch set from the console (app/api/admin/platform/tenants/[id]/flags)
   'platform.tenant_flag.set',
+  // Email plan D2: a tenant's sender and own sending domain (app/api/admin/platform/tenants/[id]/email).
+  'platform.tenant_email.save',
+  'platform.tenant_email.add_domain',
+  'platform.tenant_email.check',
+  'platform.tenant_email.remove_domain',
 
   // Crons (B12) and webhooks (A13)
   'cron.run.finish',

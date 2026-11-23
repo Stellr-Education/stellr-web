@@ -47,7 +47,8 @@ const MANIFEST_CLASS_COUNTS: Record<RouteClass, number> = {
   // +1 platform_admin: S6-CON's admin platform/tenants/[id]/status (23 Nov 2026), denied on tenant hosts (S6-Q7)
   // +1 platform_admin: S6-CON-b's admin platform/tenants/[id]/flags (23 Nov 2026), denied on tenant hosts (S6-Q7)
   // +1 platform_admin: S6-SUP-UI's admin platform/support/company-name (23 Nov 2026), denied on tenant hosts (S6-Q7)
-  platform_admin: 13,
+  // +1 platform_admin: email plan D2's admin platform/tenants/[id]/email (23 Nov 2026), denied on tenant hosts (S6-Q7)
+  platform_admin: 14,
   platform_destined: 2,
   // +1 tenant_crew, -1 stellr_only: admin registrations/[id]/payment-method (C16 follow-up)
   // +3 tenant_crew, -3 stellr_only: admin events/[slug]/{companies,offerings,merch/commit} (C18)
@@ -104,7 +105,8 @@ const MANIFEST_CLASS_COUNTS: Record<RouteClass, number> = {
 // +1 on 23 Nov 2026: S6-CON-b's flags API (platform_admin, denied on tenant hosts, S6-Q7).
 // +2 on 23 Nov 2026: S6-SUP-UI's support view page (stellr_only) and company-name API (platform_admin), denied on tenant hosts (S6-Q7).
 // +1 on 23 Nov 2026: the email-events-retention cron (email plan, Workstream C; cron, denied on tenant hosts like every cron).
-const MANIFEST_TOTAL = 542
+// +1 on 23 Nov 2026: email plan D2's tenant email API (platform_admin, denied on tenant hosts, S6-Q7).
+const MANIFEST_TOTAL = 543
 
 // The decisions. Moving a route between them is a deliberate diff here.
 const DECISION_COUNTS: Record<TenantSurfaceDecision, number> = {
@@ -124,7 +126,8 @@ const DECISION_COUNTS: Record<TenantSurfaceDecision, number> = {
   // +1: S6-CON-b's flags API, platform host only (S6-Q7)
   // +2: S6-SUP-UI's support view and company-name API, platform host only (S6-Q7)
   // +1: the email-events-retention cron (email plan, Workstream C)
-  deny: 436,
+  // +1: email plan D2's tenant email API, platform host only (S6-Q7)
+  deny: 437,
 }
 
 /** A concrete URL a manifest file serves, with sample values for its params. */
