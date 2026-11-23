@@ -46,8 +46,10 @@ $q$, 'tenant_support_ro holds no INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES or
 SELECT is_empty($q$
   SELECT format('%I.%I', n.nspname, c.relname)
   FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
-  WHERE n.nspname IN ('public', 'entitlements') AND c.relkind = 'S'
-    AND has_sequence_privilege('tenant_support_ro', c.oid, 'USAGE, UPDATE')
+  WHERE n.nspname IN ('public', 'entitlements')
+    -- CASE, not AND: Postgres need not evaluate AND left to right, and the function
+    -- raises on a relation that is not a sequence.
+    AND CASE WHEN c.relkind = 'S' THEN has_sequence_privilege('tenant_support_ro', c.oid, 'USAGE, UPDATE') ELSE false END
 $q$, 'tenant_support_ro holds no USAGE or UPDATE on any sequence');
 SELECT is_empty($q$
   SELECT p.oid::regprocedure::text
