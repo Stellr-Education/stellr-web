@@ -8924,6 +8924,70 @@ export type Database = {
           },
         ]
       }
+      usage_daily: {
+        Row: {
+          day: string
+          kind: string
+          tenant_id: string
+          total: number
+          updated_at: string
+        }
+        Insert: {
+          day: string
+          kind: string
+          tenant_id: string
+          total: number
+          updated_at?: string
+        }
+        Update: {
+          day?: string
+          kind?: string
+          tenant_id?: string
+          total?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "usage_daily_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      usage_events: {
+        Row: {
+          count: number
+          id: number
+          kind: string
+          occurred_at: string
+          tenant_id: string
+        }
+        Insert: {
+          count?: number
+          id?: number
+          kind: string
+          occurred_at?: string
+          tenant_id: string
+        }
+        Update: {
+          count?: number
+          id?: number
+          kind?: string
+          occurred_at?: string
+          tenant_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "usage_events_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       video_watermark_jobs: {
         Row: {
           attempts: number
@@ -9725,6 +9789,7 @@ export type Database = {
         Returns: boolean
       }
       tier_space_slug: { Args: { p_name: string }; Returns: string }
+      usage_rollup: { Args: { p_day: string }; Returns: number }
     }
     Enums: {
       age_bracket_type: "high_school" | "college" | "adult"
