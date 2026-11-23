@@ -213,6 +213,8 @@ export const ROUTE_MANIFEST: Record<string, RouteClass> = {
   'app/api/admin/scholarships/[id]/route.ts': 'tenant_crew',
   'app/api/admin/schools/[id]/route.ts': 'platform_destined',
   'app/api/admin/duties/route.ts': 'platform_admin',
+  // S6-SUP: open and close a support session (platform host only, behind SUPPORT_MODE_ENABLED).
+  'app/api/admin/support/session/route.ts': 'platform_admin',
   'app/api/admin/store/discounts/route.ts': 'stellr_only',
   'app/api/admin/store/printful/route.ts': 'stellr_only',
   'app/api/admin/store/products/[id]/route.ts': 'stellr_only',

@@ -7430,6 +7430,54 @@ export type Database = {
         }
         Relationships: []
       }
+      support_sessions: {
+        Row: {
+          closed_at: string | null
+          ends_at: string
+          id: string
+          mode: string
+          opened_at: string
+          platform_admin_user_id: string
+          reason: string
+          tenant_id: string
+        }
+        Insert: {
+          closed_at?: string | null
+          ends_at: string
+          id?: string
+          mode?: string
+          opened_at?: string
+          platform_admin_user_id: string
+          reason: string
+          tenant_id: string
+        }
+        Update: {
+          closed_at?: string | null
+          ends_at?: string
+          id?: string
+          mode?: string
+          opened_at?: string
+          platform_admin_user_id?: string
+          reason?: string
+          tenant_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "support_sessions_platform_admin_user_id_fkey"
+            columns: ["platform_admin_user_id"]
+            isOneToOne: false
+            referencedRelation: "platform_admins"
+            referencedColumns: ["clerk_user_id"]
+          },
+          {
+            foreignKeyName: "support_sessions_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       survey_access_log: {
         Row: {
           action: string

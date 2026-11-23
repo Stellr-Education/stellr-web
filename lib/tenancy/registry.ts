@@ -223,6 +223,10 @@ export const TABLE_REGISTRY: Record<string, TableEntry> = {
   ),
   'public.email_suppressions': platform('global suppression list'),
 
+  'public.support_sessions': platform(
+    'S6-SUP support sessions: a platform admin reading one non-owner tenant, read-only, for 60 minutes or less. Platform-level although it carries tenant_id NOT NULL: written only by service_role through app/api/admin/support/session, never by tenant_app or tenant_support_ro (lib/tenancy/tenant-role.ts TENANT_APP_NO_ACCESS_TABLES)',
+  ),
+
   // ── Stellr-only products ─────────────────────────────────────────────────
   'public.chat_channels': stellr('community'),
   'public.chat_messages': stellr('community'),

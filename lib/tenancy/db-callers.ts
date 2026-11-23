@@ -76,4 +76,9 @@ export const TENANT_DB_CALLERS: readonly string[] = [
   // and this module, so it is not listed itself.
   'lib/survey/admin-data.ts',
   'lib/survey/admin-data.test.ts',
+  // S6 support mode (S6-SUP): tenantDb as tenant_support_ro, read-only, pinned to a
+  // verified support session's tenant. Callers reach the support role only through
+  // tenantSupportDb, never by passing role to tenantDb themselves.
+  'lib/tenancy/support-db.ts',
+  'lib/tenancy/support-db.test.ts',
 ]

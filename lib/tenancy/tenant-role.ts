@@ -75,6 +75,8 @@ export const TENANT_APP_NO_ACCESS_TABLES: Readonly<Record<string, string>> = {
     'the mail queue (S5 M7): written by service_role through lib/email/outbox.ts; tenant_id only labels a queued row for the per-tenant drain, and NULL counts as Stellr’s',
   'public.platform_audit_events':
     'hash-chained audit (S4 audit lane): written by service_role through lib/audit/platform.ts; a tenant must not read or rewrite the chain, and tenant_id is nullable (NULL = the platform chain)',
+  'public.support_sessions':
+    'support sessions (S6-SUP): written by service_role through app/api/admin/support/session; a tenant session must not see which platform admin is looking, or close or extend a session',
   'public.tenant_data_keys':
     'wrapped field-encryption data keys (S4 field-crypto lane): read only by service_role through lib/field-crypto-store.ts; a tenant session never needs key material, and deleting a row crypto-shreds the tenant',
   'public.tenant_guardian_consents':

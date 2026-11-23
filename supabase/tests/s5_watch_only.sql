@@ -169,6 +169,16 @@ SELECT count(*) AS data_keys, count(*) FILTER (WHERE retired_at IS NOT NULL) AS 
 FROM public.tenant_data_keys
 WHERE created_at >= :'flip_at'::timestamptz;
 
+-- ── SUPPORT_MODE_ENABLED (S6-SUP; off everywhere) ────────────────────────────
+\echo '== SUPPORT_MODE_ENABLED: support sessions since the flip, by mode (never the reason text; still open must end by ends_at)'
+SELECT mode, count(*) AS sessions,
+       count(*) FILTER (WHERE closed_at IS NULL AND ends_at > now()) AS still_open,
+       count(*) FILTER (WHERE closed_at IS NULL AND ends_at <= now()) AS ended_unclosed
+FROM public.support_sessions
+WHERE opened_at >= :'flip_at'::timestamptz
+GROUP BY 1
+ORDER BY 1;
+
 -- ── tenancy_settings.derivation_mode (not flipped in wave 7) ─────────────────
 \echo '== derivation_mode: the setting, and the derivation log since the flip day (UTC)'
 SELECT derivation_mode, updated_at FROM public.tenancy_settings;

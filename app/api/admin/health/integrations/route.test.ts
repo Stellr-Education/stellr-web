@@ -185,6 +185,7 @@ describe('GET /api/admin/health/integrations — tenancy', () => {
       derivationMode: 'log',
       tenantDb: { enabled: false, areas: [], ignoredEntries: 0 },
       routing: { enabled: false, suffixError: null },
+      supportMode: false,
       unrecognised: [],
       invalidCombinations: [],
     })

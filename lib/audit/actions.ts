@@ -13,6 +13,9 @@ export const AUDIT_ACTIONS = [
   // Support: view-as (app/api/admin/impersonation)
   'support.impersonate.start',
   'support.impersonate.stop',
+  // Support: S6 support sessions (app/api/admin/support/session), on the TENANT's chain
+  'support.session.open',
+  'support.session.close',
 
   // Crons (B12) and webhooks (A13)
   'cron.run.finish',
