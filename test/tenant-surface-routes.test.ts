@@ -64,7 +64,8 @@ const MANIFEST_CLASS_COUNTS: Record<RouteClass, number> = {
   // +1 on 20 Nov 2026: the tenant tree's /sign/email page (BOUNCE)
   public: 142,
   webhook: 12,
-  cron: 24,
+  // +1 on 22 Nov 2026: cron/usage-rollup (S6-USE).
+  cron: 25,
   // -1 on 14 Nov 2026: the embedded Sanity Studio page left the app for Sanity's hosting.
   // -7 on 16 Nov 2026: C19a (see tenant_crew).
   // -8 on 20 Nov 2026: C20 and C21 (see tenant_crew).
@@ -87,7 +88,8 @@ const MANIFEST_CLASS_COUNTS: Record<RouteClass, number> = {
 // +1 on 17 Nov 2026: admin events/[slug]/addons/bookings (tenant_crew, denied on tenant hosts like every admin route).
 // +1 on 20 Nov 2026: the tenant tree's /sign/email page (S5 wave 8, BOUNCE).
 // +1 on 21 Nov 2026: account/two-step, the admin two-step prompt (F4 part B; participant, denied on tenant hosts like the admin portal).
-const MANIFEST_TOTAL = 530
+// +1 on 22 Nov 2026: the usage-rollup cron (S6-USE; cron, denied on tenant hosts like every cron).
+const MANIFEST_TOTAL = 531
 
 // The decisions. Moving a route between them is a deliberate diff here.
 const DECISION_COUNTS: Record<TenantSurfaceDecision, number> = {
@@ -99,7 +101,8 @@ const DECISION_COUNTS: Record<TenantSurfaceDecision, number> = {
   bypass: 4,
   // +1: the tenant tree's /sign/email page, a tree file like its siblings (BOUNCE)
   // +1: account/two-step, the admin portal's two-step prompt (F4 part B)
-  deny: 425,
+  // +1: the usage-rollup cron (S6-USE)
+  deny: 426,
 }
 
 /** A concrete URL a manifest file serves, with sample values for its params. */

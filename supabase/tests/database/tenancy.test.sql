@@ -180,6 +180,8 @@ SELECT set_eq(
     'public.training_modules',
     'public.training_progress',
     'public.training_sections',
+    'public.usage_daily',
+    'public.usage_events',
     'public.video_watermark_jobs',
     'public.volunteer_event_interest'
   ]::text[],

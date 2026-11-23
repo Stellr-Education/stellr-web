@@ -79,13 +79,13 @@ afterEach(() => {
 })
 
 describe('guardCron with CRON_NON_PROD_JOBS unset', () => {
-  it('declines all 24 crons on dev exactly as before', async () => {
+  it('declines all 25 crons on dev exactly as before', async () => {
     hostedDev(undefined)
-    expect(JOBS).toHaveLength(24)
+    expect(JOBS).toHaveLength(25)
     for (const job of JOBS) expect(await guard(job), job).toEqual({ status: 200, body: DECLINED })
   })
 
-  it('declines all 24 when the variable is blank', async () => {
+  it('declines all 25 when the variable is blank', async () => {
     hostedDev('')
     for (const job of JOBS) expect(await guard(job), job).toEqual({ status: 200, body: DECLINED })
   })
@@ -132,11 +132,11 @@ describe('guardCron on the hosted dev deployment, with every job named', () => {
     expect(await guard(job)).toEqual({ status: 200, body: DECLINED })
   })
 
-  it('lets through only email-outbox and membership-expiry', async () => {
+  it('lets through only email-outbox, membership-expiry and usage-rollup', async () => {
     hostedDev(EVERYTHING)
     const through: string[] = []
     for (const job of JOBS) if ((await guard(job)) === null) through.push(job)
-    expect(through).toEqual(['email-outbox', 'membership-expiry'])
+    expect(through).toEqual(['email-outbox', 'membership-expiry', 'usage-rollup'])
   })
 
   it('still answers 401 to a wrong secret, before anything else', async () => {

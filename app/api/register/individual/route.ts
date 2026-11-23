@@ -6,6 +6,7 @@ import { HOUR_MS } from '@/lib/rate-limit'
 import { rateLimit } from '@/lib/rate-limit-async'
 import { requestTenant } from '@/lib/tenancy/request-tenant'
 import { STELLR_TENANT_ID } from '@/lib/tenancy/constants'
+import { recordUsage } from '@/lib/usage/record'
 import { auditMutation } from '@/lib/audit/route'
 import { gateIndividualRegistration } from '@/lib/registration/individual/gate'
 import type { IndividualBody } from '@/lib/registration/individual/parse'
@@ -35,6 +36,9 @@ interface AuditNote {
  */
 async function recordRegistration(note: AuditNote): Promise<void> {
   if (note.status >= 400 && note.status < 500) return
+  // S6-USE: a registration that was created and answered 2xx counts once for its
+  // event's tenant. A no-op unless USAGE_METERING_ENABLED is on (lib/usage/record).
+  if (note.status >= 200 && note.status < 300 && note.registrationId) recordUsage(note.eventTenantId, 'registration')
   await auditMutation(
     {
       action: 'registration.individual.create',

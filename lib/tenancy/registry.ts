@@ -120,6 +120,14 @@ export const TABLE_REGISTRY: Record<string, TableEntry> = {
     'guardian consent state for a 14-17-year-old on another organiser’s event (lib/registration/tenant-guardian-consent.ts). Platform-level although it carries tenant_id NOT NULL: written only by service_role, so a tenant session can never mark its own consent given (lib/tenancy/tenant-role.ts TENANT_APP_NO_ACCESS_TABLES)',
   ),
 
+  // ── S6-USE usage metering ────────────────────────────────────────────────
+  'public.usage_events': platform(
+    'raw usage counts per tenant (S6-USE, lib/usage/record.ts). Platform-level although it carries tenant_id NOT NULL: written and read only by service_role, never by tenant_app (lib/tenancy/tenant-role.ts TENANT_APP_NO_ACCESS_TABLES). No personal data',
+  ),
+  'public.usage_daily': platform(
+    'daily usage totals per tenant (S6-USE, usage_rollup()). Platform-level although it carries tenant_id NOT NULL: service_role only (TENANT_APP_NO_ACCESS_TABLES)',
+  ),
+
   // ── Event-scoped, tenant derived from event_slug ─────────────────────────
   'public.agreements': slug('e-sign envelopes (renamed from docusign_envelopes)'),
   'public.credentials': slug('event_slug optional: PD and module credentials log no_key'),

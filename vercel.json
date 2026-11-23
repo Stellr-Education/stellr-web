@@ -129,6 +129,10 @@
       "schedule": "0 4 2 * *"
     },
     {
+      "path": "/api/cron/usage-rollup",
+      "schedule": "30 0 * * *"
+    },
+    {
       "path": "/api/cron/weekly-digest",
       "schedule": "0 18 * * 5"
     },

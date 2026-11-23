@@ -8,6 +8,8 @@ import { maskEmail } from '@/lib/utils'
 import { EmailSendError, resendTransport, sendRespectingRateLimit, type OutgoingEmail } from '@/lib/email/transport'
 import { deferReason, enqueueEmail, type OutboxReason } from '@/lib/email/outbox'
 import { lookupSuppressions, normaliseEmail, suppressionBlocks } from '@/lib/email/suppressions'
+import { recordUsage } from '@/lib/usage/record'
+import { STELLR_TENANT_ID } from '@/lib/tenancy/constants'
 
 // deep review PUB-2 / HTML-injection cluster: every user-supplied value that is
 // interpolated into an HTML email body is escaped with `esc` (the shared
@@ -271,6 +273,9 @@ export async function sendEmail({ to, from, cc, replyTo, subject, html, text, at
   // shared daily budget, keyed by UTC day. Best-effort: recordSend never throws,
   // since the mail has already been sent.
   if (quotaDb) await recordSend(quotaDb)
+  // S6-USE: one email for the sender's tenant (NULL is Stellr's own mail). A no-op
+  // unless USAGE_METERING_ENABLED is on; queued mail is counted by the outbox drain.
+  recordUsage(tenantId ?? STELLR_TENANT_ID, 'email')
   return { id: sent.id }
 }
 

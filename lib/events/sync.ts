@@ -19,6 +19,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { STELLR_TENANT_ID } from '@/lib/tenancy/constants'
 import { eventTimeZone, isValidTimeZone, zonedTimeToUtc } from '@/lib/survey/timezone'
 import { normaliseState } from '@/lib/us-states'
+import { recordUsage, usageMeteringEnabled } from '@/lib/usage/record'
 
 /** The Sanity fields the mirror keeps. No personal data: event documents are public. */
 export const MIRROR_PROJECTION = `{
@@ -224,7 +225,18 @@ export async function upsertEventRows(db: SupabaseClient, rows: EventRow[]): Pro
     return owner.tenant_id === STELLR_TENANT_ID ? out : keepTenantSettings(out, owner)
   })
   const { error } = await db.from('events').upsert(kept, { onConflict: 'sanity_id' })
+  if (!error && usageMeteringEnabled()) recordNewEvents(kept.filter((row) => !owners.has(row.sanity_id)))
   return { error: error ? error.message : null }
+}
+
+/**
+ * S6-USE: one 'event' per mirror row that did not exist before this write, per
+ * tenant. A no-op unless USAGE_METERING_ENABLED is on (lib/usage/record.ts).
+ */
+function recordNewEvents(created: EventRow[]): void {
+  const perTenant = new Map<string, number>()
+  for (const row of created) perTenant.set(row.tenant_id, (perTenant.get(row.tenant_id) ?? 0) + 1)
+  for (const [tenantId, n] of perTenant) recordUsage(tenantId, 'event', n)
 }
 
 /** Fetch one published event from Sanity, uncached, by _id or slug. */
