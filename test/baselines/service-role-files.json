@@ -861,6 +861,14 @@
       "class": "stellr_only",
       "reason": "auto: no tenant or event-scoped table, classed by its stellr_only tables; tables: membership_tiers, store_products"
     },
+    "app/api/admin/support/break-glass/route.ts": {
+      "class": "platform",
+      "reason": "S6-BG: opens and renews break-glass through support_break_glass_open and support_break_glass_renew, which are service_role only by design (the consent check and the 30-minute limit must be atomic and outside any tenant role), and closes the session if its audit write fails; tables: support_sessions"
+    },
+    "app/api/admin/support/consent/route.ts": {
+      "class": "platform",
+      "reason": "S6-BG: records a platform admin's break-glass request. support_consents is service_role only by design (no tenant role may forge or reuse one), and the request checks platform_admins and the target tenant before any tenant context exists; tables: platform_admins, support_consents, tenants"
+    },
     "app/api/admin/support/session/route.ts": {
       "class": "platform",
       "reason": "S6-SUP: opens and closes support sessions. support_sessions is service_role only by design (no tenant role may see or extend a session), and the open checks platform_admins and the target tenant before any tenant context exists; tables: platform_admins, support_sessions, tenants"
@@ -1368,6 +1376,10 @@
     "app/api/stripe/webhook/route.ts": {
       "class": "convert",
       "reason": "auto: touches tenant or event-scoped tables; tables: member_memberships, members, membership_tiers, participants, registrations, stripe_webhook_events"
+    },
+    "app/api/support-consents/[id]/route.ts": {
+      "class": "platform",
+      "reason": "S6-BG: a tenant admin's answer, through support_consent_decide and support_consent_withdraw, which take the host's tenant and check tenant_memberships themselves; service_role only by design, so no tenant role can approve a request"
     },
     "app/api/survey/[token]/stop-reminders/route.ts": {
       "class": "convert",

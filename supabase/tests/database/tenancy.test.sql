@@ -155,6 +155,7 @@ SELECT set_eq(
     'public.store_tier_discounts',
     'public.store_variants',
     'public.stripe_webhook_events',
+    'public.support_consents',
     'public.support_sessions',
     'public.survey_access_log',
     'public.survey_answers',

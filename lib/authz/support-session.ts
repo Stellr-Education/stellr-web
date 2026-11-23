@@ -50,6 +50,12 @@ export interface SupportSession {
   tenantId?: string
   /** Epoch milliseconds. */
   endsAt?: number
+  /**
+   * S6-BG: the cookie is validly signed but its end time has passed. Such a session
+   * grants nothing and refuses every admin write (lib/authz/writable.ts), so a session
+   * past its time limit cannot write even if the browser still sends the cookie.
+   */
+  ended?: boolean
 }
 
 /** What the cookie carries, signed. */
@@ -122,9 +128,15 @@ export function encodeSupportTicket(ticket: SupportTicket, env: Env = process.en
 
 /**
  * The ticket in a cookie value, or null: a bad signature, bad JSON, a malformed field,
- * an expired ticket, or no usable secret. Never throws.
+ * an expired ticket (unless `allowExpired`, which only the write refusal uses), or no
+ * usable secret. Never throws.
  */
-export function decodeSupportTicket(raw: string | undefined | null, env: Env = process.env, now: number = Date.now()): SupportTicket | null {
+export function decodeSupportTicket(
+  raw: string | undefined | null,
+  env: Env = process.env,
+  now: number = Date.now(),
+  opts: { allowExpired?: boolean } = {},
+): SupportTicket | null {
   try {
     if (!raw) return null
     const key = secret(env)
@@ -137,7 +149,7 @@ export function decodeSupportTicket(raw: string | undefined | null, env: Env = p
     if (given.length !== expected.length || !timingSafeEqual(given, expected)) return null
     const ticket: unknown = JSON.parse(Buffer.from(payload, 'base64url').toString())
     if (!isTicket(ticket)) return null
-    if (ticket.exp <= now) return null
+    if (ticket.exp <= now && !opts.allowExpired) return null
     return ticket
   } catch {
     return null
@@ -170,13 +182,16 @@ function cookieHeader(req: unknown): string | null {
  * used to refuse writes, never to grant a read (see the file header).
  *
  * A principal marked support_read answers 'read' (S6-AW). Otherwise, with the flag off,
- * null at once, without reading the request. With it on, a validly signed, unexpired
- * support cookie on `req` answers its mode.
+ * null at once, without reading the request. With it on, a validly signed support
+ * cookie on `req` answers its mode; one past its end time is marked `ended` (S6-BG).
  */
 export function supportSessionOf(principal?: Pick<Principal, 'mode'> | null, req?: unknown): SupportSession | null {
   if (principal?.mode === 'support_read') return { mode: 'read' }
   if (!supportModeEnabled()) return null
   if (req === undefined || req === null) return null
-  const ticket = decodeSupportTicket(cookieValue(cookieHeader(req), SUPPORT_SESSION_COOKIE))
-  return ticket ? { mode: ticket.mode, sessionId: ticket.sid, tenantId: ticket.tid, endsAt: ticket.exp } : null
+  const now = Date.now()
+  const ticket = decodeSupportTicket(cookieValue(cookieHeader(req), SUPPORT_SESSION_COOKIE), process.env, now, { allowExpired: true })
+  if (!ticket) return null
+  const session: SupportSession = { mode: ticket.mode, sessionId: ticket.sid, tenantId: ticket.tid, endsAt: ticket.exp }
+  return ticket.exp <= now ? { ...session, ended: true } : session
 }

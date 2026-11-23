@@ -157,6 +157,11 @@ export const TENANT_SURFACE_PENDING: readonly TenantSurfaceRule[] = [
     reason: "a privacy request on a tenant host goes to the organiser's controller process, not yet designed",
   },
   {
+    match: 'app/api/support-consents/[id]/route.ts',
+    reason:
+      "S6-BG: a tenant admin's answer to a break-glass request, which only works on the tenant's own host. Behind SUPPORT_MODE_ENABLED, and no tenant admin exists yet; allow when the first tenant-admin account does, with the tenant-admin screen that lists requests",
+  },
+  {
     match: 'app/api/privacy-requests/',
     reason:
       "a privacy request on a tenant host goes to the organiser's controller process, not yet designed. Both routes audit to Stellr's chain, so allowing them must also resolve the chain",

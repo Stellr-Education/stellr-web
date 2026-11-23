@@ -6,7 +6,7 @@ import type { SupportSession } from '@/lib/authz/support-session'
 const session = vi.hoisted(() => ({ current: null as SupportSession | null }))
 vi.mock('@/lib/authz/support-session', () => ({ supportSessionOf: () => session.current }))
 
-const { assertWritable, isAdminApiRequest, ReadOnlySupportSessionError, writeRefusal } = await import('@/lib/authz/writable')
+const { assertWritable, isAdminApiRequest, ReadOnlySupportSessionError, SupportWriteRefusedError, writeRefusal } = await import('@/lib/authz/writable')
 const { withAudit } = await import('@/lib/audit/route')
 const real = await vi.importActual<typeof import('@/lib/authz/support-session')>('@/lib/authz/support-session')
 
@@ -50,9 +50,18 @@ describe('assertWritable', () => {
     }
   })
 
-  it('lets break-glass through (S6-BG decides its own terms)', () => {
+  it('refuses break-glass unless the route opted in (S6-BG)', () => {
     session.current = { mode: 'break_glass' }
-    expect(() => assertWritable()).not.toThrow()
+    expect(() => assertWritable()).toThrow(SupportWriteRefusedError)
+    expect(() => assertWritable()).toThrow(expect.objectContaining({ status: 403, code: 'break_glass_unsupported' }))
+    expect(() => assertWritable(null, undefined, { breakGlass: true })).not.toThrow()
+  })
+
+  it('refuses an ended session of either mode, opted in or not (S6-BG time limit)', () => {
+    for (const mode of ['read', 'break_glass'] as const) {
+      session.current = { mode, ended: true }
+      expect(() => assertWritable(null, undefined, { breakGlass: true })).toThrow(expect.objectContaining({ code: 'support_session_ended' }))
+    }
   })
 })
 

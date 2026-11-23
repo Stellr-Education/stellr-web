@@ -121,10 +121,16 @@ function missingKinds(h: Checked, page: boolean): GuardKind[] {
 }
 
 /**
- * Functions a tenant_crew file may call directly. Empty: an rpc runs SQL this rule cannot
- * see, so adding one here is a review of what it reads and how it is scoped.
+ * Functions a tenant_crew file may call directly. An rpc runs SQL this rule cannot see,
+ * so adding one here is a review of what it reads and how it is scoped.
+ *
+ * Reviewed 23 Nov 2026 (S6-BG, supabase/migrations/20261123144030_support_break_glass.sql):
+ * support_consent_decide and support_consent_withdraw each take the tenant as an argument,
+ * which app/api/support-consents/[id] passes from the request host, and touch only a
+ * support_consents row of that tenant (another tenant's request answers "not found" or
+ * changes nothing). pgTAP: supabase/tests/database/support_break_glass.test.sql.
  */
-const TENANT_CREW_REVIEWED_RPCS: readonly string[] = []
+const TENANT_CREW_REVIEWED_RPCS: readonly string[] = ['support_consent_decide', 'support_consent_withdraw']
 
 /** Direct reads the tenant_crew rule refuses. An unknown table or schema fails closed. */
 function unscopedTableReads(file: string, code: string): string[] {

@@ -98,6 +98,8 @@ export interface CaseFixture {
   crewUnproven?: Partial<Record<'stellr_crew' | 'canary_admin' | 'stellr_event_manager' | 'stellr_staff', string>>
 }
 
+const BREAK_GLASS_TENANT_HOST_ONLY =
+  "answers only on a tenant's own host with SUPPORT_MODE_ENABLED on (404 here, before any read); the database then refuses anyone who is not that tenant's own admin"
 const STRIPE_ENV = { STRIPE_SECRET_KEY: 'sk_test_x' }
 const STRIPE_MEMBER = { stripe_customer_id: 'cus_idorharness' }
 // lib/gated-download-link.ts refuses a secret under 32 characters.
@@ -222,6 +224,20 @@ export const CASE_FIXTURES: Record<string, CaseFixture> = {
   },
 // C20 (S5 wave 9): the scholarship routes are tenant_crew. Deciding stays admin-only, so the
 // Staff persona stops at the capability, on every route but the refund quote (portal:read).
+  // S6-BG: a tenant admin's answer to a break-glass request. It exists only on a tenant's own
+  // host with SUPPORT_MODE_ENABLED on; on the platform host it is a 404 before any read.
+  // Past that, support_consent_decide refuses anyone without a tenant_admin membership of
+  // the request's own tenant, and every platform admin (pgTAP: support_break_glass.test.sql).
+  'app/api/support-consents/[id]/route.ts': {
+    reason: "the request id is reachable only on the request's own tenant host, by that tenant's admin",
+    refusesWithoutQuery: BREAK_GLASS_TENANT_HOST_ONLY,
+    crewUnproven: {
+      stellr_crew: BREAK_GLASS_TENANT_HOST_ONLY,
+      canary_admin: BREAK_GLASS_TENANT_HOST_ONLY,
+      stellr_event_manager: BREAK_GLASS_TENANT_HOST_ONLY,
+      stellr_staff: BREAK_GLASS_TENANT_HOST_ONLY,
+    },
+  },
   'app/api/admin/scholarships/[id]/route.ts': {
     reason: 'Staff cannot reach the application: the scholarship decision is admin-only',
     refusesWithoutQuery: 'the participant holds no role: the scholarships:write capability check answers before any read',

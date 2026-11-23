@@ -34,8 +34,8 @@ vi.mock('@/lib/supabase', () => ({
 
 const { encodeSupportTicket, SUPPORT_SESSION_COOKIE } = await import('@/lib/authz/support-session')
 const { loadSupportSession, isVerifiedSupportSession } = await import('@/lib/authz/support-session-server')
-const { tenantSupportDb } = await import('./support-db')
-const { PIN_CHECK_SQL, READ_ONLY_CHECK_SQL, READ_ONLY_SQL, SUPPORT_ROLE, TenantContextError } = await import('./db')
+const { tenantBreakGlassDb, tenantSupportDb } = await import('./support-db')
+const { PIN_CHECK_SQL, READ_ONLY_CHECK_SQL, READ_ONLY_SQL, SUPPORT_ROLE, TENANT_ROLE, TenantContextError } = await import('./db')
 type TenantSqlDriver = import('./db').TenantSqlDriver
 
 const SECRET = 'support-secret-for-tests-only-0123456789'
@@ -181,4 +181,34 @@ describe('tenantSupportDb', () => {
 
 it('the cookie name is the one the route sets', () => {
   expect(SUPPORT_SESSION_COOKIE).toBe('stellr_support_session')
+})
+
+describe('tenantBreakGlassDb (S6-BG)', () => {
+  const breakGlass = () => {
+    h.cookie = ticket({ mode: 'break_glass' })
+    h.row = openRow({ mode: 'break_glass' })
+    return loadSupportSession()
+  }
+
+  it('runs as tenant_app, read-write, pinned to the session tenant: never the service role', async () => {
+    const session = await breakGlass()
+    expect(session?.mode).toBe('break_glass')
+    const { driver, calls } = fakeDriver()
+    const db = tenantBreakGlassDb(session!, { driver })
+    expect(db.tenantId).toBe(TENANT)
+    await db.sql`UPDATE public.events SET title = ${'x'} WHERE id = ${'y'}`
+    expect(calls.slice(0, 3)).toEqual([`SET LOCAL ROLE ${TENANT_ROLE}`, "SELECT set_config('stellr.tenant_id', $1, true)", PIN_CHECK_SQL])
+    expect(calls).not.toContain(READ_ONLY_SQL)
+  })
+
+  it('refuses a read session, a hand-made one, and one that has since ended', async () => {
+    const { driver } = fakeDriver()
+    const read = await loadSupportSession()
+    expect(() => tenantBreakGlassDb(read!, { driver })).toThrow(TenantContextError)
+    const fake = { sessionId: SID, tenantId: TENANT, tenantName: 'x', platformAdminUserId: 'user_platformAdmin1', mode: 'break_glass' as const, endsAt: ENDS }
+    expect(() => tenantBreakGlassDb(fake, { driver })).toThrow(TenantContextError)
+    const session = await breakGlass()
+    vi.setSystemTime(ENDS)
+    expect(() => tenantBreakGlassDb(session!, { driver })).toThrow(TenantContextError)
+  })
 })
