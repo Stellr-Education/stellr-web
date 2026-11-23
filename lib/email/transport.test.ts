@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { EmailSendError, resendTransport, type OutgoingEmail } from './transport'
+import { EmailSendError, resendTags, resendTransport, type OutgoingEmail } from './transport'
 
 const base: OutgoingEmail = {
   from: 'Stellr <no-reply@mail.example.test>',
@@ -74,5 +74,29 @@ describe('resendTransport', () => {
   it('returns a null id when the body is not JSON', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, status: 200, json: async () => { throw new Error('nope') }, text: async () => '' })))
     expect(await resendTransport('k').send(base)).toEqual({ id: null })
+  })
+})
+
+describe('Resend tags', () => {
+  it('sends tags as name/value pairs, and leaves the field out when there are none', async () => {
+    const fetchMock = mockFetch({ ok: true, body: { id: 're_t' } })
+    await resendTransport('k').send({ ...base, tags: { stream: 'marketing', tenant: '00000000-0000-4000-8000-000000000001' } })
+    const body = JSON.parse((fetchMock.mock.calls[0] as unknown as [string, RequestInit])[1].body as string)
+    expect(body.tags).toEqual([
+      { name: 'stream', value: 'marketing' },
+      { name: 'tenant', value: '00000000-0000-4000-8000-000000000001' },
+    ])
+    await resendTransport('k').send({ ...base, tags: {} })
+    const bare = JSON.parse((fetchMock.mock.calls[1] as unknown as [string, RequestInit])[1].body as string)
+    expect('tags' in bare).toBe(false)
+  })
+
+  it('replaces characters Resend would reject and drops empty tags, so a tag never fails a send', () => {
+    expect(resendTags({ 'feat ure': 'event.email/1', empty: '', ok: 'a-b_c' })).toEqual([
+      { name: 'feat_ure', value: 'event_email_1' },
+      { name: 'ok', value: 'a-b_c' },
+    ])
+    expect(resendTags({ ref: 'x'.repeat(300) })[0].value).toHaveLength(256)
+    expect(resendTags(undefined)).toEqual([])
   })
 })

@@ -279,6 +279,7 @@ export async function sendInvites(
           ...(sender ? { from: sender.from, replyTo: sender.replyTo } : {}),
           critical: true,
           deferOnFailure: false,
+          tags: { feature: 'esign', ref: first.r.id },
         })
         for (const id of ids) done.add(id)
         if (sent.suppressed) {

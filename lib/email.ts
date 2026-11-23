@@ -153,6 +153,12 @@ interface SendEmailOptions {
    * that tenant's mail. Leave out for Stellr's own mail, which stays NULL (WD-2).
    */
   tenantId?: string | null
+  /**
+   * What sent this, for the Resend tags every webhook event carries back:
+   * `feature` (e.g. 'event_email', 'campaign', 'esign') and `ref` (the event
+   * email, campaign or agreement id). `stream` and `tenant` are added here.
+   */
+  tags?: { feature?: string; ref?: string }
 }
 
 /**
@@ -165,7 +171,7 @@ export interface SentEmail { id: string | null; suppressed?: true; queued?: true
 
 export { EmailSendError }
 
-export async function sendEmail({ to, from, cc, replyTo, subject, html, text, attachments, headers, kind = 'transactional', critical = false, deferOnFailure = true, tenantId }: SendEmailOptions): Promise<SentEmail> {
+export async function sendEmail({ to, from, cc, replyTo, subject, html, text, attachments, headers, kind = 'transactional', critical = false, deferOnFailure = true, tenantId, tags }: SendEmailOptions): Promise<SentEmail> {
   if (!RESEND_API_KEY) {
     console.log('[email] No RESEND_API_KEY — would have sent to:', to?.replace(/^.*@/, '…@'), subject)
     return { id: null }
@@ -239,6 +245,7 @@ export async function sendEmail({ to, from, cc, replyTo, subject, html, text, at
     text,
     headers,
     attachments,
+    tags: emailTags(kind, tenantId, tags),
   }
   // Resend daily quota: park the message in the outbox for the email-outbox
   // cron. Null when the outbox could not be written; the caller then gets the
@@ -277,6 +284,19 @@ export async function sendEmail({ to, from, cc, replyTo, subject, html, text, at
   // unless USAGE_METERING_ENABLED is on; queued mail is counted by the outbox drain.
   recordUsage(tenantId ?? STELLR_TENANT_ID, 'email')
   return { id: sent.id }
+}
+
+/**
+ * The Resend tags for a send: the stream (transactional or marketing), the
+ * sending tenant (Stellr's id when none), and the caller's feature and ref.
+ */
+export function emailTags(kind: EmailKind, tenantId: string | null | undefined, extra?: SendEmailOptions['tags']): Record<string, string> {
+  return {
+    stream: kind,
+    tenant: tenantId ?? STELLR_TENANT_ID,
+    ...(extra?.feature ? { feature: extra.feature } : {}),
+    ...(extra?.ref ? { ref: extra.ref } : {}),
+  }
 }
 
 /** The staff alert inbox (teamInboxEmail()) or the monitored reply-to mailbox. */
