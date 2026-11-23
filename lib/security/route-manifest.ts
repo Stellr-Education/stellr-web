@@ -59,7 +59,7 @@ export const ROUTE_CLASSES = [
 export type RouteClass = (typeof ROUTE_CLASSES)[number]
 
 export const ROUTE_MANIFEST: Record<string, RouteClass> = {
-  // ── API routes (311) ──────────────────────────────────────────────────
+  // ── API routes (312) ──────────────────────────────────────────────────
   'app/api/admin/access/conflicts/route.ts': 'stellr_only',
   'app/api/admin/access/objects/[id]/contents/route.ts': 'stellr_only',
   'app/api/admin/access/objects/[id]/gates/route.ts': 'stellr_only',
@@ -219,6 +219,8 @@ export const ROUTE_MANIFEST: Record<string, RouteClass> = {
   'app/api/admin/support/break-glass/route.ts': 'platform_admin',
   // S6-CON: suspend or resume a tenant from the super-admin console (platform host only).
   'app/api/admin/platform/tenants/[id]/status/route.ts': 'platform_admin',
+  // S6-SUP-UI: break-glass's first change, a company rename through tenantBreakGlassDb.
+  'app/api/admin/platform/support/company-name/route.ts': 'platform_admin',
   'app/api/admin/support/consent/route.ts': 'platform_admin',
   'app/api/admin/store/discounts/route.ts': 'stellr_only',
   'app/api/admin/store/printful/route.ts': 'stellr_only',
@@ -412,7 +414,7 @@ export const ROUTE_MANIFEST: Record<string, RouteClass> = {
   'app/indexnow-key.txt/route.ts': 'public',
   'app/llms.txt/route.ts': 'public',
 
-  // ── Pages (159) ───────────────────────────────────────────────────────
+  // ── Pages (160) ───────────────────────────────────────────────────────
   'app/(stellr)/(admin)/admin/academy/coaching/[id]/page.tsx': 'stellr_only',
   'app/(stellr)/(admin)/admin/academy/coaching/access/page.tsx': 'stellr_only',
   'app/(stellr)/(admin)/admin/academy/coaching/calendar/page.tsx': 'stellr_only',
@@ -454,6 +456,8 @@ export const ROUTE_MANIFEST: Record<string, RouteClass> = {
   // S6-CON: the super-admin console. A Stellr admin page (the rule for /admin pages) that
   // also calls assertPlatformAdmin and answers 404 to anyone who is not a platform admin.
   'app/(stellr)/(admin)/admin/platform/page.tsx': 'stellr_only',
+  // S6-SUP-UI: the support view, read through tenantSupportDb inside a verified session.
+  'app/(stellr)/(admin)/admin/platform/support/page.tsx': 'stellr_only',
   'app/(stellr)/(admin)/admin/platform/tenants/[id]/page.tsx': 'stellr_only',
   'app/(stellr)/(admin)/admin/privacy-requests/page.tsx': 'stellr_only',
   'app/(stellr)/(admin)/admin/scholarships/[id]/page.tsx': 'stellr_only',
