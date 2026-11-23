@@ -15,8 +15,11 @@ export const COMPLAINT_RATE_ALERT = 0.001
 export const RATE_MIN_SENDS = 200
 
 /** Streams shown, in order. null = mail sent before streams were tagged, or untagged. */
+// PR A tags marketing mail 'marketing'; 'community' is kept in case the
+// community stream is tagged by that name later.
 export const STREAMS: readonly { key: string | null; label: string }[] = [
   { key: 'transactional', label: 'Transactional' },
+  { key: 'marketing', label: 'Marketing' },
   { key: 'community', label: 'Community' },
   { key: null, label: 'Untagged' },
 ]

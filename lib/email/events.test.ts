@@ -64,8 +64,8 @@ describe('mapResendEvent: every type', () => {
   it('reads tags as an object or as name/value pairs, dropping malformed ids', () => {
     expect(readTags({ stream: 'community', n: 3 })).toEqual({ stream: 'community' })
     expect(readTags([{ name: 'feature', value: 'campaign' }, { name: 1, value: 'x' }])).toEqual({ feature: 'campaign' })
-    const m = mapResendEvent(ev('email.delivered', { tags: { tenant_id: 'not-a-uuid', stream: 'community', member_id: MEMBER } }))
-    expect(m?.tags).toEqual({ tenantId: null, stream: 'community', feature: null, ref: null, memberId: MEMBER })
+    const m = mapResendEvent(ev('email.delivered', { tags: { tenant: 'not-a-uuid', stream: 'marketing', member_id: MEMBER } }))
+    expect(m?.tags).toEqual({ tenantId: null, stream: 'marketing', feature: null, ref: null, memberId: MEMBER })
   })
 
   it('counts extra recipients on a multi-recipient message', () => {
@@ -100,14 +100,18 @@ describe('recordEmailEvent', () => {
       email_events: [],
       email_outbox: [{ provider_id: 're_1', tenant_id: null, kind: 'transactional' }],
     })
-    await recordEmailEvent(fake.client, ev('email.delivered', { tags: { tenant_id: TENANT, stream: 'community', feature: 'campaign', ref: 'c-9', member_id: MEMBER } }))
-    expect(fake.table('email_events')[0]).toMatchObject({ tenant_id: TENANT, stream: 'community', feature: 'campaign', ref: 'c-9', member_id: MEMBER })
+    // PR A's keys: `tenant`, `stream` (transactional | marketing), `feature`, `ref`.
+    await recordEmailEvent(fake.client, ev('email.delivered', { tags: { tenant: TENANT, stream: 'marketing', feature: 'campaign', ref: 'c-9', member_id: MEMBER } }))
+    expect(fake.table('email_events')[0]).toMatchObject({ tenant_id: TENANT, stream: 'marketing', feature: 'campaign', ref: 'c-9', member_id: MEMBER })
+    // tenant_id is read as well.
+    await recordEmailEvent(fake.client, ev('email.opened', { tags: { tenant_id: TENANT } }))
+    expect(fake.table('email_events')[1]).toMatchObject({ tenant_id: TENANT })
   })
 
   it('falls back to the outbox row by Resend id', async () => {
     const fake = fakeSupabase({ email_events: [], email_outbox: [{ provider_id: 're_1', tenant_id: TENANT, kind: 'marketing' }] })
     await recordEmailEvent(fake.client, ev('email.delivered'))
-    expect(fake.table('email_events')[0]).toMatchObject({ tenant_id: TENANT, stream: 'community' })
+    expect(fake.table('email_events')[0]).toMatchObject({ tenant_id: TENANT, stream: 'marketing' })
   })
 
   it('falls back to the event-email run that recorded the Resend id', async () => {

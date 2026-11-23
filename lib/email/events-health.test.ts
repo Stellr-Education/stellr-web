@@ -4,12 +4,12 @@ import { loadStreamRates, ratesFor } from './events-health'
 
 describe('ratesFor', () => {
   it('works out rates, and flags only over the line with enough sends', () => {
-    expect(ratesFor('community', 'Community', { sent: 1000, delivered: 990, bounced: 40, complained: 0 }))
+    expect(ratesFor('marketing', 'Marketing', { sent: 1000, delivered: 990, bounced: 40, complained: 0 }))
       .toMatchObject({ sent: 1000, bounceRate: 0.04, complaintRate: 0, alert: true })
-    expect(ratesFor('community', 'Community', { sent: 1000, delivered: 990, bounced: 0, complained: 1 }).alert).toBe(true)
-    expect(ratesFor('community', 'Community', { sent: 1000, delivered: 990, bounced: 39, complained: 0 }).alert).toBe(false)
+    expect(ratesFor('marketing', 'Marketing', { sent: 1000, delivered: 990, bounced: 0, complained: 1 }).alert).toBe(true)
+    expect(ratesFor('marketing', 'Marketing', { sent: 1000, delivered: 990, bounced: 39, complained: 0 }).alert).toBe(false)
     // Too few sends to mean anything.
-    expect(ratesFor('community', 'Community', { sent: 50, delivered: 50, bounced: 10, complained: 1 }).alert).toBe(false)
+    expect(ratesFor('marketing', 'Marketing', { sent: 50, delivered: 50, bounced: 10, complained: 1 }).alert).toBe(false)
     // Before email.sent is subscribed, delivered stands in for sent.
     expect(ratesFor(null, 'Untagged', { sent: 0, delivered: 300, bounced: 3, complained: 0 })).toMatchObject({ sent: 300, bounceRate: 0.01 })
     expect(ratesFor(null, 'Untagged', { sent: 0, delivered: 0, bounced: 0, complained: 0 })).toMatchObject({ bounceRate: null, alert: false })
@@ -25,13 +25,14 @@ describe('loadStreamRates', () => {
       email_events: [
         row('transactional', 'sent'), row('transactional', 'sent'), row('transactional', 'delivered'),
         row('transactional', 'bounced'),
-        row(null, 'delivered'), row(null, 'complained'),
+        row(null, 'delivered'), row(null, 'complained'), row('marketing', 'delivered'),
         row('transactional', 'sent', '2026-11-10T00:00:00Z'), // outside the window
       ],
     })
     const out = await loadStreamRates(fake.client, NOW)
     expect(out.map((r) => [r.label, r.sent, r.bounced, r.complained])).toEqual([
       ['Transactional', 2, 1, 0],
+      ['Marketing', 1, 0, 0],
       ['Untagged', 1, 0, 1],
     ])
   })

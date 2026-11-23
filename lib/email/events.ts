@@ -20,10 +20,11 @@ import { maskEmail } from '@/lib/utils'
 // a row of its own.
 //
 // Where a row's tenant, stream, feature and ref come from, first match wins:
-//   1. the send's Resend tags (Workstream A adds stream, tenant_id, feature,
-//      ref, and member_id where it has one);
+//   1. the send's Resend tags (Workstream A, PR A: `stream` transactional or
+//      marketing, `tenant` (uuid; Stellr's when none), and optionally `feature`
+//      and `ref`; `tenant_id` and `member_id` are read too);
 //   2. the outbox row that sent it (email_outbox.provider_id): tenant, and the
-//      stream from its kind;
+//      stream from its kind (transactional or marketing);
 //   3. the event-email run that recorded the Resend id against a recipient
 //      (event_email_sends.recipients[].resendId): tenant, event slug, member;
 //   4. the signing invitation that holds it (agreement_recipients.invite_email_id);
@@ -143,7 +144,7 @@ export function readTags(tags: unknown): Record<string, string> {
 export function contextFromTags(tags: Record<string, string>): EmailContext {
   const uuid = (v: string | undefined) => (v && UUID.test(v) ? v.toLowerCase() : null)
   return {
-    tenantId: uuid(tags.tenant_id),
+    tenantId: uuid(tags.tenant) ?? uuid(tags.tenant_id),
     stream: text(tags.stream, 40),
     feature: text(tags.feature, 80),
     ref: text(tags.ref, 200),
@@ -219,7 +220,7 @@ export function mapResendEvent(event: ResendWebhookEvent): MappedEmailEvent | nu
   }
 }
 
-const STREAM_FROM_OUTBOX_KIND: Record<string, string> = { transactional: 'transactional', marketing: 'community' }
+const STREAM_FROM_OUTBOX_KIND: Record<string, string> = { transactional: 'transactional', marketing: 'marketing' }
 
 function escapeLike(s: string): string {
   return s.replace(/[\\%_]/g, (c) => `\\${c}`)
