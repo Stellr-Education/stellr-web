@@ -144,6 +144,7 @@ async function deliver(inv: InvitationRow, d: DistributionRow, def: SurveyDefini
     subject: email.subject,
     html: email.html,
     text: email.text,
+    tags: { feature: 'survey', ref: inv.id },
     headers: {
       'List-Unsubscribe': `<${links.oneClickUrl}>`,
       'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',

@@ -51,8 +51,16 @@ export function sendableRecipients<T extends { email: string | null | undefined 
   return ok
 }
 
-/** Resend's default limit is 2 requests/second per team. */
-const SEND_SPACING_MS = 550
+/**
+ * Gap between sends. 550ms suited the old 2 requests/second team limit; the
+ * account now allows 10/second (Resend usage, 23 Nov 2026), so EMAIL_SEND_SPACING_MS
+ * can bring it down (e.g. 150) without a deploy. Never below 100ms, which keeps
+ * this loop at most 10/second and leaves headroom for other senders.
+ */
+const SEND_SPACING_MS = (() => {
+  const n = Number(process.env.EMAIL_SEND_SPACING_MS)
+  return Number.isInteger(n) && n >= 100 ? n : 550
+})()
 
 // deep review INT-1: a send runs inside a ≤60s function. If it is killed
 // mid-flight the row is left in 'sending' and nothing ever completes it — the
@@ -523,6 +531,7 @@ export async function deliver(
         text: content.text,
         attachments: opts.attachments,
         kind,
+        tags: { feature: isTest ? 'event_email_test' : 'event_email', ref: email.id },
         // S5 B24: a tenant's mail, if queued, waits in the outbox as that tenant's.
         ...(isTenantRow(email.tenant_id) ? { tenantId: email.tenant_id } : {}),
       })

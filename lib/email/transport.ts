@@ -29,6 +29,12 @@ export interface OutgoingEmail {
   text: string
   headers?: Record<string, string>
   attachments?: TransportAttachment[]
+  /**
+   * Resend tags (name → value). They come back on every webhook event, so a
+   * delivery, bounce or click can be traced to its stream, tenant and feature
+   * without a lookup. Sanitised by resendTags().
+   */
+  tags?: Record<string, string>
 }
 
 export interface TransportResult {
@@ -107,12 +113,27 @@ function retryAfter(res: Response): number | null {
 
 const RESEND_ENDPOINT = 'https://api.resend.com/emails'
 
+/**
+ * Resend accepts tag names and values of ASCII letters, digits, '_' and '-' only,
+ * up to 256 characters, and rejects the whole send otherwise. Tags are metadata,
+ * never worth losing a message over, so anything else is replaced with '_' and
+ * empty ones are dropped.
+ */
+export function resendTags(tags: Record<string, string> | undefined): { name: string; value: string }[] {
+  if (!tags) return []
+  const clean = (v: string) => v.replace(/[^A-Za-z0-9_-]/g, '_').slice(0, 256)
+  return Object.entries(tags)
+    .map(([name, value]) => ({ name: clean(name), value: clean(String(value ?? '')) }))
+    .filter((t) => t.name !== '' && t.value !== '')
+}
+
 /** Resend over its REST API. Exactly the request sendEmail made before the interface existed. */
 export function resendTransport(apiKey: string): EmailTransport {
   return {
     name: 'resend',
     async send(message, opts = {}) {
-      const { from, to, cc, replyTo, subject, html, text, headers, attachments } = message
+      const { from, to, cc, replyTo, subject, html, text, headers, attachments, tags } = message
+      const tagList = resendTags(tags)
       const res = await fetch(RESEND_ENDPOINT, {
         method: 'POST',
         headers: {
@@ -129,6 +150,7 @@ export function resendTransport(apiKey: string): EmailTransport {
           html,
           text,
           ...(headers && Object.keys(headers).length ? { headers } : {}),
+          ...(tagList.length ? { tags: tagList } : {}),
           ...(attachments && attachments.length
             ? {
                 attachments: attachments.map((a) => ({

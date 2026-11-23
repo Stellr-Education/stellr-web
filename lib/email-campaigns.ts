@@ -170,6 +170,7 @@ async function sendToMembers(
         html,
         text,
         kind: 'marketing',
+        tags: { feature: 'campaign', ref: campaignId },
         headers: {
           'List-Unsubscribe': `<${unsub}>`,
           'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',

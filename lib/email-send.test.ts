@@ -240,3 +240,33 @@ describe('sendEmail when Resend refuses', () => {
     expect(fake.table('email_outbox')).toHaveLength(0)
   })
 })
+
+describe('sendEmail tags (email events plan, Workstream A)', () => {
+  it("tags every send with its stream and tenant, Stellr's id when none is given", async () => {
+    setup()
+    const { sendEmail } = await load()
+    await sendEmail({ to: 'teacher@example.test', ...msg })
+    expect(sentBody().tags).toEqual([
+      { name: 'stream', value: 'transactional' },
+      { name: 'tenant', value: '00000000-0000-4000-8000-000000000001' },
+    ])
+  })
+
+  it("adds the caller's feature and ref, and a tenant's own id", async () => {
+    setup()
+    const { sendEmail } = await load()
+    await sendEmail({
+      to: 'teacher@example.test',
+      ...msg,
+      kind: 'marketing',
+      tenantId: '11111111-2222-4333-8444-555555555555',
+      tags: { feature: 'event_email', ref: 'abc-123' },
+    })
+    expect(sentBody().tags).toEqual([
+      { name: 'stream', value: 'marketing' },
+      { name: 'tenant', value: '11111111-2222-4333-8444-555555555555' },
+      { name: 'feature', value: 'event_email' },
+      { name: 'ref', value: 'abc-123' },
+    ])
+  })
+})
