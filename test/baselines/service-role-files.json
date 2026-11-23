@@ -105,6 +105,14 @@
       "class": "convert",
       "reason": "auto: touches tenant or event-scoped tables; tables: event_participations, member_roles, members, volunteer_event_interest"
     },
+    "app/(stellr)/(admin)/admin/platform/page.tsx": {
+      "class": "platform",
+      "reason": "S6-CON: the super-admin console lists every tenant with counts (hosts, roles, usage). It reads across tenants by design, which no tenant role may do, for a platform admin only; no personal data (lib/console/tenants.ts); tables: tenants, tenant_domains, tenant_memberships, usage_daily"
+    },
+    "app/(stellr)/(admin)/admin/platform/tenants/[id]/page.tsx": {
+      "class": "platform",
+      "reason": "S6-CON: one tenant in the super-admin console, counts only (lib/console/tenants.ts), for a platform admin only; support activity read without reasons or people; tables: tenants, tenant_domains, tenant_memberships, usage_daily, support_sessions, support_consents"
+    },
     "app/(stellr)/(admin)/admin/privacy-requests/page.tsx": {
       "class": "convert",
       "reason": "auto: reaches tables it does not name (dynamic .from, rpc, or a client passed to a helper); review before converting; tables: privacy_requests"
@@ -788,6 +796,10 @@
     "app/api/admin/pd-certificate/route.ts": {
       "class": "convert",
       "reason": "auto: reaches tables it does not name (dynamic .from, rpc, or a client passed to a helper); review before converting"
+    },
+    "app/api/admin/platform/tenants/[id]/status/route.ts": {
+      "class": "platform",
+      "reason": "S6-CON: suspends or resumes a tenant (tenants.status) for a platform admin; a platform change no tenant role may make; tables: tenants"
     },
     "app/api/admin/privacy-requests/[id]/route.ts": {
       "class": "convert",

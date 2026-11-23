@@ -67,11 +67,13 @@ export const BREAK_GLASS_STEP_UP_MINUTES = 5
 export const BREAK_GLASS_REVERIFICATION = { level: 'first_factor', afterMinutes: BREAK_GLASS_STEP_UP_MINUTES } as const
 
 /**
- * S6-BG: the step-up for opening and renewing break-glass. Required whatever
- * ADMIN_STEP_UP_ENFORCE says, with a shorter window than requireStepUp's. Null to carry
- * on, or Clerk's reverification response. Call it after the route's own authorisation.
+ * The strict step-up: a factor in the last 5 minutes, required whatever
+ * ADMIN_STEP_UP_ENFORCE says. For the platform's most consequential actions: opening
+ * and renewing break-glass (S6-BG) and suspending or resuming a tenant (S6-CON). Null to
+ * carry on, or Clerk's reverification response. Call it after the route's own
+ * authorisation.
  */
-export async function requireBreakGlassStepUp(): Promise<Response | null> {
+export async function requireStrictStepUp(): Promise<Response | null> {
   const decision = await decideStepUp(true, async () => {
     const { has } = await auth()
     return has({ reverification: BREAK_GLASS_REVERIFICATION })
@@ -82,3 +84,6 @@ export async function requireBreakGlassStepUp(): Promise<Response | null> {
   res.headers.set('Cache-Control', 'no-store')
   return res
 }
+
+/** S6-BG's name for the strict step-up. */
+export const requireBreakGlassStepUp = requireStrictStepUp
