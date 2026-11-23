@@ -1,8 +1,7 @@
 import { auth } from '@clerk/nextjs/server'
 import { loadSupportSession } from '@/lib/authz/support-session-server'
 import { supportModeEnabled } from '@/lib/authz/support-session'
-import { consentStatus } from '@/lib/support/consent-status'
-import { supabaseServer } from '@/lib/supabase'
+import { loadOwnConsents } from '@/lib/support/own-consents'
 import { TenantSupportActions, type PanelConsent, type PanelSession } from '@/components/admin/TenantSupportActions'
 
 /**
@@ -20,23 +19,8 @@ export async function TenantSupportPanel({ tenantId, tenantName, isPlatformOwner
   const { userId } = await auth()
   if (!userId) return null
 
-  const [session, consentsRead] = await Promise.all([
-    loadSupportSession(),
-    supabaseServer()
-      .from('support_consents')
-      .select('id, requested_at, expires_at, approved_at, declined_at, withdrawn_at, used_at')
-      .eq('tenant_id', tenantId)
-      .eq('platform_admin_user_id', userId)
-      .order('requested_at', { ascending: false })
-      .limit(10),
-  ])
-  const now = Date.now()
-  const consents: PanelConsent[] = ((consentsRead.data ?? []) as (Parameters<typeof consentStatus>[0] & { id: string; requested_at: string })[]).map((c) => ({
-    id: c.id,
-    requestedAt: c.requested_at,
-    expiresAt: c.expires_at,
-    status: consentStatus(c, now),
-  }))
+  const [session, own] = await Promise.all([loadSupportSession(), loadOwnConsents(tenantId, userId)])
+  const consents: PanelConsent[] = own ?? []
   // A session on another organization still blocks opening one here; say which.
   const current: PanelSession | null = session
     ? { mode: session.mode, endsAt: session.endsAt, here: session.tenantId === tenantId, tenantName: session.tenantName }
@@ -52,7 +36,7 @@ export async function TenantSupportPanel({ tenantId, tenantName, isPlatformOwner
         their audit log.
       </p>
       <div className="mt-4">
-        <TenantSupportActions tenantId={tenantId} session={current} consents={consents} readFailed={!!consentsRead.error} />
+        <TenantSupportActions tenantId={tenantId} session={current} consents={consents} readFailed={own === null} />
       </div>
     </section>
   )
