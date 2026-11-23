@@ -7,6 +7,7 @@ import { TenantStatusBadge } from '@/components/admin/TenantStatusBadge'
 import { TenantStatusControl } from '@/components/admin/TenantStatusControl'
 import { TenantErrorsPanel } from '@/components/admin/TenantErrorsPanel'
 import { TenantFlagsPanel } from '@/components/admin/TenantFlagsPanel'
+import { TenantSupportPanel } from '@/components/admin/TenantSupportPanel'
 
 export const metadata = { title: 'Admin — Platform organization' }
 export const dynamic = 'force-dynamic'
@@ -97,6 +98,7 @@ export default async function PlatformTenantPage({ params }: { params: Promise<{
 
       <TenantErrorsPanel db={supabaseServer()} tenantId={t.id} isPlatformOwner={t.isPlatformOwner} />
       <TenantFlagsPanel db={supabaseServer()} tenantId={t.id} isPlatformOwner={t.isPlatformOwner} />
+      <TenantSupportPanel tenantId={t.id} tenantName={t.name} isPlatformOwner={t.isPlatformOwner} />
 
       {!t.isPlatformOwner && (t.status === 'active' || t.status === 'suspended') && (
         <section aria-labelledby="status-heading" className="rounded-ds-card border border-line bg-white p-5">

@@ -46,7 +46,8 @@ const MANIFEST_CLASS_COUNTS: Record<RouteClass, number> = {
   // +2 platform_admin: S6-BG's admin support/consent and support/break-glass (23 Nov 2026), denied on tenant hosts (S6-Q7)
   // +1 platform_admin: S6-CON's admin platform/tenants/[id]/status (23 Nov 2026), denied on tenant hosts (S6-Q7)
   // +1 platform_admin: S6-CON-b's admin platform/tenants/[id]/flags (23 Nov 2026), denied on tenant hosts (S6-Q7)
-  platform_admin: 12,
+  // +1 platform_admin: S6-SUP-UI's admin platform/support/company-name (23 Nov 2026), denied on tenant hosts (S6-Q7)
+  platform_admin: 13,
   platform_destined: 2,
   // +1 tenant_crew, -1 stellr_only: admin registrations/[id]/payment-method (C16 follow-up)
   // +3 tenant_crew, -3 stellr_only: admin events/[slug]/{companies,offerings,merch/commit} (C18)
@@ -75,7 +76,8 @@ const MANIFEST_CLASS_COUNTS: Record<RouteClass, number> = {
   // -7 on 16 Nov 2026: C19a (see tenant_crew).
   // -8 on 20 Nov 2026: C20 and C21 (see tenant_crew).
   // +2 stellr_only: S6-CON's console pages, admin/platform and admin/platform/tenants/[id] (23 Nov 2026)
-  stellr_only: 147,
+  // +1 stellr_only: S6-SUP-UI's support view, admin/platform/support (23 Nov 2026)
+  stellr_only: 148,
 }
 // +3 on 9 Nov 2026: members/compliance/external-check (participant) and the
 // admin members/[id]/event-manager and members/[id]/external-check (stellr_only).
@@ -99,7 +101,8 @@ const MANIFEST_CLASS_COUNTS: Record<RouteClass, number> = {
 // +3 on 23 Nov 2026: S6-BG's admin support/consent and support/break-glass (platform_admin, denied on tenant hosts, S6-Q7) and support-consents/[id] (tenant_crew, pending until the first tenant admin).
 // +3 on 23 Nov 2026: S6-CON's console, two admin pages (stellr_only) and the status API (platform_admin), all denied on tenant hosts (S6-Q7).
 // +1 on 23 Nov 2026: S6-CON-b's flags API (platform_admin, denied on tenant hosts, S6-Q7).
-const MANIFEST_TOTAL = 539
+// +2 on 23 Nov 2026: S6-SUP-UI's support view page (stellr_only) and company-name API (platform_admin), denied on tenant hosts (S6-Q7).
+const MANIFEST_TOTAL = 541
 
 // The decisions. Moving a route between them is a deliberate diff here.
 const DECISION_COUNTS: Record<TenantSurfaceDecision, number> = {
@@ -117,7 +120,8 @@ const DECISION_COUNTS: Record<TenantSurfaceDecision, number> = {
   // +2: admin support/consent and support/break-glass (S6-BG), platform host only (S6-Q7)
   // +3: S6-CON's console pages and status API, platform host only (S6-Q7)
   // +1: S6-CON-b's flags API, platform host only (S6-Q7)
-  deny: 433,
+  // +2: S6-SUP-UI's support view and company-name API, platform host only (S6-Q7)
+  deny: 435,
 }
 
 /** A concrete URL a manifest file serves, with sample values for its params. */
