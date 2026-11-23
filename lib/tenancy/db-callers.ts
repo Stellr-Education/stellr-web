@@ -81,4 +81,9 @@ export const TENANT_DB_CALLERS: readonly string[] = [
   // tenantSupportDb, never by passing role to tenantDb themselves.
   'lib/tenancy/support-db.ts',
   'lib/tenancy/support-db.test.ts',
+  // S6-SUP-UI: what a support session reads and the change break-glass makes. Each takes
+  // the TenantDb tenantSupportDb or tenantBreakGlassDb opened (a type-only import); the
+  // two-tenant proof is test/integration/two-tenant/support.int.test.ts.
+  'lib/support/read-view.ts',
+  'lib/support/break-glass-actions.ts',
 ]

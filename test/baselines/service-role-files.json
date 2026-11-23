@@ -1433,6 +1433,10 @@
       "class": "convert",
       "reason": "auto: reaches tables it does not name (dynamic .from, rpc, or a client passed to a helper); review before converting"
     },
+    "components/admin/TenantSupportPanel.tsx": {
+      "class": "platform",
+      "reason": "S6-SUP-UI: the console's support panel reads the viewing platform admin's own break-glass requests for one tenant (times and status only, never a reason). support_consents is service_role only by design (no tenant role may see or forge a request); tables: support_consents"
+    },
     "components/survey/DashboardSurveys.tsx": {
       "class": "convert",
       "reason": "auto: reaches tables it does not name (dynamic .from, rpc, or a client passed to a helper); review before converting"

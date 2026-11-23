@@ -23,6 +23,9 @@ export const AUDIT_ACTIONS = [
   'support.consent.decline',
   'support.break_glass.open',
   'support.break_glass.renew',
+  // S6-SUP-UI: the changes break-glass can make (app/api/admin/platform/support/*), on the
+  // session tenant's chain with support_session in the metadata
+  'support.company.rename',
   // S6-CON: the super-admin console suspends and resumes a tenant
   // (app/api/admin/platform/tenants/[id]/status), on the TENANT's chain
   'platform.tenant.suspend',
