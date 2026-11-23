@@ -3,21 +3,25 @@ import { NextResponse } from 'next/server'
 import { supabaseServer } from '@/lib/supabase'
 import { handleResendEvent } from '@/lib/esign/bounces'
 import { handleSuppressionEvent, type ResendDeliveryEvent } from '@/lib/email/suppressions'
+import { recordEmailEvent } from '@/lib/email/events'
 import { withAudit } from '@/lib/audit/route'
 import { noteWebhook, webhookAudit, webhookEvent } from '@/lib/audit/webhook'
 
 // POST /api/webhooks/resend — Resend's delivery events, signed with svix.
-// Set up in Resend → Webhooks with the email.bounced, email.complained and
-// email.suppressed events, pointing here; the signing secret goes in RESEND_WEBHOOK_SECRET.
-// Without the secret every call is refused.
+// Set up in Resend → Webhooks with every email event (sent, delivered,
+// delivery_delayed, bounced, complained, opened, clicked, suppressed, failed),
+// pointing here; the signing secret goes in RESEND_WEBHOOK_SECRET. Without the
+// secret every call is refused.
 //
-// Two consumers:
+// Three consumers:
 //   • Stellr signing invitations that bounce (lib/esign/bounces.ts);
 //   • the suppression list (lib/email/suppressions.ts): permanent bounces and
 //     spam complaints are recorded in email_suppressions, so sendEmail stops
-//     sending non-critical mail to those addresses.
-// Both are idempotent, so a redelivered event changes nothing. A failure in
-// either returns 500 and Resend retries; one failing never stops the other.
+//     sending non-critical mail to those addresses;
+//   • the email events store (lib/email/events.ts): every event, per message
+//     and recipient, in email_events (email plan, Workstream C).
+// All are idempotent, so a redelivered event changes nothing. A failure in
+// any returns 500 and Resend retries; one failing never stops the others.
 
 // S5 A13a: one audit event per delivery, by webhook:resend, on Stellr's chain.
 // Off unless PLATFORM_AUDIT_ENABLED is on (lib/audit/webhook.ts).
@@ -52,7 +56,7 @@ async function handleDeliveryEvent(req: Request) {
   if (!event || typeof event.type !== 'string') return NextResponse.json({ error: 'Malformed event' }, { status: 400 })
   noteWebhook(req, { metadata: { event_type: event.type } })
 
-  // The two consumers run independently, signing bounces first: they were here
+  // The consumers run independently, signing bounces first: they were here
   // before the suppression list, and a failed suppression write (the table
   // missing because code deployed before the migration, or any write error)
   // must never stop a bounced consent form reaching the roster and staff. Each
@@ -62,6 +66,7 @@ async function handleDeliveryEvent(req: Request) {
   const db = supabaseServer()
   let bounced = 0
   let suppressed = 0
+  let recorded = false
   let failed = false
   try {
     ;({ bounced } = await handleResendEvent(db, event))
@@ -75,6 +80,12 @@ async function handleDeliveryEvent(req: Request) {
     failed = true
     console.error('[webhooks/resend] suppression not recorded:', err instanceof Error ? err.message : err)
   }
-  if (failed) return NextResponse.json({ error: 'Not fully recorded; retry', bounced, suppressed }, { status: 500 })
-  return NextResponse.json({ received: true, suppressed, bounced })
+  try {
+    ;({ recorded } = await recordEmailEvent(db, event))
+  } catch (err) {
+    failed = true
+    console.error('[webhooks/resend] email event not recorded:', err instanceof Error ? err.message : err)
+  }
+  if (failed) return NextResponse.json({ error: 'Not fully recorded; retry', bounced, suppressed, recorded }, { status: 500 })
+  return NextResponse.json({ received: true, suppressed, bounced, recorded })
 }

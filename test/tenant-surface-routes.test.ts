@@ -71,7 +71,8 @@ const MANIFEST_CLASS_COUNTS: Record<RouteClass, number> = {
   public: 142,
   webhook: 12,
   // +1 on 22 Nov 2026: cron/usage-rollup (S6-USE).
-  cron: 25,
+  // +1 on 23 Nov 2026: cron/email-events-retention (email plan, Workstream C).
+  cron: 26,
   // -1 on 14 Nov 2026: the embedded Sanity Studio page left the app for Sanity's hosting.
   // -7 on 16 Nov 2026: C19a (see tenant_crew).
   // -8 on 20 Nov 2026: C20 and C21 (see tenant_crew).
@@ -102,7 +103,8 @@ const MANIFEST_CLASS_COUNTS: Record<RouteClass, number> = {
 // +3 on 23 Nov 2026: S6-CON's console, two admin pages (stellr_only) and the status API (platform_admin), all denied on tenant hosts (S6-Q7).
 // +1 on 23 Nov 2026: S6-CON-b's flags API (platform_admin, denied on tenant hosts, S6-Q7).
 // +2 on 23 Nov 2026: S6-SUP-UI's support view page (stellr_only) and company-name API (platform_admin), denied on tenant hosts (S6-Q7).
-const MANIFEST_TOTAL = 541
+// +1 on 23 Nov 2026: the email-events-retention cron (email plan, Workstream C; cron, denied on tenant hosts like every cron).
+const MANIFEST_TOTAL = 542
 
 // The decisions. Moving a route between them is a deliberate diff here.
 const DECISION_COUNTS: Record<TenantSurfaceDecision, number> = {
@@ -121,7 +123,8 @@ const DECISION_COUNTS: Record<TenantSurfaceDecision, number> = {
   // +3: S6-CON's console pages and status API, platform host only (S6-Q7)
   // +1: S6-CON-b's flags API, platform host only (S6-Q7)
   // +2: S6-SUP-UI's support view and company-name API, platform host only (S6-Q7)
-  deny: 435,
+  // +1: the email-events-retention cron (email plan, Workstream C)
+  deny: 436,
 }
 
 /** A concrete URL a manifest file serves, with sample values for its params. */

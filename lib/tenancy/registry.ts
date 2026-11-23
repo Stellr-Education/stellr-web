@@ -222,6 +222,7 @@ export const TABLE_REGISTRY: Record<string, TableEntry> = {
     'S4 hash-chained audit. Nullable tenant_id names the chain (NULL = the platform chain), so it is not own (own means NOT NULL)',
   ),
   'public.email_suppressions': platform('global suppression list'),
+  'public.email_events': own('mail-provider delivery events per message (lib/email/events.ts); written by service_role only, read-only to tenant_app'),
 
   'public.support_sessions': platform(
     'S6-SUP support sessions: a platform admin reading one non-owner tenant, read-only, for 60 minutes or less. Platform-level although it carries tenant_id NOT NULL: written only by service_role through app/api/admin/support/session, never by tenant_app or tenant_support_ro (lib/tenancy/tenant-role.ts TENANT_APP_NO_ACCESS_TABLES)',

@@ -4,7 +4,7 @@ import { Fragment, useMemo, useState } from 'react'
 import { Button } from '@stellr/web-ui'
 import { AUDIENCES, ROLE_LABEL, type EventEmailRow, type EventEmailSendRow } from '@/lib/event-emails/types'
 import {
-  groupSends, sendGroupCsv, OUTCOME_LABEL, PROBLEM_OUTCOMES,
+  groupSends, sendGroupCsv, deliveryNote, OUTCOME_LABEL, PROBLEM_OUTCOMES,
   type GroupRecipient, type RecipientOutcome, type SendGroup,
 } from '@/lib/event-emails/send-groups'
 import { MemberLink } from '@/components/admin/RecordLinks'
@@ -70,6 +70,7 @@ function CountLine({ g }: { g: SendGroup }) {
       </span>
     ))
   if (g.duplicates > 0) parts.push(<span key="dup" className="text-orange-700">{g.duplicates} emailed twice</span>)
+  if (g.confirmed > 0) parts.push(<span key="conf" className="text-content-body">{g.confirmed} confirmed by their mail server</span>)
   if (!parts.length) return <span className="text-content-muted">Nobody matched these groups when it ran</span>
   return <>{parts.map((p, i) => <Fragment key={i}>{i > 0 && <span className="text-content-muted"> · </span>}{p}</Fragment>)}</>
 }
@@ -184,6 +185,7 @@ function Detail({ g }: { g: SendGroup }) {
 
 function RecipientRow({ p }: { p: GroupRecipient }) {
   const detail = p.error
+    ?? deliveryNote(p)
     ?? (p.blockedReason ? `Address ${p.blockedReason === 'complaint' ? 'marked us as spam' : p.blockedReason === 'bounce' ? 'bounced' : p.blockedReason}.` : OUTCOME_HELP[p.outcome])
   return (
     <tr className="border-b border-line-light align-top last:border-0">
@@ -195,7 +197,10 @@ function RecipientRow({ p }: { p: GroupRecipient }) {
       <td className="px-3 py-1.5">
         <span className={`font-medium ${OUTCOME_CLASS[p.outcome]}`}>{OUTCOME_LABEL[p.outcome]}</span>
         {p.times > 1 && <span className="ml-1 text-orange-700">· emailed {p.times} times</span>}
-        <span className="block text-content-muted">{detail}</span>
+        <span className="block text-content-muted">
+          {detail}
+          {p.delivery && <> ({timeOnly(p.delivery.at)} MT)</>}
+        </span>
       </td>
       <td className="whitespace-nowrap px-3 py-1.5 text-content-body">{p.outcome === 'left_list' ? '—' : when(p.at)}</td>
     </tr>
@@ -203,8 +208,10 @@ function RecipientRow({ p }: { p: GroupRecipient }) {
 }
 
 // Every send from this tab. An email's runs are ONE row: a big send can take
-// several runs, and what matters is whether everyone has had it. Counts only:
-// there is deliberately no open/read tracking. Expanding a row lists each person.
+// several runs, and what matters is whether everyone has had it. Expanding a
+// row lists each person, with what the mail provider has reported since
+// (delivered, delayed, bounced; from email_events). Event logistics mail is not
+// open-tracked; opens and clicks only appear for tracked community mail.
 export function EventEmailHistory({
   history,
   emails = [],

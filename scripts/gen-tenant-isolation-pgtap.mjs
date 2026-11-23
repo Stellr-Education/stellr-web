@@ -198,6 +198,10 @@ export const FIXTURES = {
   'public.event_email_sends': (c) => ({ event_slug: lit(c.ev.slug), email_name: lit('iso'), subject: lit('Iso'), trigger: lit('manual') }),
   'public.event_emails': (c) => ({ event_slug: lit(c.ev.slug), name: lit('iso') }),
   'public.event_email_templates': (c) => ({ tenant_id: lit(c.t.id), name: lit('iso') }),
+  'public.email_events': (c) => ({
+    tenant_id: lit(c.t.id), provider: lit('resend'), provider_email_id: lit(`re_iso_${c.s}`), type: lit('delivered'),
+    recipient: lit(`iso_${c.s}@example.test`), recipient_hash: lit('0'.repeat(64)), occurred_at: lit('2026-11-23T00:00:00Z'),
+  }),
   'public.event_manager_assignments': (c) => ({ clerk_user_id: lit(`user_iso_${c.s}`), event_slug: lit(c.ev.slug) }),
   'public.event_participations': (c) => ({ member_id: lit(MEMBER), event_slug: lit(c.ev.slug) }),
   'public.event_refunds': (c) => ({ refund_type: lit('none'), event_slug: lit(c.ev.slug) }),

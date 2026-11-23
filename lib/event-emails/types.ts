@@ -92,7 +92,9 @@ export interface EventEmailSendRow {
    */
   recipients: { email: string; name: string; memberId?: string | null; roles: RecipientRole[]; status: RecipientSendStatus; error?: string; resendId?: string
     /** Added by the History API, never stored: the address is now on the suppression list. */
-    blocked?: 'bounce' | 'complaint' | 'unsubscribe' | 'manual' }[]
+    blocked?: 'bounce' | 'complaint' | 'unsubscribe' | 'manual'
+    /** Added by the History API, never stored: what the mail provider has since reported (email_events). */
+    delivery?: { status: 'sent' | 'delivery_delayed' | 'delivered' | 'opened' | 'clicked' | 'bounced' | 'complained' | 'suppressed' | 'failed'; at: string } }[]
   started_at: string
   finished_at: string | null
 }
