@@ -42,6 +42,7 @@
 export const TENANT_APP_READ_ONLY_TABLES: readonly string[] = [
   'public.agreement_email_changes',
   'public.agreement_recipients',
+  'public.email_events',
   'public.esign_access_log',
   'public.esign_audit_events',
   'public.events',

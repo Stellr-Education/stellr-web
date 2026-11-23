@@ -2594,6 +2594,75 @@ export type Database = {
           },
         ]
       }
+      email_events: {
+        Row: {
+          created_at: string
+          feature: string | null
+          id: string
+          link_url: string | null
+          member_id: string | null
+          occurred_at: string
+          payload_min: Json
+          provider: string
+          provider_email_id: string
+          recipient: string
+          recipient_hash: string
+          ref: string | null
+          stream: string | null
+          tenant_id: string
+          type: string
+        }
+        Insert: {
+          created_at?: string
+          feature?: string | null
+          id?: string
+          link_url?: string | null
+          member_id?: string | null
+          occurred_at: string
+          payload_min?: Json
+          provider: string
+          provider_email_id: string
+          recipient: string
+          recipient_hash: string
+          ref?: string | null
+          stream?: string | null
+          tenant_id: string
+          type: string
+        }
+        Update: {
+          created_at?: string
+          feature?: string | null
+          id?: string
+          link_url?: string | null
+          member_id?: string | null
+          occurred_at?: string
+          payload_min?: Json
+          provider?: string
+          provider_email_id?: string
+          recipient?: string
+          recipient_hash?: string
+          ref?: string | null
+          stream?: string | null
+          tenant_id?: string
+          type?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "email_events_member_id_fkey"
+            columns: ["member_id"]
+            isOneToOne: false
+            referencedRelation: "members"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "email_events_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       email_outbox: {
         Row: {
           attachment_hashes: string[]

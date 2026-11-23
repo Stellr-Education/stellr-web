@@ -164,6 +164,17 @@ export function fakeSupabase(
         filters.push((r) => typeof r[c] === 'string' && re.test(r[c] as string))
         return b
       },
+      // jsonb / array containment: every wanted element matches some element of
+      // the column (objects match on the keys given), as PostgREST's `cs`.
+      contains(c: string, vs: unknown[]) {
+        filterCols.push(c)
+        const sub = (have: unknown, want: unknown): boolean =>
+          want !== null && typeof want === 'object'
+            ? have !== null && typeof have === 'object' && Object.entries(want as Row).every(([k, v]) => sub((have as Row)[k], v))
+            : have === want
+        filters.push((r) => Array.isArray(r[c]) && vs.every((w) => (r[c] as unknown[]).some((h) => sub(h, w))))
+        return b
+      },
       overlaps(c: string, vs: unknown[]) {
         filterCols.push(c)
         filters.push((r) => Array.isArray(r[c]) && (r[c] as unknown[]).some((x) => vs.includes(x)))

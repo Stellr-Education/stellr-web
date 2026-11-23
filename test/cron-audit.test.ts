@@ -194,8 +194,8 @@ describe('every cron is covered, once', () => {
   const schedules = (JSON.parse(readFileSync('vercel.json', 'utf8')) as { crons: { path: string }[] }).crons
   const fileOf = (job: string) => `app/api/cron/${job}/route.ts`
 
-  it('accounts for all 25: the routes, the schedules and the classification agree', () => {
-    expect(jobs).toHaveLength(25)
+  it('accounts for all 26: the routes, the schedules and the classification agree', () => {
+    expect(jobs).toHaveLength(26)
     expect([...new Set(schedules.map((c) => c.path.replace('/api/cron/', '')))].sort()).toEqual(jobs)
     expect(Object.keys(CRON_SCOPES).sort()).toEqual(jobs)
   })
@@ -217,6 +217,6 @@ describe('every cron is covered, once', () => {
   it('the baseline owes no cron', () => {
     const baseline = JSON.parse(readFileSync('test/baselines/unaudited-mutations.json', 'utf8'))
     expect(baseline.crons).toEqual([])
-    expect(baseline.totals).toMatchObject({ cronHandlers: 25, unauditedCrons: 0 })
+    expect(baseline.totals).toMatchObject({ cronHandlers: 26, unauditedCrons: 0 })
   })
 })

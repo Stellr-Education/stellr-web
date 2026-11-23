@@ -40,6 +40,8 @@ const LATER_CHILD_MIGRATIONS: Record<string, string> = {
   'public.event_addon_settings': 'supabase/migrations/20261117182507_event_addons.sql',
   'public.addon_orders': 'supabase/migrations/20261117182507_event_addons.sql',
   'public.registration_addons': 'supabase/migrations/20261117182507_event_addons.sql',
+  // Email events store (23 Nov, email plan Workstream C): read-only to tenant_app.
+  'public.email_events': 'supabase/migrations/20261123200000_email_events.sql',
 }
 const inheritedTenantTables = () => tenantTables().filter((t) => TABLE_REGISTRY[t].tenantColumn === 'inherited')
 /** The S4 file for a table it wrote, the C0b file for a child table, or the later child's own. */
@@ -60,7 +62,7 @@ describe('cross-tenant pgTAP matrix (S4)', () => {
 
   it('has a fixture for every own/derived/inherited tenant table, and none for anything else', () => {
     expect(fixtureProblems()).toEqual([])
-    expect(tenantTables().length).toBe(52)
+    expect(tenantTables().length).toBe(53)
     expect(inheritedTenantTables().length).toBe(12)
     expect(Object.keys(FIXTURES).sort()).toEqual(tenantTables())
   })

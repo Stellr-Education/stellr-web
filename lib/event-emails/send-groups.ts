@@ -48,6 +48,8 @@ export interface GroupRecipient {
   at: string
   error?: string
   blockedReason?: string
+  /** What the mail provider has since reported for this message (email_events), when anything. */
+  delivery?: { status: string; at: string }
 }
 
 export type SendStatus =
@@ -77,10 +79,23 @@ export interface SendGroup {
   counts: Record<RecipientOutcome, number>
   /** Addresses emailed more than once in this send. */
   duplicates: number
+  /** People whose message the receiving server confirmed (delivered, opened or clicked). */
+  confirmed: number
   docusignResent: number
 }
 
 const SENT_LIKE = new Set(['sent', 'queued'])
+
+/** Provider events (email_events) that mean the message did not get through, as a blocked reason. */
+const PROVIDER_PROBLEM: Record<string, string | undefined> = {
+  bounced: 'bounce',
+  complained: 'complaint',
+  suppressed: 'provider_suppressed',
+  failed: 'provider_failed',
+}
+
+/** Provider events that confirm the receiving server took the message. */
+export const CONFIRMED = new Set(['delivered', 'opened', 'clicked'])
 
 /** The next event-email cron slot after `now` (ISO). */
 export function nextCronRun(now: Date): string {
@@ -132,17 +147,20 @@ export function groupSends(history: EventEmailSendRow[], emails: Pick<EventEmail
           continue
         }
         const handed = r.status !== 'suppressed' && r.status !== 'failed' ? 1 : 0
+        const providerProblem = r.delivery && PROVIDER_PROBLEM[r.delivery.status]
         const outcome: RecipientOutcome =
-          r.status === 'sending' ? (i === runs.length - 1 && lastLive ? 'sending' : 'unconfirmed')
+          r.status === 'sending' && !r.delivery ? (i === runs.length - 1 && lastLive ? 'sending' : 'unconfirmed')
             : r.status === 'failed' ? 'failed'
               : r.status === 'suppressed' ? 'suppressed'
-                : r.blocked ? 'blocked'
+                : providerProblem || r.blocked ? 'blocked'
                   : 'delivered'
+        const blockedReason = providerProblem ?? r.blocked
         const next = {
           email: r.email, name: r.name, memberId: r.memberId ?? null, roles: r.roles, outcome,
           times: (seen?.times ?? 0) + handed, at: run.started_at, lastRun: i,
           ...(r.error ? { error: r.error } : {}),
-          ...(r.blocked ? { blockedReason: r.blocked } : {}),
+          ...(blockedReason ? { blockedReason } : {}),
+          ...(r.delivery ? { delivery: r.delivery } : {}),
         }
         // A later 'delivered' beats an earlier problem; otherwise the latest attempt wins.
         if (!seen || seen.outcome === 'waiting' || outcome === 'delivered' || seen.outcome !== 'delivered') people.set(k, next)
@@ -189,6 +207,7 @@ export function groupSends(history: EventEmailSendRow[], emails: Pick<EventEmail
       recipients: recipients.sort(byOutcomeThenName),
       counts,
       duplicates: recipients.filter((p) => p.times > 1).length,
+      confirmed: recipients.filter((p) => p.outcome === 'delivered' && p.delivery && CONFIRMED.has(p.delivery.status)).length,
       docusignResent: runs.reduce((n, r) => n + (r.docusign_resent ?? 0), 0),
     } satisfies SendGroup
   })
@@ -241,8 +260,28 @@ function csvCell(v: string | number): string {
 }
 
 /** One row per person, for "Download CSV". */
+/**
+ * One line on what the mail provider reported for this person's message, or
+ * null when it has reported nothing (sends before 23 Nov 2026, or no webhook
+ * yet). Times are left to the caller.
+ */
+export function deliveryNote(p: Pick<GroupRecipient, 'delivery'>): string | null {
+  switch (p.delivery?.status) {
+    case 'delivered': return 'Delivered to their mail server.'
+    case 'opened': return 'Delivered and opened.'
+    case 'clicked': return 'Delivered, and a link in it was clicked.'
+    case 'delivery_delayed': return 'Delivery delayed: their mail server has not accepted it yet. Our email provider keeps trying.'
+    case 'sent': return 'Handed to our email provider; no delivery report yet.'
+    case 'bounced': return 'Their mail server bounced it. Check the address on their record.'
+    case 'complained': return 'Delivered, then marked as spam. They will not get non-essential mail from us now.'
+    case 'suppressed': return 'Not delivered: the address is on our email provider\'s block list after an earlier bounce or spam report.'
+    case 'failed': return 'Our email provider could not send it.'
+    default: return null
+  }
+}
+
 export function sendGroupCsv(g: SendGroup, roleLabel: (r: RecipientRole) => string): string {
-  const head = ['Name', 'Email', 'Roles', 'Result', 'Times emailed', 'Run (UTC)', 'Detail']
+  const head = ['Name', 'Email', 'Roles', 'Result', 'Times emailed', 'Run (UTC)', 'Detail', 'Provider report (UTC)']
   const rows = g.recipients.map((p) => [
     p.name === p.email ? '' : p.name,
     p.email,
@@ -250,7 +289,8 @@ export function sendGroupCsv(g: SendGroup, roleLabel: (r: RecipientRole) => stri
     OUTCOME_LABEL[p.outcome],
     p.times,
     p.at,
-    p.error ?? (p.blockedReason ? `address ${p.blockedReason}` : ''),
+    p.error ?? deliveryNote(p) ?? (p.blockedReason ? `address ${p.blockedReason}` : ''),
+    p.delivery?.at ?? '',
   ])
   return [
     [`${g.emailName} — ${g.audiences.map(audienceLabel).join(', ')}`],

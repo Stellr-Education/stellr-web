@@ -129,6 +129,10 @@
       "schedule": "0 4 2 * *"
     },
     {
+      "path": "/api/cron/email-events-retention",
+      "schedule": "30 4 3 * *"
+    },
+    {
       "path": "/api/cron/usage-rollup",
       "schedule": "30 0 * * *"
     },
