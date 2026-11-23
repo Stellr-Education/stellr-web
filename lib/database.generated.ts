@@ -8349,6 +8349,77 @@ export type Database = {
           },
         ]
       }
+      tenant_email_settings: {
+        Row: {
+          domain_checked_at: string | null
+          domain_status: string
+          forge_status: string
+          from_local_part: string
+          from_name: string | null
+          logo_url: string | null
+          marketing_daily_cap: number | null
+          marketing_monthly_cap: number | null
+          marketing_paused_at: string | null
+          paused_reason: string | null
+          reply_to: string | null
+          resend_domain_id: string | null
+          sending_domain: string | null
+          signature_html: string | null
+          signature_text: string | null
+          tenant_id: string
+          updated_at: string
+          updated_by: string | null
+        }
+        Insert: {
+          domain_checked_at?: string | null
+          domain_status?: string
+          forge_status?: string
+          from_local_part?: string
+          from_name?: string | null
+          logo_url?: string | null
+          marketing_daily_cap?: number | null
+          marketing_monthly_cap?: number | null
+          marketing_paused_at?: string | null
+          paused_reason?: string | null
+          reply_to?: string | null
+          resend_domain_id?: string | null
+          sending_domain?: string | null
+          signature_html?: string | null
+          signature_text?: string | null
+          tenant_id: string
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Update: {
+          domain_checked_at?: string | null
+          domain_status?: string
+          forge_status?: string
+          from_local_part?: string
+          from_name?: string | null
+          logo_url?: string | null
+          marketing_daily_cap?: number | null
+          marketing_monthly_cap?: number | null
+          marketing_paused_at?: string | null
+          paused_reason?: string | null
+          reply_to?: string | null
+          resend_domain_id?: string | null
+          sending_domain?: string | null
+          signature_html?: string | null
+          signature_text?: string | null
+          tenant_id?: string
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "tenant_email_settings_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: true
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       tenant_feature_flags: {
         Row: {
           enabled: boolean
