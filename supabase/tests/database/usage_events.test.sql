@@ -73,9 +73,9 @@ FROM s6_bounds b,
   ) AS v(t, k, h, c);
 -- Outside the day: the instant it ends, and one microsecond before it begins.
 INSERT INTO public.usage_events (tenant_id, kind, occurred_at)
-SELECT 'a6000000-0000-4000-8000-000000000001', 'email', b.to_ts FROM s6_bounds b
+SELECT 'a6000000-0000-4000-8000-000000000001'::uuid, 'email', b.to_ts FROM s6_bounds b
 UNION ALL
-SELECT 'a6000000-0000-4000-8000-000000000001', 'email', b.from_ts - interval '1 microsecond' FROM s6_bounds b;
+SELECT 'a6000000-0000-4000-8000-000000000001'::uuid, 'email', b.from_ts - interval '1 microsecond' FROM s6_bounds b;
 -- Two members created yesterday: the owner's identities.
 INSERT INTO public.members (id, first_name, last_name, email, event_role, clerk_user_id, created_at)
 SELECT v.id::uuid, 'S6', v.last, v.email, 'participant', v.clerk, b.from_ts + interval '3 hours'
