@@ -76,5 +76,16 @@ CREATE POLICY tenant_isolation_guard ON public.email_events AS RESTRICTIVE FOR A
   USING (tenant_id = (SELECT public.app_tenant_id()))
   WITH CHECK (tenant_id = (SELECT public.app_tenant_id()));
 
+-- S6-SUP support role: read-only, pinned to the session tenant, like every
+-- table tenant_app reads (20261123023124_support_sessions.sql).
+GRANT SELECT ON public.email_events TO tenant_support_ro;
+DROP POLICY IF EXISTS support_read ON public.email_events;
+CREATE POLICY support_read ON public.email_events AS PERMISSIVE FOR SELECT TO tenant_support_ro
+  USING (tenant_id = (SELECT public.app_tenant_id()));
+DROP POLICY IF EXISTS support_read_guard ON public.email_events;
+CREATE POLICY support_read_guard ON public.email_events AS RESTRICTIVE FOR ALL TO tenant_support_ro
+  USING (tenant_id = (SELECT public.app_tenant_id()))
+  WITH CHECK (false);
+
 COMMENT ON TABLE public.email_events IS
   'Every mail-provider delivery event per message and recipient (lib/email/events.ts). Pruned after 13 months.';
