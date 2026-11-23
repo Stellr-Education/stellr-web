@@ -1,16 +1,16 @@
-import { supabaseServer } from '@/lib/supabase'
+import type { SupabaseClient } from '@supabase/supabase-js'
 import { TENANT_FLAG_NAMES, TENANT_FLAGS, tenantFlags } from '@/lib/tenancy/tenant-flags'
 import { TenantFlagToggle } from '@/components/admin/TenantFlagToggle'
 
 /**
  * S6-CON-b: an organization's switches (lib/tenancy/tenant-flags.ts), for the
  * super-admin console. The platform owner has none. Rendered only on a page that has
- * already checked assertPlatformAdmin; each change goes through the flags API, which
- * checks again.
+ * already checked assertPlatformAdmin, which hands it the client; each change goes
+ * through the flags API, which checks again.
  */
-export async function TenantFlagsPanel({ tenantId, isPlatformOwner }: { tenantId: string; isPlatformOwner: boolean }) {
+export async function TenantFlagsPanel({ db, tenantId, isPlatformOwner }: { db: SupabaseClient; tenantId: string; isPlatformOwner: boolean }) {
   if (isPlatformOwner) return null
-  const values = await tenantFlags(supabaseServer(), tenantId)
+  const values = await tenantFlags(db, tenantId)
   return (
     <section aria-labelledby="flags-heading" className="rounded-ds-card border border-line bg-white p-5">
       <h2 id="flags-heading" className="font-heading text-ds-h3 text-ink">

@@ -584,6 +584,7 @@ export type Database = {
           message: string
           occurred_at: string
           route: string
+          tenant_id: string | null
         }
         Insert: {
           count?: number
@@ -593,6 +594,7 @@ export type Database = {
           message: string
           occurred_at?: string
           route: string
+          tenant_id?: string | null
         }
         Update: {
           count?: number
@@ -602,8 +604,17 @@ export type Database = {
           message?: string
           occurred_at?: string
           route?: string
+          tenant_id?: string | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "app_errors_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       audit_log: {
         Row: {
@@ -8332,6 +8343,38 @@ export type Database = {
           },
         ]
       }
+      tenant_feature_flags: {
+        Row: {
+          enabled: boolean
+          flag: string
+          tenant_id: string
+          updated_at: string
+          updated_by: string | null
+        }
+        Insert: {
+          enabled: boolean
+          flag: string
+          tenant_id: string
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Update: {
+          enabled?: boolean
+          flag?: string
+          tenant_id?: string
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "tenant_feature_flags_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       tenant_guardian_consents: {
         Row: {
           agreement_id: string | null
@@ -9813,6 +9856,7 @@ export type Database = {
           p_digest: string
           p_message: string
           p_route: string
+          p_tenant_id?: string
         }
         Returns: undefined
       }

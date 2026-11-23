@@ -95,8 +95,8 @@ export default async function PlatformTenantPage({ params }: { params: Promise<{
         </dl>
       </section>
 
-      <TenantErrorsPanel tenantId={t.id} isPlatformOwner={t.isPlatformOwner} />
-      <TenantFlagsPanel tenantId={t.id} isPlatformOwner={t.isPlatformOwner} />
+      <TenantErrorsPanel db={supabaseServer()} tenantId={t.id} isPlatformOwner={t.isPlatformOwner} />
+      <TenantFlagsPanel db={supabaseServer()} tenantId={t.id} isPlatformOwner={t.isPlatformOwner} />
 
       {!t.isPlatformOwner && (t.status === 'active' || t.status === 'suspended') && (
         <section aria-labelledby="status-heading" className="rounded-ds-card border border-line bg-white p-5">

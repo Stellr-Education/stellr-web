@@ -1,13 +1,14 @@
+import type { SupabaseClient } from '@supabase/supabase-js'
 import { ERROR_WINDOW_DAYS, loadTenantErrors } from '@/lib/console/tenants'
-import { supabaseServer } from '@/lib/supabase'
 
 /**
  * S6-CON-b: the errors an organization's sites raised in the last week, for the
  * super-admin console. Route patterns and counts only, never an error message.
- * Rendered only on a page that has already checked assertPlatformAdmin.
+ * Rendered only on a page that has already checked assertPlatformAdmin, which hands
+ * it the client (components never import the service-role client themselves).
  */
-export async function TenantErrorsPanel({ tenantId, isPlatformOwner }: { tenantId: string; isPlatformOwner: boolean }) {
-  const errors = await loadTenantErrors(supabaseServer(), tenantId)
+export async function TenantErrorsPanel({ db, tenantId, isPlatformOwner }: { db: SupabaseClient; tenantId: string; isPlatformOwner: boolean }) {
+  const errors = await loadTenantErrors(db, tenantId)
   const fmt = (n: number) => n.toLocaleString('en-US')
   return (
     <section aria-labelledby="errors-heading" className="rounded-ds-card border border-line bg-white p-5">

@@ -1437,14 +1437,6 @@
       "class": "convert",
       "reason": "auto: reaches tables it does not name (dynamic .from, rpc, or a client passed to a helper); review before converting"
     },
-    "components/admin/TenantErrorsPanel.tsx": {
-      "class": "platform",
-      "reason": "S6-CON-b: the super-admin console's per-tenant error counts (route and count only, never a message), rendered only on a page that checked assertPlatformAdmin; reads across tenants by design; tables: app_errors"
-    },
-    "components/admin/TenantFlagsPanel.tsx": {
-      "class": "platform",
-      "reason": "S6-CON-b: the super-admin console's per-tenant switches, rendered only on a page that checked assertPlatformAdmin; tenant_feature_flags is service_role only by design; tables: tenant_feature_flags"
-    },
     "components/survey/DashboardSurveys.tsx": {
       "class": "convert",
       "reason": "auto: reaches tables it does not name (dynamic .from, rpc, or a client passed to a helper); review before converting"
