@@ -148,3 +148,49 @@ describe('todayInZone', () => {
     expect(todayInZone('Not/AZone', new Date('2026-09-29T03:00:00Z'))).toBe('2026-09-28')
   })
 })
+
+describe('own sending domain (email plan D)', () => {
+  let tenantEventSender: Awaited<ReturnType<typeof load>>['tenantEventSender']
+  beforeEach(async () => { ({ tenantEventSender } = await load()) })
+  const settings = (over: Record<string, unknown> = {}) => ({
+    sending_domain: 'mail.example.org', domain_status: 'verified', from_local_part: 'events',
+    from_name: 'Example Events', reply_to: 'office@example.org', ...over,
+  })
+
+  it('sends from the tenant domain once it is verified, with its own name and Reply-To', () => {
+    expect(tenantEventSender({ display_name: 'Example', branding: {}, tenant_email_settings: settings() })).toEqual({
+      from: '"Example Events" <events@mail.example.org>',
+      replyTo: 'office@example.org',
+    })
+  })
+
+  it('accepts the one-item array PostgREST may embed', () => {
+    expect(tenantEventSender({ display_name: 'Example', branding: {}, tenant_email_settings: [settings()] })?.from)
+      .toBe('"Example Events" <events@mail.example.org>')
+  })
+
+  it('falls back to "via Stellr" while the domain is not verified', () => {
+    for (const status of ['pending', 'failed', 'not_started', 'none']) {
+      expect(tenantEventSender({ display_name: 'Example', branding: {}, tenant_email_settings: settings({ domain_status: status }) })?.from)
+        .toBe('"Example via Stellr" <no-reply@mail.stellreducation.org>')
+    }
+  })
+
+  it('prefers the settings Reply-To over branding, and still reads branding when there is no settings row', () => {
+    expect(tenantEventSender({ display_name: 'Example', branding: { reply_to: 'old@example.org' }, tenant_email_settings: settings() })?.replyTo)
+      .toBe('office@example.org')
+    expect(tenantEventSender({ display_name: 'Example', branding: { reply_to: 'old@example.org' }, tenant_email_settings: null })?.replyTo)
+      .toBe('old@example.org')
+  })
+
+  it('never builds a header from a malformed domain or local part', () => {
+    expect(tenantEventSender({ display_name: 'Example', branding: {}, tenant_email_settings: settings({ sending_domain: 'evil.org>, x@y' }) })?.from)
+      .toContain('via Stellr')
+    expect(tenantEventSender({ display_name: 'Example', branding: {}, tenant_email_settings: settings({ from_local_part: 'a b' }) })?.from)
+      .toContain('via Stellr')
+  })
+
+  it('still refuses with no valid Reply-To anywhere', () => {
+    expect(tenantEventSender({ display_name: 'Example', branding: {}, tenant_email_settings: settings({ reply_to: null }) })).toBeNull()
+  })
+})

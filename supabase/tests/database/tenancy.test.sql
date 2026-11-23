@@ -170,6 +170,7 @@ SELECT set_eq(
     'public.tenancy_settings',
     'public.tenant_data_keys',
     'public.tenant_domains',
+    'public.tenant_email_settings',
     'public.tenant_feature_flags',
     'public.tenant_guardian_consents',
     'public.tenant_memberships',

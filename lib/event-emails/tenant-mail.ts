@@ -19,12 +19,14 @@
 // keep the 'marketing' EmailKind that Stellr's carry: that is the budget's bulk
 // class, which also skips an unsubscribed address, not a legal label.
 //
-// Sender (the plan's email architecture): "<Tenant> via Stellr", from the
-// platform's verified sending domain, with the tenant's own Reply-To. Resend Free
-// allows one verified domain, so the address stays on it. The tenant's Reply-To
-// is read from tenants.branding.reply_to until S10 gives it a column; a tenant
-// with no valid Reply-To gets no sender, and its mail is refused rather than sent
-// with replies going to Stellr's inbox.
+// Sender (email plan Workstream D, 23 Nov 2026): a tenant whose own sending
+// domain is verified in Resend (tenant_email_settings.domain_status 'verified',
+// set from the super-admin console) sends as "<from_name>" <from_local_part@its
+// domain>. Every other tenant keeps "<Tenant> via Stellr" from the platform's
+// verified domain. Either way replies go to the tenant: reply_to from
+// tenant_email_settings, else the older tenants.branding.reply_to. A tenant
+// with no valid Reply-To gets no sender, and its mail is refused rather than
+// sent with replies going to Stellr's inbox.
 //
 // Signing mail (B14 follow-up): the native signing engine uses the same sender
 // for another tenant's envelope, resolved from agreements.tenant_id, for its
@@ -81,10 +83,33 @@ export interface EventSender {
   replyTo: string
 }
 
+/** The tenant_email_settings columns the sender needs (email plan D). */
+export interface TenantEmailSettingsForSender {
+  sending_domain: string | null
+  domain_status: string | null
+  from_local_part: string | null
+  from_name: string | null
+  reply_to: string | null
+}
+
 export interface TenantForSender {
   display_name: string | null
   branding: unknown
+  /** PostgREST embeds the one-to-one row as an object or a one-item array; absent before the table existed. */
+  tenant_email_settings?: TenantEmailSettingsForSender | TenantEmailSettingsForSender[] | null
 }
+
+/** The columns read for a sender: the tenant and its email settings, embedded. */
+export const TENANT_SENDER_COLUMNS =
+  'display_name, branding, tenant_email_settings(sending_domain, domain_status, from_local_part, from_name, reply_to)'
+
+function settingsOf(tenant: TenantForSender): TenantEmailSettingsForSender | null {
+  const s = tenant.tenant_email_settings
+  return (Array.isArray(s) ? s[0] : s) ?? null
+}
+
+const DOMAIN_RE = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/
+const LOCAL_RE = /^[a-z0-9]([a-z0-9._-]{0,62}[a-z0-9])?$/
 
 const EMAIL_RE = /^[^\s@<>",;:()[\]\\]+@[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)+$/
 
@@ -95,15 +120,26 @@ export function senderName(displayName: string): string {
 }
 
 /**
- * "<Tenant> via Stellr" <no-reply@…>, replies to the tenant. Null when either
- * half is missing: a tenant's mail is never sent as Stellr or with replies to
- * Stellr's inbox.
+ * The tenant's own verified domain ("<Name>" <events@their-domain>) or, without
+ * one, "<Tenant> via Stellr" <no-reply@…>; replies to the tenant either way.
+ * Null when there is no name or no valid Reply-To: a tenant's mail is never
+ * sent as Stellr or with replies to Stellr's inbox.
  */
 export function tenantEventSender(tenant: TenantForSender): EventSender | null {
-  const name = senderName(tenant.display_name ?? '')
+  const settings = settingsOf(tenant)
   const branding = tenant.branding && typeof tenant.branding === 'object' ? (tenant.branding as Record<string, unknown>) : {}
-  const replyTo = typeof branding.reply_to === 'string' ? branding.reply_to.trim() : ''
-  if (!name || !EMAIL_RE.test(replyTo) || replyTo.length > 254) return null
+  const replyTo = (settings?.reply_to ?? (typeof branding.reply_to === 'string' ? branding.reply_to : '')).trim()
+  if (!EMAIL_RE.test(replyTo) || replyTo.length > 254) return null
+
+  const ownName = senderName(settings?.from_name ?? tenant.display_name ?? '')
+  const domain = (settings?.sending_domain ?? '').trim().toLowerCase()
+  const local = (settings?.from_local_part ?? 'events').trim().toLowerCase()
+  if (ownName && settings?.domain_status === 'verified' && DOMAIN_RE.test(domain) && LOCAL_RE.test(local)) {
+    return { from: `"${ownName}" <${local}@${domain}>`, replyTo }
+  }
+
+  const name = senderName(tenant.display_name ?? '')
+  if (!name) return null
   return { from: `"${name} via Stellr" <${TENANT_EVENT_FROM_ADDRESS}>`, replyTo }
 }
 
@@ -115,7 +151,7 @@ export function tenantEventSender(tenant: TenantForSender): EventSender | null {
 export async function loadTenantSender(db: SupabaseClient, tenantId: string): Promise<EventSender | null> {
   if (!tenantEventMailEnabled() || !isTenantRow(tenantId)) return null
   try {
-    const { data, error } = await db.from('tenants').select('display_name, branding').eq('id', tenantId).maybeSingle()
+    const { data, error } = await db.from('tenants').select(TENANT_SENDER_COLUMNS).eq('id', tenantId).maybeSingle()
     if (error) throw new Error(error.message)
     return data ? tenantEventSender(data as TenantForSender) : null
   } catch (err) {
@@ -143,7 +179,7 @@ export async function readTenantSenders(db: SupabaseClient): Promise<Map<string,
     const from = pageNo * TENANT_SENDERS_PAGE_SIZE
     const { data, error } = await db
       .from('tenants')
-      .select('id, display_name, branding')
+      .select(`id, ${TENANT_SENDER_COLUMNS}`)
       .neq('id', STELLR_TENANT_ID)
       .order('id', { ascending: true })
       .range(from, from + TENANT_SENDERS_PAGE_SIZE - 1)
