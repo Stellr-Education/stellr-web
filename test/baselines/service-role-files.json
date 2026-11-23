@@ -1085,6 +1085,10 @@
       "class": "convert",
       "reason": "auto: touches tenant or event-scoped tables; tables: agreements, members"
     },
+    "app/api/cron/email-events-retention/route.ts": {
+      "class": "platform",
+      "reason": "Email plan Workstream C platform cron: pruneEmailEvents (lib/email/events.ts) deletes every tenant's email_events rows older than 13 months, which tenant_app may only read; plus cron_runs"
+    },
     "app/api/cron/email-outbox/route.ts": {
       "class": "system",
       "reason": "Drains the email outbox (lib/email/outbox.ts): reads and updates email_outbox and email_outbox_blobs, reads email_suppressions and email_send_quota, calls bump_email_quota and prune_email_outbox_blobs, and writes its cron_runs row. Every queued message was already addressed by the sender that queued it; reads no tenant data."

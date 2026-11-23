@@ -9,6 +9,7 @@ import { createFromDefault } from '@/lib/event-emails/store'
 import { createFromSavedTemplate, getTemplate } from '@/lib/event-emails/templates'
 import type { EventEmailRow, EventEmailSendRow } from '@/lib/event-emails/types'
 import { lookupSuppressions, normaliseEmail } from '@/lib/email/suppressions'
+import { loadDeliveryStatus } from '@/lib/event-emails/history'
 import { loadEventRecord, loadScopedRows } from '@/lib/tenancy/load-scoped'
 
 // /api/admin/events/[slug]/emails — the "Email Engagement" tab (admins + assigned
@@ -32,7 +33,8 @@ export async function GET(_req: Request, { params }: Ctx) {
     loadScopedRows(crew.scope, 'event_emails', { db, match: { event_slug: slug }, order: { column: 'created_at', ascending: true }, label: ROUTE }),
     loadScopedRows(crew.scope, 'event_email_sends', { db, match: { event_slug: slug }, order: { column: 'started_at', ascending: false }, limit: 100, label: ROUTE }),
   ])
-  return NextResponse.json({ emails: emails ?? [], history: await markBlocked(db, (history ?? []) as unknown as EventEmailSendRow[]) })
+  const marked = await markBlocked(db, (history ?? []) as unknown as EventEmailSendRow[])
+  return NextResponse.json({ emails: emails ?? [], history: await markDelivery(db, marked) })
 }
 
 /**
@@ -56,6 +58,31 @@ async function markBlocked(db: ReturnType<typeof supabaseServer>, history: Event
     }))
   } catch (err) {
     console.error('[event-emails] suppression lookup for History failed:', err)
+    return history
+  }
+}
+
+/**
+ * Adds what Resend has since reported for each message (delivered, bounced,
+ * delayed, …) from email_events, by the Resend id the run stored. The ids come
+ * from this event's own runs, so only this event's messages are read. Never
+ * fails the tab: a failed lookup leaves the rows as recorded.
+ */
+async function markDelivery(db: ReturnType<typeof supabaseServer>, history: EventEmailSendRow[]): Promise<EventEmailSendRow[]> {
+  const ids = history.flatMap((h) => (h.recipients ?? []).map((r) => r.resendId).filter((id): id is string => !!id))
+  if (!ids.length) return history
+  try {
+    const status = await loadDeliveryStatus(db, ids)
+    if (!status.size) return history
+    return history.map((h) => ({
+      ...h,
+      recipients: (h.recipients ?? []).map((r) => {
+        const d = r.resendId ? status.get(r.resendId) : undefined
+        return d ? { ...r, delivery: d } : r
+      }),
+    }))
+  } catch (err) {
+    console.error('[event-emails] delivery lookup for History failed:', err)
     return history
   }
 }

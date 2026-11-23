@@ -63,7 +63,7 @@ describe('POST /api/webhooks/resend — suppression list', () => {
     const complaint = JSON.stringify({ type: 'email.complained', data: { email_id: 're_1', to: ['Parent@Example.test'] } })
     const first = await POST(signed(complaint))
     expect(first.status).toBe(200)
-    expect(await first.json()).toEqual({ received: true, suppressed: 1, bounced: 0 })
+    expect(await first.json()).toEqual({ received: true, suppressed: 1, bounced: 0, recorded: false })
     // Resend redelivers: nothing changes.
     expect((await POST(signed(complaint))).status).toBe(200)
     const bounce = JSON.stringify({ type: 'email.bounced', data: { email_id: 're_2', to: ['gone@example.test'], bounce: { type: 'Permanent' } } })
@@ -78,7 +78,7 @@ describe('POST /api/webhooks/resend — suppression list', () => {
     vi.stubEnv('RESEND_WEBHOOK_SECRET', secret)
     const fake = setup()
     const res = await POST(signed(JSON.stringify({ type: 'email.delivered', data: { to: ['a@example.test'] } })))
-    expect(await res.json()).toEqual({ received: true, suppressed: 0, bounced: 0 })
+    expect(await res.json()).toEqual({ received: true, suppressed: 0, bounced: 0, recorded: false })
     expect(fake.table('email_suppressions')).toHaveLength(0)
   })
 
@@ -126,5 +126,43 @@ describe('POST /api/webhooks/resend — suppression list', () => {
     vi.stubEnv('RESEND_WEBHOOK_SECRET', secret)
     setup()
     expect((await POST(signed('null'))).status).toBe(400)
+  })
+})
+
+describe('POST /api/webhooks/resend — email events store', () => {
+  const delivered = (id = 're_d1', at = '2026-11-23T20:00:00.000Z') =>
+    JSON.stringify({ type: 'email.delivered', created_at: at, data: { email_id: id, created_at: '2026-11-23T19:59:58.000Z', to: ['Parent@Example.test'] } })
+
+  it('records every event once, however often Resend redelivers it', async () => {
+    vi.stubEnv('RESEND_WEBHOOK_SECRET', secret)
+    const fake = setup()
+    const first = await POST(signed(delivered()))
+    expect(first.status).toBe(200)
+    expect(await first.json()).toEqual({ received: true, suppressed: 0, bounced: 0, recorded: true })
+    const again = await POST(signed(delivered()))
+    expect(await again.json()).toMatchObject({ recorded: false })
+    expect(fake.table('email_events')).toHaveLength(1)
+    expect(fake.table('email_events')[0]).toMatchObject({ type: 'delivered', provider_email_id: 're_d1', recipient: 'parent@example.test' })
+  })
+
+  it('a complaint is suppressed and stored', async () => {
+    vi.stubEnv('RESEND_WEBHOOK_SECRET', secret)
+    const fake = setup()
+    const body = JSON.stringify({ type: 'email.complained', created_at: '2026-11-23T20:00:00.000Z', data: { email_id: 're_c1', to: ['a@example.test'] } })
+    expect(await (await POST(signed(body))).json()).toEqual({ received: true, suppressed: 1, bounced: 0, recorded: true })
+    expect(fake.table('email_events').map((r) => r.type)).toEqual(['complained'])
+  })
+
+  it('a failed events write asks Resend to retry, after the suppression is in', async () => {
+    vi.stubEnv('RESEND_WEBHOOK_SECRET', secret)
+    const fake = fakeSupabase(
+      { agreement_recipients: [], email_suppressions: [] },
+      { failOn: (t, action) => (t === 'email_events' && action === 'upsert' ? 'relation "public.email_events" does not exist' : null) },
+    )
+    db.current = fake.client
+    const body = JSON.stringify({ type: 'email.bounced', created_at: '2026-11-23T20:00:00.000Z', data: { email_id: 're_b1', to: ['gone@example.test'], bounce: { type: 'Permanent' } } })
+    const res = await POST(signed(body))
+    expect(res.status).toBe(500)
+    expect(fake.table('email_suppressions').map((r) => r.email)).toEqual(['gone@example.test'])
   })
 })

@@ -23,6 +23,7 @@ import { ISSUE_FAILED_PREFIX } from '@/lib/docusign-agreements'
 import { otherTenantEvents, stellrRows } from '@/lib/tenancy/stellr-scope'
 import { STELLR_TENANT_ID } from '@/lib/tenancy/constants'
 import { heldSigningInvites } from '@/lib/esign/outbox'
+import { loadStreamRates, type StreamRates } from '@/lib/email/events-health'
 
 export const DIGEST_PERIODS = [7, 30, 90] as const
 export type DigestPeriod = (typeof DIGEST_PERIODS)[number]
@@ -160,6 +161,12 @@ export interface MemberDigest {
    * not be read. The dashboard shows it to platform admins only.
    */
   heldSigningInvites?: number | null
+  /**
+   * Bounce and complaint rates per mail stream over the last 7 days, from
+   * email_events (email plan, Workstream C). Every tenant's mail. Counts only.
+   * The dashboard shows it to platform admins only.
+   */
+  mailRates?: StreamRates[]
   /** Sections that failed to load, so a partial digest says so instead of showing zeros. */
   errors: string[]
 }
@@ -722,16 +729,17 @@ export async function loadMemberDigest(days: number, opts: { now?: Date; db?: Su
 
     loadOutstanding(db, section),
   ])
-  const [staff, outboxes, held] = await Promise.all([
+  const [staff, outboxes, held, mailRates] = await Promise.all([
     section('staff', EMPTY_STAFF_DIGEST, () => loadStaffDigest(db, { start: w.start, end: w.end }, opts.now)),
     section('Mail outboxes', [] as OutboxHealth[], () => loadOutboxHealth(db, opts.now)),
     // Never throws: null when tenant mail is off or the count is unreadable.
     heldSigningInvites(db),
+    section('Mail delivery rates', [] as StreamRates[], () => loadStreamRates(db, opts.now ?? new Date())),
   ])
 
   return {
     window: w, generatedAt: new Date().toISOString(), growth, left, engagement, mentoring, outstanding, staff,
-    outboxes, heldSigningInvites: held, errors,
+    outboxes, heldSigningInvites: held, mailRates, errors,
   }
 }
 

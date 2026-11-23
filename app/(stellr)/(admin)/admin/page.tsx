@@ -221,7 +221,7 @@ export default async function AdminDashboardPage({ searchParams }: { searchParam
         </div>
       )}
 
-      <MailHealth outboxes={digest.outboxes} heldSigningInvites={digest.heldSigningInvites} showHeld={platformAdmin} />
+      <MailHealth outboxes={digest.outboxes} heldSigningInvites={digest.heldSigningInvites} showHeld={platformAdmin} mailRates={digest.mailRates} />
 
       {/* Headline figures */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6">

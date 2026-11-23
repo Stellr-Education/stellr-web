@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { groupSends, nextCronRun, sendGroupCsv, EVENT_EMAIL_CRON_UTC_HOURS } from './send-groups'
+import { deliveryNote, groupSends, nextCronRun, sendGroupCsv, EVENT_EMAIL_CRON_UTC_HOURS } from './send-groups'
 import type { EventEmailSendRow, RecipientSendStatus } from './types'
 
 const NOW = new Date('2026-11-18T16:00:00Z')
@@ -103,9 +103,50 @@ describe('groupSends', () => {
     const [g] = groupSends([run({ list: [[addr(1), 'failed']] })], [], NOW)
     g.recipients[0].error = 'bad, address'
     const csv = sendGroupCsv(g, (r) => r).split('\n')
-    expect(csv[1]).toBe('Name,Email,Roles,Result,Times emailed,Run (UTC),Detail')
+    expect(csv[1]).toBe('Name,Email,Roles,Result,Times emailed,Run (UTC),Detail,Provider report (UTC)')
     expect(csv[2]).toContain('"bad, address"')
     expect(csv).toHaveLength(3)
+  })
+})
+
+describe('groupSends: delivery reported by the mail provider (email_events)', () => {
+  const withDelivery = (status: string) => {
+    const r = run({ list: [[addr(1), 'sent']] })
+    r.recipients[0].delivery = { status: status as never, at: '2026-11-17T15:58:00Z' }
+    return r
+  }
+
+  it('counts a delivered, opened or clicked message as confirmed', () => {
+    for (const status of ['delivered', 'opened', 'clicked']) {
+      const [g] = groupSends([withDelivery(status)], [], NOW)
+      expect(g.recipients[0]).toMatchObject({ outcome: 'delivered', delivery: { status } })
+      expect(g.confirmed).toBe(1)
+    }
+    const [plain] = groupSends([run({ list: [[addr(1), 'sent']] })], [], NOW)
+    expect(plain.confirmed).toBe(0)
+  })
+
+  it('shows a bounce, complaint, provider suppression or failure on this message as bounced, and the send as needing a look', () => {
+    for (const [status, reason] of [['bounced', 'bounce'], ['complained', 'complaint'], ['suppressed', 'provider_suppressed'], ['failed', 'provider_failed']]) {
+      const [g] = groupSends([withDelivery(status)], [{ id: 'e1', status: 'sent', updated_at: '2026-11-17T15:57:00Z' }], NOW)
+      expect(g.recipients[0], status).toMatchObject({ outcome: 'blocked', blockedReason: reason })
+      expect(g.status.kind).toBe('finished_with_problems')
+      expect(g.confirmed).toBe(0)
+    }
+  })
+
+  it('a delay alone stays delivered (handed over), with its own note', () => {
+    const [g] = groupSends([withDelivery('delivery_delayed')], [], NOW)
+    expect(g.recipients[0].outcome).toBe('delivered')
+    expect(deliveryNote(g.recipients[0])).toMatch(/delayed/)
+    expect(deliveryNote({})).toBeNull()
+  })
+
+  it('puts the provider report in the CSV', () => {
+    const [g] = groupSends([withDelivery('delivered')], [], NOW)
+    const row = sendGroupCsv(g, (r) => r).split('\n')[2]
+    expect(row).toContain('Delivered to their mail server.')
+    expect(row).toContain('2026-11-17T15:58:00Z')
   })
 })
 

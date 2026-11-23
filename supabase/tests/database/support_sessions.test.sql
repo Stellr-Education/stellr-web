@@ -76,7 +76,7 @@ SELECT set_eq(
      WHERE n.nspname IN ('public', 'entitlements') AND c.relkind IN ('r', 'p', 'v', 'm', 'f')
        AND has_table_privilege('tenant_app', c.oid, 'SELECT')$q$,
   'tenant_support_ro reads exactly the tables tenant_app reads');
-SELECT is((SELECT count(*)::int FROM sup_tables), 53, 'that is 53 tables: the 52 tenant tables and public.tenants');
+SELECT is((SELECT count(*)::int FROM sup_tables), 54, 'that is 54 tables: the 53 tenant tables and public.tenants');
 SELECT is_empty($q$
   SELECT tbl FROM sup_tables s JOIN pg_class c ON c.oid = s.rel WHERE NOT c.relrowsecurity
 $q$, 'every table tenant_support_ro reads has row level security on');
@@ -163,7 +163,7 @@ RESET ROLE;
 SELECT set_config('stellr.tenant_id', '', true);
 
 SELECT is((SELECT v FROM sup_obs WHERE ctx = 'b' AND chk = 'foreign_rows'), '0',
-  'pinned to a tenant, tenant_support_ro sees no other tenant''s row on any of the 53 tables');
+  'pinned to a tenant, tenant_support_ro sees no other tenant''s row on any of the 54 tables');
 SELECT is((SELECT v FROM sup_obs WHERE ctx = 'b' AND chk = 'events'), 'sup-b-event', 'events: it sees its tenant''s event and not Stellr''s');
 SELECT is((SELECT v FROM sup_obs WHERE ctx = 'b' AND chk = 'tenants'), 'sup-canary', 'tenants: it sees its own tenant row only');
 SELECT is((SELECT v FROM sup_obs WHERE ctx = 'b' AND chk = 'insert'), 'ERR:42501', 'an INSERT is refused (42501)');
