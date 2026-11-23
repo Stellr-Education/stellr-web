@@ -14,6 +14,7 @@ import type { CronRun } from '@/lib/cron-runs'
 import { runPerTenant } from '@/lib/cron-tenants'
 import { STELLR_TENANT_ID } from '@/lib/tenancy/constants'
 import { STELLR_OR_NULL } from '@/lib/tenancy/stellr-scope'
+import { recordUsage } from '@/lib/usage/record'
 
 // The email outbox (table email_outbox, migration 20261109224229).
 //
@@ -465,6 +466,9 @@ async function sendRow(
     )
     await done({ status: 'sent', sent_at: now().toISOString(), provider_id: sent.id, last_error: null })
     await recordSend(db, now())
+    // S6-USE: a queued email counts when it is sent, for the tenant it was queued
+    // under (NULL is Stellr's). A no-op unless USAGE_METERING_ENABLED is on.
+    recordUsage(row.tenant_id ?? STELLR_TENANT_ID, 'email')
     return 'sent'
   } catch (err) {
     const message = (err instanceof Error ? err.message : String(err)).slice(0, 500)

@@ -48,6 +48,7 @@ const CRON_FLOORS: Record<string, number> = {
   surveys: 60,
   'team-profiles': 60,
   'training-reminders': 300,
+  'usage-rollup': 60,
   'weekly-digest': 60,
 }
 

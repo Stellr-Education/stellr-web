@@ -39,6 +39,10 @@ export const DEV_CRON_OPT_INS = [
   // membership-expiry's step 4 alone: the tenant guardian consent sweep. The
   // route runs only that step under this value (app/api/cron/membership-expiry).
   'membership-expiry:tenant-consent',
+  // S6-USE: the usage roll-up, so its gate (usage figures equal SQL counts) can
+  // be proven on dev. It writes counts only, and still does nothing unless
+  // USAGE_METERING_ENABLED is on too.
+  'usage-rollup',
 ] as const
 
 export type DevCronOptIn = (typeof DEV_CRON_OPT_INS)[number]

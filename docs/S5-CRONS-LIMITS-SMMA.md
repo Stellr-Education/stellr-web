@@ -11,14 +11,14 @@ What is built, what it does for Stellr today, and what has to happen before it d
 
 ## Crons
 
-**There are 23, not the plan's 22.** `group-invoice-sync` arrived after the plan was written. Routes, the distinct `vercel.json` paths (28 schedule entries) and `lib/cron-scope.ts` all agree, and `test/cron-scope.test.ts` keeps them the same set. `guardCron` declines outside production, so **no cron does any work on `dev`, and proof comes only from production's `cron_runs`,** with one narrow exception for the hosted `dev` deployment (below).
+**There are 25, not the plan's 22.** `group-invoice-sync` arrived after the plan was written, and `usage-rollup` with S6-USE (22 Nov 2026, below). Routes, the distinct `vercel.json` paths (33 schedule entries) and `lib/cron-scope.ts` all agree, and `test/cron-scope.test.ts` keeps them the same set. `guardCron` declines outside production, so **no cron does any work on `dev`, and proof comes only from production's `cron_runs`,** with one narrow exception for the hosted `dev` deployment (below).
 
 ### The dev opt-in (B26a, wave 7)
 
 `CRON_NON_PROD_JOBS` (`lib/cron-dev-opt-in.ts`, #651, on `dev`) lets named cron steps run on the hosted `dev` deployment, so the tenant consent expiry sweep can be proven there (owner decision `W7-6`). **Unset, nothing changes anywhere.**
 
 - **Read only on the hosted `dev` deployment:** `NEXT_PUBLIC_APP_ENV` exactly `dev` and `VERCEL_ENV` `production` (the dev project's tracked branch). Never on a preview or a local run. In production it is never read: `guardCron` returns before it gets there.
-- **Two values only, comma-separated:** `email-outbox` (drains the outbox; on `dev` its mail already goes to the safelist inbox) and `membership-expiry:tenant-consent` (step 4 alone, the tenant consent sweep, and still only with `TENANT_GUARDIAN_CONSENT_ENABLED` on). Any other value is ignored, so that cron declines as before: every integration cron, the per-tenant crons and `membership-expiry` as a whole.
+- **Three values only, comma-separated:** `email-outbox` (drains the outbox; on `dev` its mail already goes to the safelist inbox), `membership-expiry:tenant-consent` (step 4 alone, the tenant consent sweep, and still only with `TENANT_GUARDIAN_CONSENT_ENABLED` on) and, since S6-USE, `usage-rollup` (counts only, and still only with `USAGE_METERING_ENABLED` on), so the S6-USE gate can be proven on `dev`. Any other value is ignored, so that cron declines as before: every integration cron, the per-tenant crons and `membership-expiry` as a whole.
 - **The minor-account purge never runs off production.** `membership-expiry`'s four-step path, whose step 2 deletes self-registered minors and their logins, returns before running anywhere outside production, whatever `guardCron` let through, and any other `membership-expiry:*` value fails closed.
 - **The value is the selector.** No query parameter picks a step, so a request cannot choose its own. The consent-only run writes its `cron_runs` row under `membership-expiry`, with `{ only: 'tenant-consent', ... }` in its result.
 - **Scheduled calls run too.** Vercel's own cron calls carry the real `CRON_SECRET`, so while the variable names a job its schedule runs it: the consent sweep at 06:00 UTC daily, the outbox at 00:05, 06:05, 12:05 and 18:05 UTC. An expiry proof ages a row and calls the sweep between two 06:00 runs, or reads the scheduled run's `cron_runs` row.
@@ -33,7 +33,7 @@ From `lib/cron-scope.ts`. Nothing reads this at runtime.
 | Class | Crons | `maxDuration` |
 |---|---|---|
 | `per_tenant` (6) | `docusign-reminders`, `event-emails`, `group-invoice-sync`, `survey-retention`, `surveys`, `team-profiles` | 300 for `docusign-reminders` and `group-invoice-sync`, 60 for the rest |
-| `platform` (2) | `deletion-archive-retention` (60), `entitlements` (300) | |
+| `platform` (3) | `deletion-archive-retention` (60), `entitlements` (300), `usage-rollup` (60) | |
 | `stellr_only` (15) | `alumni-upgrades`, `apollo-reconcile`, `background-sync`, `campaign-drip`, `campaign-events`, `campaigns`, `docusign-form-data`, `hubspot-event-options`, `hubspot-lifecycle`, `lead-capture-failures`, `membership-expiry`, `motion-bookings`, `session-reminders`, `training-reminders`, `weekly-digest` | 60 for `apollo-reconcile`, `background-sync`, `campaigns`, `membership-expiry`, `weekly-digest`; 300 for the rest |
 
 **`maxDuration` (B11).** The 12 crons with none now declare 300, the highest value already used on this Hobby project. Existing values did not change: 13 crons at 300 and 10 at 60. It cannot shorten a run. Where the platform default was lower, a run that hangs may now run longer, so watch Active CPU.
@@ -100,6 +100,14 @@ From #588 (wave 5), **since promoted** in #600. A run with only Stellr's work is
 
 **`group-invoice-sync` has no slice.** It is classed `per_tenant`, but B13 and B14 do not list it. A7's refusal of priced tenant events means no tenant has a group invoice until S9, so it can wait, but name a slice before then.
 
+### The usage roll-up (S6-USE, 22 Nov 2026)
+
+`usage-rollup` (`app/api/cron/usage-rollup`, `lib/usage/rollup.ts`), daily at 00:30 UTC. **Inert until `USAGE_METERING_ENABLED` is exactly `true`:** with it off the route answers `{ skipped }` after `guardCron`, creates no client and writes no `cron_runs` row. Adding the schedule to `vercel.json` is a production change, but it does nothing until the owner sets the flag.
+
+With the flag on it calls `public.usage_rollup(day)` for yesterday and today (UTC), which sums `usage_events` per tenant and kind, adds the day's new `members` rows as the owner's identities, and upserts `usage_daily`; then it deletes `usage_events` older than 90 days. Idempotent per (tenant, day, kind): a repeated run writes the same totals, and a day older than the raw window is refused, so a purged day keeps the totals it was rolled up with. Every run is in `cron_runs`; a failed day or purge is a run failure and a 500. Counts only: no personal data is read out of the database. Active CPU: two RPCs and one delete a day.
+
+The rows it rolls up are written by `recordUsage` (`lib/usage/record.ts`), after the response, at one write point per kind: a registration answered 2xx (the two registration routes), a new events mirror row (`upsertEventRows`), and an email Resend accepted (`sendEmail` and the outbox drain). Identities have no single write point and are counted in SQL by the roll-up. With the flag off `recordUsage` is one environment read.
+
 ### Stellr-only limits (B11)
 
 `stellrRows()` in `lib/tenancy/stellr-scope.ts` filters on `tenant_id IS NULL OR tenant_id = Stellr`. With one tenant it matches every row, so each query returns what it returned before.
@@ -124,7 +132,7 @@ From #588 (wave 5), **since promoted** in #600. A run with only Stellr's work is
 
 ### Cron audit (B12)
 
-All 23 routes export `withCronAudit('<job>', handler)` from `lib/cron-audit.ts`, behind `PLATFORM_AUDIT_ENABLED`, off by default. An authorised run writes one `cron.run.finish` on the platform chain after the response: actor `cron:<job>`, tenant null, metadata `{ status }`. A 5xx is recorded with its status. The body is never read, because `motion-bookings` answers with email addresses. A failed audit write never changes the cron's answer.
+All 25 routes export `withCronAudit('<job>', handler)` from `lib/cron-audit.ts`, behind `PLATFORM_AUDIT_ENABLED`, off by default. An authorised run writes one `cron.run.finish` on the platform chain after the response: actor `cron:<job>`, tenant null, metadata `{ status }`. A 5xx is recorded with its status. The body is never read, because `motion-bookings` answers with email addresses. A failed audit write never changes the cron's answer.
 
 **What "100% audited" means for a cron: every run that finished and whose event was not lost.**
 

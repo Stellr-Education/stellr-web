@@ -301,6 +301,7 @@ export const ROUTE_MANIFEST: Record<string, RouteClass> = {
   'app/api/cron/surveys/route.ts': 'cron',
   'app/api/cron/team-profiles/route.ts': 'cron',
   'app/api/cron/training-reminders/route.ts': 'cron',
+  'app/api/cron/usage-rollup/route.ts': 'cron',
   'app/api/cron/weekly-digest/route.ts': 'cron',
   'app/api/csp-report/route.ts': 'public',
   'app/api/email/unsubscribe/route.ts': 'public',

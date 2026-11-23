@@ -1113,6 +1113,10 @@
       "class": "convert",
       "reason": "auto: reaches tables it does not name (dynamic .from, rpc, or a client passed to a helper); review before converting"
     },
+    "app/api/cron/usage-rollup/route.ts": {
+      "class": "platform",
+      "reason": "S6-USE platform cron: usage_rollup() and the 90-day purge work over every tenant's usage counts (usage_events, usage_daily), which tenant_app has no grant on; plus cron_runs"
+    },
     "app/api/cron/weekly-digest/route.ts": {
       "class": "convert",
       "reason": "auto: reaches tables it does not name (dynamic .from, rpc, or a client passed to a helper); review before converting; tables: cron_runs"
@@ -1704,6 +1708,10 @@
     "lib/uploads.ts": {
       "class": "identity",
       "reason": "auto: no tenant or event-scoped table, classed by its identity tables; tables: member_teacher_licenses, members"
+    },
+    "lib/usage/record.ts": {
+      "class": "platform",
+      "reason": "S6-USE: inserts counts into usage_events, a platform table only service_role may write (tenant_app has no grant, so a tenant cannot inflate or erase its own usage)"
     },
     "scripts/aeo-crawler-report.ts": {
       "class": "script",

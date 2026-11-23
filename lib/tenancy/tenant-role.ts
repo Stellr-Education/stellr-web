@@ -79,6 +79,10 @@ export const TENANT_APP_NO_ACCESS_TABLES: Readonly<Record<string, string>> = {
     'wrapped field-encryption data keys (S4 field-crypto lane): read only by service_role through lib/field-crypto-store.ts; a tenant session never needs key material, and deleting a row crypto-shreds the tenant',
   'public.tenant_guardian_consents':
     'guardian consent state (S5 wave 6): written by service_role through lib/registration/tenant-guardian-consent.ts; a tenant session writing it could mark its own participants consented',
+  'public.usage_daily':
+    'daily usage totals (S6-USE): written by service_role through usage_rollup(); a tenant session writing it could rewrite its own usage figures',
+  'public.usage_events':
+    'raw usage counts (S6-USE): written by service_role through lib/usage/record.ts; a tenant session writing it could inflate or erase its own usage',
 }
 
 export interface TenantParentRef {

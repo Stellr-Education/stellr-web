@@ -93,6 +93,10 @@ export const CRON_SCOPES: Readonly<Record<string, CronScopeEntry>> = {
   surveys: { scope: 'per_tenant', why: 'post-event surveys of any tenant (B13)' },
   'team-profiles': { scope: 'per_tenant', why: 'team profiles of any tenant (B13)' },
   'training-reminders': { scope: 'stellr_only', why: "Stellr training; reads event-scoped assignments, and skips another tenant's events and cohorts (B11)" },
+  'usage-rollup': {
+    scope: 'platform',
+    why: "S6-USE: rolls every tenant's usage counts into usage_daily (new members rows count as the owner's identities: a count, no member data read out) and purges raw usage_events past 90 days",
+  },
   'weekly-digest': {
     scope: 'stellr_only',
     why: "Stellr's admin digest; event-scoped reads limited to Stellr (B11)",
