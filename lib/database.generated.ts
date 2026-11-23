@@ -7430,38 +7430,111 @@ export type Database = {
         }
         Relationships: []
       }
+      support_consents: {
+        Row: {
+          approved_at: string | null
+          decided_by_clerk_user_id: string | null
+          declined_at: string | null
+          expires_at: string
+          id: string
+          platform_admin_user_id: string
+          reason: string
+          requested_at: string
+          tenant_id: string
+          used_at: string | null
+          withdrawn_at: string | null
+        }
+        Insert: {
+          approved_at?: string | null
+          decided_by_clerk_user_id?: string | null
+          declined_at?: string | null
+          expires_at: string
+          id?: string
+          platform_admin_user_id: string
+          reason: string
+          requested_at?: string
+          tenant_id: string
+          used_at?: string | null
+          withdrawn_at?: string | null
+        }
+        Update: {
+          approved_at?: string | null
+          decided_by_clerk_user_id?: string | null
+          declined_at?: string | null
+          expires_at?: string
+          id?: string
+          platform_admin_user_id?: string
+          reason?: string
+          requested_at?: string
+          tenant_id?: string
+          used_at?: string | null
+          withdrawn_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "support_consents_platform_admin_user_id_fkey"
+            columns: ["platform_admin_user_id"]
+            isOneToOne: false
+            referencedRelation: "platform_admins"
+            referencedColumns: ["clerk_user_id"]
+          },
+          {
+            foreignKeyName: "support_consents_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       support_sessions: {
         Row: {
           closed_at: string | null
+          consent_id: string | null
           ends_at: string
           id: string
           mode: string
           opened_at: string
           platform_admin_user_id: string
           reason: string
+          renewal_reason: string | null
+          renewed_at: string | null
           tenant_id: string
         }
         Insert: {
           closed_at?: string | null
+          consent_id?: string | null
           ends_at: string
           id?: string
           mode?: string
           opened_at?: string
           platform_admin_user_id: string
           reason: string
+          renewal_reason?: string | null
+          renewed_at?: string | null
           tenant_id: string
         }
         Update: {
           closed_at?: string | null
+          consent_id?: string | null
           ends_at?: string
           id?: string
           mode?: string
           opened_at?: string
           platform_admin_user_id?: string
           reason?: string
+          renewal_reason?: string | null
+          renewed_at?: string | null
           tenant_id?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "support_sessions_consent_id_fkey"
+            columns: ["consent_id"]
+            isOneToOne: false
+            referencedRelation: "support_consents"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "support_sessions_platform_admin_user_id_fkey"
             columns: ["platform_admin_user_id"]
@@ -9762,6 +9835,31 @@ export type Database = {
         }[]
       }
       storage_object_tenant_id: { Args: { p_name: string }; Returns: string }
+      support_break_glass_open: {
+        Args: { p_admin: string; p_consent_id: string; p_reason: string }
+        Returns: {
+          ends_at: string
+          session_id: string
+          tenant_id: string
+        }[]
+      }
+      support_break_glass_renew: {
+        Args: { p_admin: string; p_reason: string; p_session_id: string }
+        Returns: string
+      }
+      support_consent_decide: {
+        Args: {
+          p_approve: boolean
+          p_approver: string
+          p_consent_id: string
+          p_tenant_id: string
+        }
+        Returns: string
+      }
+      support_consent_withdraw: {
+        Args: { p_consent_id: string; p_tenant_id: string }
+        Returns: boolean
+      }
       survey_claim_email: {
         Args: { p_day: string; p_limit: number }
         Returns: boolean
