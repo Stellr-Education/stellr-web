@@ -57,7 +57,7 @@ Import from `@/lib/authz`. `proxy.ts` must import from `@/lib/authz/decide`: `li
 | `hasScope(scope)` | a duty scope, from `admin_duties`. Stellr only | `currentUserHasScope` (deleted) |
 | `isCrewTarget(target)` | is the target of view-as or deletion staff? A lookup error under postgres counts as staff, so the action is refused | `isCrewRole`, the set in `lib/deletion/external.ts` |
 | `portalRoleFromClaims(claims)` | pure and database-free, for `proxy.ts` | the inline read in `proxy.ts` |
-| `assertWritable()` | S6 support-mode placeholder. Always passes in S5 | |
+| `assertWritable(principal?)`, `writeRefusal(req)` | S6-AW: throws `ReadOnlySupportSessionError` (403, code `support_read_only`) while a support-read session is active; `writeRefusal` answers that as `{ error: 'Forbidden', code: 'support_read_only' }` on the admin API (`/api/admin/**`) and `null` otherwise. Enforced in one place, `withAudit` (`lib/audit/route.ts`), before the handler runs; the two admin handlers that audit inline call `writeRefusal` themselves. `test/assert-writable-guard.test.ts` fails on a mutating admin handler that does neither. The session comes from the seam `supportSessionOf()` (`lib/authz/support-session.ts`), which answers null until S6-SUP, so today it always passes, with no read | |
 | `page.requireAdmin()`, `page.requireTenantAdmin()`, `page.requireEventSection()`, `page.requireStellrAdmin()` | signed out goes to `/sign-in`; signed in without access gets `notFound()` | `requireAdminPage` |
 | `api.requireStellrAdmin()`, `api.requireTenantCrew()`, `api.requireEventAccess()` | `{ ok, value }` or `{ ok: false, deny }` | |
 

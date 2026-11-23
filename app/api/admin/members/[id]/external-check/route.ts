@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import { supabaseServer } from '@/lib/supabase'
-import { hasCapability, type Capability } from '@/lib/authz'
+import { hasCapability, writeRefusal, type Capability } from '@/lib/authz'
 import { actorFromAuth } from '@/lib/activity-log'
 import { auditMutation, withAudit } from '@/lib/audit/route'
 import { LICENSE_DOCUMENT_URL_TTL_SECONDS } from '@/lib/teacher-license'
@@ -74,6 +74,9 @@ const deleteAudit = ({ args: [req] }: { args: [Request, Ctx] }) => ({
 export async function POST(req: Request, { params }: Ctx) {
   const g = await guard(params, 'members:write')
   if (g instanceof NextResponse) return g
+  // S6-AW: not withAudit, so the support-read refusal is called here.
+  const readOnly = writeRefusal(req)
+  if (readOnly) return readOnly
 
   const parsed = bodySchema.safeParse(await req.json().catch(() => null))
   if (!parsed.success) {
