@@ -2,7 +2,7 @@
 
 Written 22 Nov 2026 against `dev` at `419f5a1b`, as slice S6-D of `docs/PLAN-S6-DRAFT.md`. It answers the draft's open questions with the defaults S6 builds until the owner says otherwise, and writes up the support-mode and break-glass design that S6-AW, S6-SUP and S6-BG build. People are named by role only.
 
-**Status.** Docs only. The questions S6-Q2 to S6-Q11 are entered in `docs/S5-DECISION-REGISTER.md`, section "S6 decisions", as **open, default in force**. The owner's 22 Nov 2026 blanket yes (#855) covered the register rows open at that time; these rows were added after it, so it does not cover them. The owner reviews the defaults (the S6-D gate). Built since: S6-AW (22 Nov 2026) and S6-USE (22 Nov 2026, on S6-Q6's default, behind `USAGE_METERING_ENABLED`, off).
+**Status.** Docs only. The questions S6-Q2 to S6-Q11 are entered in `docs/S5-DECISION-REGISTER.md`, section "S6 decisions", as **open, default in force**. The owner's 22 Nov 2026 blanket yes (#855) covered the register rows open at that time; these rows were added after it, so it does not cover them. The owner reviews the defaults (the S6-D gate). Built since: S6-AW (22 Nov 2026) and S6-USE (22 Nov 2026, on S6-Q6's default, behind `USAGE_METERING_ENABLED`, off). **S6-SUP, 22 Nov 2026: built behind `SUPPORT_MODE_ENABLED` (off everywhere), not applied to any hosted database.** Section 2's session record, role, cookie, banner and read helper are in `supabase/migrations/20261123023124_support_sessions.sql`, `lib/authz/support-session.ts`, `lib/authz/support-session-server.ts`, `lib/tenancy/support-db.ts` and `app/api/admin/support/session`; pgTAP `supabase/tests/database/support_sessions.test.sql`.
 
 ## 1. Decisions and the defaults in force
 

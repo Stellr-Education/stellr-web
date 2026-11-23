@@ -42,7 +42,8 @@ const REPO_ROOT = fileURLToPath(new URL('..', import.meta.url))
 const MANIFEST_CLASS_COUNTS: Record<RouteClass, number> = {
   // -7 platform_destined, +7 platform_admin: BF-15 (a), 21 Nov 2026 (deletion, deletion/preflight,
   //   deletion-requests/[id], duties, impersonation, members/merge, privacy-requests/[id])
-  platform_admin: 7,
+  // +1 platform_admin: S6-SUP's admin support/session (22 Nov 2026), denied on tenant hosts (S6-Q7)
+  platform_admin: 8,
   platform_destined: 2,
   // +1 tenant_crew, -1 stellr_only: admin registrations/[id]/payment-method (C16 follow-up)
   // +3 tenant_crew, -3 stellr_only: admin events/[slug]/{companies,offerings,merch/commit} (C18)
@@ -89,7 +90,8 @@ const MANIFEST_CLASS_COUNTS: Record<RouteClass, number> = {
 // +1 on 20 Nov 2026: the tenant tree's /sign/email page (S5 wave 8, BOUNCE).
 // +1 on 21 Nov 2026: account/two-step, the admin two-step prompt (F4 part B; participant, denied on tenant hosts like the admin portal).
 // +1 on 22 Nov 2026: the usage-rollup cron (S6-USE; cron, denied on tenant hosts like every cron).
-const MANIFEST_TOTAL = 531
+// +1 on 22 Nov 2026: admin support/session (S6-SUP; platform_admin, denied on tenant hosts like every admin route, S6-Q7).
+const MANIFEST_TOTAL = 532
 
 // The decisions. Moving a route between them is a deliberate diff here.
 const DECISION_COUNTS: Record<TenantSurfaceDecision, number> = {
@@ -102,7 +104,8 @@ const DECISION_COUNTS: Record<TenantSurfaceDecision, number> = {
   // +1: the tenant tree's /sign/email page, a tree file like its siblings (BOUNCE)
   // +1: account/two-step, the admin portal's two-step prompt (F4 part B)
   // +1: the usage-rollup cron (S6-USE)
-  deny: 426,
+  // +1: admin support/session (S6-SUP): support mode runs on the platform host only (S6-Q7)
+  deny: 427,
 }
 
 /** A concrete URL a manifest file serves, with sample values for its params. */

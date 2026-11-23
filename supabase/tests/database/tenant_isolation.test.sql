@@ -19,7 +19,7 @@ DO $grant$ BEGIN
   EXECUTE format('GRANT %I TO %I', 'tenant_app', current_user);
 END $grant$;
 
-SELECT plan(1700);
+SELECT plan(1701);
 
 -- 1. The tenant role cannot escape RLS, and every tenant table carries both tenant policies.
 SELECT ok(EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'tenant_app'), 'role tenant_app exists');
@@ -514,6 +514,9 @@ SELECT ok(NOT has_table_privilege('tenant_app', 'public.email_outbox', 'SELECT, 
 SELECT ok(NOT has_table_privilege('tenant_app', 'public.platform_audit_events', 'SELECT, INSERT, UPDATE, DELETE, TRUNCATE')
   AND (SELECT relrowsecurity FROM pg_class WHERE oid = 'public.platform_audit_events'::regclass),
   'public.platform_audit_events: platform-level (lib/tenancy/tenant-role.ts TENANT_APP_NO_ACCESS_TABLES), RLS on and tenant_app has no privilege on it at all');
+SELECT ok(NOT has_table_privilege('tenant_app', 'public.support_sessions', 'SELECT, INSERT, UPDATE, DELETE, TRUNCATE')
+  AND (SELECT relrowsecurity FROM pg_class WHERE oid = 'public.support_sessions'::regclass),
+  'public.support_sessions: platform-level (lib/tenancy/tenant-role.ts TENANT_APP_NO_ACCESS_TABLES), RLS on and tenant_app has no privilege on it at all');
 SELECT ok(NOT has_table_privilege('tenant_app', 'public.tenant_data_keys', 'SELECT, INSERT, UPDATE, DELETE, TRUNCATE')
   AND (SELECT relrowsecurity FROM pg_class WHERE oid = 'public.tenant_data_keys'::regclass),
   'public.tenant_data_keys: platform-level (lib/tenancy/tenant-role.ts TENANT_APP_NO_ACCESS_TABLES), RLS on and tenant_app has no privilege on it at all');

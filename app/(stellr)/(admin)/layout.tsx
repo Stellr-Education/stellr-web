@@ -10,6 +10,8 @@ import { AdminSidebar } from '@/components/admin/AdminSidebar'
 import { SiteFooter } from '@/components/layout/SiteFooter'
 import { RecordLinksProvider } from '@/components/admin/RecordLinks'
 import { CapabilitiesProvider } from '@/components/admin/CapabilitiesContext'
+import { SupportSessionBanner } from '@/components/admin/SupportSessionBanner'
+import { loadSupportSession } from '@/lib/authz/support-session-server'
 
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
   const { userId } = await auth()
@@ -27,6 +29,8 @@ export default async function AdminLayout({ children }: { children: React.ReactN
   // What the viewer may change, so pages can hide the controls the API would
   // refuse them. Hiding only: every route still decides for itself.
   const capabilities = await currentCapabilities()
+  // S6-SUP: the banner while a support session is open. Null at once with SUPPORT_MODE_ENABLED off.
+  const support = await loadSupportSession()
 
   // The nonce puts clerk-js under the CSP (lib/csp.ts).
   return (
@@ -36,6 +40,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
         <AdminSidebar role={role} />
 
         <div className="flex min-h-screen min-w-0 flex-1 flex-col">
+          {support && <SupportSessionBanner tenantName={support.tenantName} endsAt={support.endsAt} />}
           {/* Slim top strip: role badge + account button */}
           <header className="sticky top-0 z-30 flex items-center justify-between gap-3 border-b border-brand-border bg-white/85 px-4 py-3 backdrop-blur lg:px-8">
             <span className="rounded-full bg-brand-blue/10 px-2.5 py-0.5 font-subheading text-xs font-semibold text-brand-blue">

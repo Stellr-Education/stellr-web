@@ -35,6 +35,7 @@ import {
   tenantGuardianConsentMissingPreconditions,
   tenantGuardianConsentReady,
 } from '@/lib/registration/eligibility'
+import { SUPPORT_MODE_FLAG, SUPPORT_SESSION_SECRET_ENV, supportModeEnabled, supportSecretProblem } from '@/lib/authz/support-session'
 import { DERIVATION_MODES, type DerivationMode } from './constants'
 import { TENANT_HOST_SUFFIX_VAR, TENANT_ROUTING_FLAG, tenantRoutingConfig } from './host'
 import { LOADSCOPED_MODE_ENV, LOADSCOPED_MODES, loadScopedMode, type LoadScopedMode } from './load-scoped-mode'
@@ -159,6 +160,16 @@ export const SWITCHES = {
     accepts: exactBoolean,
     dependsOn: [TENANT_HOST_SUFFIX_VAR],
   } satisfies SwitchSpec<boolean>,
+  // S6-SUP support mode: off everywhere until S6 is ready. Not an isolating switch: on, it
+  // lets a platform admin read one non-owner tenant, read-only, for 60 minutes or less.
+  supportMode: {
+    name: SUPPORT_MODE_FLAG,
+    default: false,
+    resolve: () => supportModeEnabled(),
+    accepts: exactBoolean,
+    // And SUPPORT_SESSION_SECRET (never reported) and PLATFORM_AUDIT_ENABLED: see INVALID_COMBINATIONS.
+    dependsOn: [AUDIT_FLAG],
+  } satisfies SwitchSpec<boolean>,
   hostSuffix: {
     name: TENANT_HOST_SUFFIX_VAR,
     default: null,
@@ -234,6 +245,18 @@ export const INVALID_COMBINATIONS: readonly CombinationRule[] = [
     holds: () => tenantGuardianConsentEnabled() && tenantGuardianConsentMissingPreconditions().length > 0,
   },
   {
+    id: 'support_mode_without_secret',
+    switches: [SUPPORT_MODE_FLAG, SUPPORT_SESSION_SECRET_ENV],
+    effect: 'No support session can be opened: SUPPORT_SESSION_SECRET is unset, too short or a copy of another secret.',
+    holds: () => supportModeEnabled() && supportSecretProblem() !== null,
+  },
+  {
+    id: 'support_mode_without_audit',
+    switches: [SUPPORT_MODE_FLAG, AUDIT_FLAG],
+    effect: 'No support session can be opened: each one must be written to the tenant’s audit chain.',
+    holds: () => supportModeEnabled() && !auditEnabled(),
+  },
+  {
     id: 'field_crypto_mode_without_key',
     switches: [FIELD_CRYPTO_MODE_ENV],
     effect: 'Field encryption stays inert: the master key is unset or malformed.',
@@ -259,6 +282,8 @@ export interface TenancyReport {
     ignoredEntries: number
   }
   routing: { enabled: boolean; suffixError: string | null }
+  /** S6-SUP: whether support sessions can be opened (SUPPORT_MODE_ENABLED). */
+  supportMode: boolean
   /** Variables set to a value their parser does not take, so it used the default. Names only. */
   unrecognised: string[]
   invalidCombinations: InvalidCombination[]
@@ -296,6 +321,7 @@ export function tenancyReport(derivationMode: DerivationModeReport): TenancyRepo
       ignoredEntries: configured.ignored,
     },
     routing: { enabled: routing.enabled, suffixError: routing.suffixError },
+    supportMode: SWITCHES.supportMode.resolve(),
     unrecognised: unrecognisedSwitches(),
     invalidCombinations: INVALID_COMBINATIONS.filter((rule) => rule.holds()).map(({ id, switches, effect }) => ({ id, switches, effect })),
   }
@@ -314,6 +340,7 @@ export function defaultTenancyReport(): TenancyReport {
     derivationMode: DERIVATION_MODE_DEFAULT,
     tenantDb: { enabled: SWITCHES.tenantDbEnabled.default, areas: [], ignoredEntries: 0 },
     routing: { enabled: SWITCHES.routingEnabled.default, suffixError: SWITCHES.hostSuffix.default },
+    supportMode: SWITCHES.supportMode.default,
     unrecognised: [],
     invalidCombinations: [],
   }

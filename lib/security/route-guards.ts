@@ -358,6 +358,8 @@ export const GUARD_EXCEPTIONS: Record<string, string> = {
   // ── platform_admin ──────────────────────────────────────────────────────
   'app/api/admin/impersonation/route.ts#DELETE':
     'ends view-as: clearing the cookie can only reduce access; the end is logged against the signed ticket',
+  'app/api/admin/support/session/route.ts#DELETE':
+    'ends a support session (S6-SUP): clearing the cookie and closing the row can only reduce access; it closes only the row the caller\'s own signed ticket names, and the close is recorded on the tenant\'s audit chain',
 
   // ── participant ─────────────────────────────────────────────────────────
   'app/(stellr)/(member)/community/training/[moduleId]/[itemId]/page.tsx#default':

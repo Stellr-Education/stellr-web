@@ -30,6 +30,8 @@ const WRITABLE_CHECKS: Record<string, readonly string[]> = {
 const WRITABLE_EXEMPTIONS: Readonly<Record<string, string>> = {
   'app/api/admin/impersonation/route.ts#DELETE':
     'ends view-as: clearing the cookie can only reduce access, so a support-read session must still be able to leave one',
+  'app/api/admin/support/session/route.ts#DELETE':
+    'ends a support session: closing it and clearing its cookie can only reduce access, so a support-read session must still be able to leave',
 }
 
 function routeFiles(dir: string, out: string[] = []): string[] {

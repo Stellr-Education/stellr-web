@@ -861,6 +861,10 @@
       "class": "stellr_only",
       "reason": "auto: no tenant or event-scoped table, classed by its stellr_only tables; tables: membership_tiers, store_products"
     },
+    "app/api/admin/support/session/route.ts": {
+      "class": "platform",
+      "reason": "S6-SUP: opens and closes support sessions. support_sessions is service_role only by design (no tenant role may see or extend a session), and the open checks platform_admins and the target tenant before any tenant context exists; tables: platform_admins, support_sessions, tenants"
+    },
     "app/api/admin/surveys/export/route.ts": {
       "class": "convert",
       "reason": "auto: reaches tables it does not name (dynamic .from, rpc, or a client passed to a helper); review before converting"
@@ -1444,6 +1448,10 @@
     "lib/authz.ts": {
       "class": "convert",
       "reason": "The one authorisation API (S5 C1) resolves the caller's roles before any tenant context exists, so it cannot use tenantDb; its helpers read tenant_memberships, platform_admins and staff assignments, and it logs mismatches through record_app_error. Inert until the guard codemods import it. Class left at the conservative convert until a person reviews it."
+    },
+    "lib/authz/support-session-server.ts": {
+      "class": "platform",
+      "reason": "S6-SUP: verifies the caller's support session against its support_sessions row (service_role only by design), before any tenant read; tenant data itself is read through tenantSupportDb as tenant_support_ro; tables: support_sessions"
     },
     "lib/campaign-registrations.ts": {
       "class": "convert",

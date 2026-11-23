@@ -39,6 +39,9 @@
 //     file, which review and the denylist are there to catch;
 //   * with `readOnly`, every transaction is SET TRANSACTION READ ONLY before
 //     the pin and read back after it, so the database refuses any write;
+//   * with `role: SUPPORT_ROLE` (S6-SUP, only through lib/tenancy/support-db.ts)
+//     the transaction runs as tenant_support_ro instead, always READ ONLY, and
+//     the read-back requires that role. No other role can be named;
 //   * it is off unless TENANT_DB_ENABLED is exactly 'true'. With the flag
 //     off nothing loads the Postgres client and nothing connects. With it on,
 //     a registered driver is used, or else lib/tenancy/driver.ts is loaded on
@@ -67,6 +70,16 @@ export { isTenantDbEnabled, TENANT_DB_FLAG }
 
 /** The database role tenant transactions run as (20261104200000). */
 export const TENANT_ROLE = 'tenant_app'
+
+/**
+ * The read-only support role (S6-SUP, 20261123023124): SELECT only, on the tables
+ * tenant_app reads, under its own policies on the same pin. Reached only through
+ * lib/tenancy/support-db.ts (tenantSupportDb), and always READ ONLY.
+ */
+export const SUPPORT_ROLE = 'tenant_support_ro'
+
+/** The roles a tenant transaction may run as. Nothing else is ever spliced into SET ROLE. */
+export type TenantDbRole = typeof TENANT_ROLE | typeof SUPPORT_ROLE
 
 /** The transaction-local setting public.app_tenant_id() reads. */
 export const TENANT_SETTING = 'stellr.tenant_id'
@@ -209,6 +222,12 @@ export interface TenantDbOptions {
    * switch's shadow read uses this (C12).
    */
   readOnly?: boolean
+  /**
+   * The role to pin as. Default tenant_app. SUPPORT_ROLE (S6-SUP) forces readOnly,
+   * and the read-back then requires that role. Anything else throws before the
+   * database is touched.
+   */
+  role?: TenantDbRole
 }
 
 /** Sent before the pin when `readOnly` is set. Postgres refuses to turn it back to read-write after the first query. */
@@ -228,18 +247,18 @@ export function isWriteShaped(text: string): boolean {
 /** The read-back: which role the transaction runs as and which tenant app_tenant_id() returns. */
 export const PIN_CHECK_SQL = 'SELECT current_user AS role, public.app_tenant_id()::text AS tenant'
 
-/** Throws unless the transaction still runs as tenant_app with exactly `tenantId` pinned. */
-async function verifyPin(tx: TenantSqlTx, tenantId: string, message: string): Promise<void> {
+/** Throws unless the transaction still runs as `role` (tenant_app by default) with exactly `tenantId` pinned. */
+async function verifyPin(tx: TenantSqlTx, tenantId: string, message: string, role: TenantDbRole = TENANT_ROLE): Promise<void> {
   const check = await tx.query<{ role: unknown; tenant: unknown }>(PIN_CHECK_SQL)
   const row = check.rows[0]
-  if (!row || row.role !== TENANT_ROLE || row.tenant !== tenantId) throw new TenantContextError(message)
+  if (!row || row.role !== role || row.tenant !== tenantId) throw new TenantContextError(message)
 }
 
 /** Pin the tenant on an open transaction and prove it took. */
-async function pin(tx: TenantSqlTx, tenantId: string): Promise<void> {
-  await tx.query(`SET LOCAL ROLE ${TENANT_ROLE}`)
+async function pin(tx: TenantSqlTx, tenantId: string, role: TenantDbRole = TENANT_ROLE): Promise<void> {
+  await tx.query(`SET LOCAL ROLE ${role}`)
   await tx.query(`SELECT set_config('${TENANT_SETTING}', $1, true)`, [tenantId])
-  await verifyPin(tx, tenantId, 'tenantDb could not pin the tenant on this connection; the transaction was rolled back')
+  await verifyPin(tx, tenantId, 'tenantDb could not pin the tenant on this connection; the transaction was rolled back', role)
 }
 
 /**
@@ -248,6 +267,8 @@ async function pin(tx: TenantSqlTx, tenantId: string): Promise<void> {
  */
 export function tenantDb(tenantId: string, opts: TenantDbOptions = {}): TenantDb {
   const id = assertTenantId(tenantId)
+  const role: TenantDbRole = opts.role ?? TENANT_ROLE
+  if (role !== TENANT_ROLE && role !== SUPPORT_ROLE) throw new TenantContextError('tenantDb runs only as tenant_app or tenant_support_ro')
 
   const driver = async (): Promise<TenantSqlDriver> => {
     if (opts.driver) return opts.driver
@@ -263,12 +284,13 @@ export function tenantDb(tenantId: string, opts: TenantDbOptions = {}): TenantDb
     return tenantDriverFromEnv(env)
   }
 
-  const readOnly = opts.readOnly === true
+  // The support role is read-only twice over: no write privilege, and a READ ONLY transaction.
+  const readOnly = opts.readOnly === true || role === SUPPORT_ROLE
 
   const transaction = async <T>(fn: (q: TenantQuery) => Promise<T>): Promise<T> =>
     (await driver()).transaction(async (tx) => {
       if (readOnly) await tx.query(READ_ONLY_SQL)
-      await pin(tx, id)
+      await pin(tx, id, role)
       if (readOnly) {
         const check = await tx.query<{ read_only: unknown }>(READ_ONLY_CHECK_SQL)
         if (check.rows[0]?.read_only !== 'on') {
@@ -288,7 +310,7 @@ export function tenantDb(tenantId: string, opts: TenantDbOptions = {}): TenantDb
         // Before the caller sees a row: if the statement moved the role or the
         // tenant by any path refusedSql does not know, throw, and the driver
         // rolls the whole transaction back (its writes and the move with it).
-        await verifyPin(tx, id, 'a statement changed the tenant pin or the role; tenantDb rolled the transaction back')
+        await verifyPin(tx, id, 'a statement changed the tenant pin or the role; tenantDb rolled the transaction back', role)
         return result
       }
       const q: TenantQuery = {

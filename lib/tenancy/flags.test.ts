@@ -23,7 +23,7 @@ import {
 // registry stays off proxy.ts's bundle and away from the tenant database driver.
 
 const FIELD_CRYPTO_KEYS = ['FIELD_CRYPTO_MASTER_KEY', 'FIELD_CRYPTO_KEY_ID', 'FIELD_CRYPTO_PREVIOUS_MASTER_KEY', 'FIELD_CRYPTO_PREVIOUS_KEY_ID']
-const ALL = [...Object.values(SWITCHES).map((s) => s.name), ...FIELD_CRYPTO_KEYS]
+const ALL = [...Object.values(SWITCHES).map((s) => s.name), ...FIELD_CRYPTO_KEYS, 'SUPPORT_SESSION_SECRET']
 
 beforeEach(() => {
   for (const name of ALL) vi.stubEnv(name, undefined)
@@ -46,6 +46,7 @@ describe('the registry', () => {
         'PLATFORM_AUDIT_ENABLED',
         'RATE_LIMIT_KEY_SECRET',
         'RATE_LIMIT_STORE',
+        'SUPPORT_MODE_ENABLED',
         'TENANT_DB_AREAS',
         'TENANT_DB_ENABLED',
         'TENANT_EVENT_MAIL_ENABLED',
@@ -77,6 +78,7 @@ describe('the registry', () => {
       ['guardianConsent', ['true', 'false'], ['True']],
       ['tenantDbEnabled', ['true', 'false'], ['on']],
       ['routingEnabled', ['true', 'false'], ['1']],
+      ['supportMode', ['true', 'false'], ['TRUE', 'on']],
     ]
     // What a switch needs set before a recognised value moves it: guardian consent
     // resolves on only with the readiness guard's preconditions (s5-programme.20).
@@ -114,6 +116,17 @@ describe('the registry', () => {
 })
 
 describe('tenancyReport', () => {
+  it('reports support mode (S6-SUP), and what it lacks before a session can open', () => {
+    vi.stubEnv('SUPPORT_MODE_ENABLED', 'true')
+    const report = tenancyReport('log')
+    expect(report.supportMode).toBe(true)
+    expect(report.invalidCombinations.map((c) => c.id)).toEqual(['support_mode_without_secret', 'support_mode_without_audit'])
+    vi.stubEnv('SUPPORT_SESSION_SECRET', 's'.repeat(40))
+    vi.stubEnv('PLATFORM_AUDIT_ENABLED', 'true')
+    expect(tenancyReport('log').invalidCombinations).toEqual([])
+    expect(JSON.stringify(tenancyReport('log'))).not.toContain('s'.repeat(40))
+  })
+
   it('with every switch unset, matches the defaults', () => {
     expect(tenancyReport('log')).toEqual(defaultTenancyReport())
     expect(defaultTenancyReport()).toEqual({
@@ -127,6 +140,7 @@ describe('tenancyReport', () => {
       derivationMode: 'log',
       tenantDb: { enabled: false, areas: [], ignoredEntries: 0 },
       routing: { enabled: false, suffixError: null },
+      supportMode: false,
       unrecognised: [],
       invalidCombinations: [],
     })
@@ -156,6 +170,7 @@ describe('tenancyReport', () => {
       derivationMode: 'log',
       tenantDb: { enabled: true, areas: [{ area: 'events-config', path: 'shadow', sample: 0.25 }], ignoredEntries: 0 },
       routing: { enabled: true, suffixError: null },
+      supportMode: false,
       unrecognised: [],
       invalidCombinations: [],
     })
@@ -178,6 +193,8 @@ describe('tenancyReport', () => {
       'tenant_db_areas_without_flag',
       'routing_without_usable_suffix',
       'guardian_consent_not_ready',
+      'support_mode_without_secret',
+      'support_mode_without_audit',
       'field_crypto_mode_without_key',
     ])
 
