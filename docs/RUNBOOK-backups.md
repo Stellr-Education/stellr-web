@@ -109,7 +109,7 @@ Create three heartbeats and alert the owner by email and phone:
 | Stellr backup nightly | 24 hours | 3 hours | `HEARTBEAT_URL_NIGHTLY` |
 | Stellr backup storage | 24 hours | 3 hours | `HEARTBEAT_URL_STORAGE` |
 
-GitHub delays scheduled runs at busy times, sometimes by tens of minutes; the grace periods allow for that.
+GitHub delays scheduled runs at busy times, sometimes by tens of minutes, and sometimes skips them. The 3-hour grace covers that for nightly and storage. The hourly run does not use GitHub's cron at all (§2.8).
 
 ### 2.6 The private repository
 
@@ -122,14 +122,35 @@ GitHub delays scheduled runs at busy times, sometimes by tens of minutes; the gr
 
 When `ops/backups/` changes in `stellr-web` (owner review via CODEOWNERS), copy the change to the private repo the same day.
 
+7. Set up the hourly trigger (§2.8). Until it is set up, nothing starts the hourly run.
+
 ### 2.7 Actions minutes
 
-The repo is in the `Stellr-Education` organisation, which is on GitHub Free until the nonprofit Team plan (3,000 minutes) is approved. GitHub Free gives a private repo 2,000 minutes a month, rounded up per job. Expected: hourly about 2 minutes × 720 runs = 1,440; nightly about 4 × 30 = 120; storage about 3 × 30 = 90. **About 1,650: tight.** Check Settings → Billing after the first week. If it runs over, the options are the GitHub Pro plan (3,000 minutes), or making the repo public (its scripts are already public in `stellr-web`, the archives are encrypted and in R2, and secrets stay secret; but anyone can then see run times and failures). Owner decision; do not drop the hourly schedule, which is what holds the 1-hour RPO.
+The repo is in the `Stellr-Education` organisation, which is on GitHub Free until the nonprofit Team plan (3,000 minutes) is approved. GitHub Free gives a private repo 2,000 minutes a month, rounded up per job. Expected: hourly about 2 minutes × 720 runs = 1,440 (measured 22–23 Nov: under a minute of run time, so 1 billed minute per run; skipped jobs bill nothing); nightly about 4 × 30 = 120; storage about 3 × 30 = 90. **About 1,650: tight.** Check Settings → Billing after the first week. If it runs over, the options are the GitHub Pro plan (3,000 minutes), or making the repo public (its scripts are already public in `stellr-web`, the archives are encrypted and in R2, and secrets stay secret; but anyone can then see run times and failures). Owner decision; do not drop the hourly schedule, which is what holds the 1-hour RPO.
+
+### 2.8 Hourly trigger (AWS EventBridge)
+
+GitHub's cron is best effort. On 22–23 Nov 2026 it ran one of seven hourly slots, so the hourly heartbeat alerted (§7). The hourly run is now started from outside GitHub: an EventBridge rule calls GitHub's `workflow_dispatch` API at :07 UTC every hour. The workflow has no hourly cron, so nothing runs twice and no extra Actions minutes are used.
+
+Resources in the AWS project, selected Region **us-east-2** (all named `stellr-backups-*`):
+
+| Resource | Name | What it holds |
+|---|---|---|
+| EventBridge connection | `stellr-backups-github` | The GitHub token as an `Authorization: Bearer …` header (EventBridge keeps it in a Secrets Manager secret it manages), plus `Accept` and `X-GitHub-Api-Version` headers |
+| API destination | `stellr-backups-hourly-dispatch` | `POST https://api.github.com/repos/Stellr-Education/stellr-backups/actions/workflows/backups.yml/dispatches`, at most 1 call a second |
+| IAM role | `stellr-backups-eventbridge-dispatch` | Trusted by `events.amazonaws.com` (this account only); may call `events:InvokeApiDestination` on that one destination |
+| EventBridge rule (default bus) | `stellr-backups-hourly` | `cron(7 * * * ? *)`; body `{"ref":"main","inputs":{"kind":"hourly"}}`; 3 retries within 15 minutes |
+
+**The token.** A GitHub fine-grained personal access token. Resource owner `Stellr-Education`; repository access **only** `stellr-backups`; repository permission **Actions: Read and write** (Metadata: read is added automatically); nothing else. It can start or cancel workflow runs in that one repo. It cannot read secrets or code, or push. Expiry: the longest the organisation allows. Put it in a calendar reminder: when it expires, the hourly run stops and the heartbeat alerts. To set or rotate it: AWS console → EventBridge → Integration → Connections → `stellr-backups-github` → Edit → API key value `Bearer <token>` → Update. Paste the token there only, never in chat, a file or a ticket.
+
+Cost: API destination calls are $0.20 a million (720 a month), and the connection's secret is included in that charge. In practice nothing, and the AWS credits cover it anyway.
+
+**Check it is working:** in the private repo, `gh run list -R Stellr-Education/stellr-backups --event workflow_dispatch` should show one run starting at about :07 each hour. In AWS, the rule's CloudWatch metrics `Invocations` and `FailedInvocations` (namespace `AWS/Events`, dimension `RuleName`). A 401 or 404 from GitHub counts as a failed invocation: the token expired, was revoked or lost access to the repo, or the workflow file was renamed.
 
 ## 3. When a heartbeat alerts
 
 1. Open the private repo → Actions → the failed or missing run.
-2. Missing run: check Actions is enabled and that GitHub has no incident; run it by hand (Run workflow).
+2. Missing run: check Actions is enabled and that GitHub has no incident; run it by hand (Run workflow). For the hourly run, check the EventBridge rule is enabled and its `FailedInvocations` metric (§2.8); an expired GitHub token is the likeliest cause.
 3. Failed run: read the step log. Usual causes: the `backup_reader` password changed or the pooler URI changed; a table in `critical-tables.txt` was renamed or dropped (`--strict-names` stops the job; fix the list in `stellr-web` first, then copy it); R2 token expired; Supabase S3 key revoked.
 4. Over two missed nightlies, or any doubt about the data, treat it as an incident under `docs/compliance/incident-response-plan.md` (availability, Low, unless data is at risk).
 
@@ -202,9 +223,10 @@ Write the key to a temp file for the drill (`umask 077; KEY=$(mktemp)`, then the
 | Date | What | Who | Result |
 |---|---|---|---|
 | 22 Nov 2026 | Install (§2) | Owner | Done. First manual runs 17:42 UTC: hourly 42 tables / 1,442 rows; nightly 170 tables / 14,602 rows; storage 5 buckets / 216 files. Heartbeats green. `backup_reader` created with the first §2.3 block |
-| 22 Nov 2026 | Skip alarm proven (§2.6 step 5) | Owner | **Proven.** Workflow disabled 17:47 UTC after the last ping at 17:42 UTC; the hourly heartbeat alerted the owner by 19:15 UTC (expected about 19:12: 1 h period + 30 min grace); workflow re-enabled at once. Scheduled runs resumed |
+| 22 Nov 2026 | Skip alarm proven (§2.6 step 5) | Owner | **Proven.** Workflow disabled 17:47 UTC after the last ping at 17:42 UTC; the hourly heartbeat alerted the owner by 19:15 UTC (expected about 19:12: 1 h period + 30 min grace); workflow re-enabled at once (19:14 UTC). Scheduled hourly runs did **not** reliably resume: see 23 Nov |
 | 22 Nov 2026 | First restore drill | Owner | **PASS** in 1 min 55 s: nightly 170/170 tables, hourly overlay 42/42 tables with 0 orphans, 14 audit chains verify, 216 files and 70 signed agreements match. Local Homebrew Postgres, not Docker (§4) |
 | 22 Nov 2026 | Backup age key | Owner | Held as a file attachment in the password manager (copy proven), an offline copy, and a cloud copy in the owner's end-to-end encrypted drive (owner's choice). A second key generated by mistake that day is unused |
+| 23 Nov 2026 | Hourly heartbeat alert 02:19 UTC | Agent | Cause: GitHub skipped the hourly cron. After the 19:14 UTC re-enable, one of seven `:07` slots ran (00:48 UTC, 41 min late); no run failed. Manual hourly run at 02:29 UTC; Better Stack auto-resolved at 02:30 UTC. Hourly backups missing for about 19:00–00:48 and 00:48–02:29 UTC. Fix: hourly run started by EventBridge (§2.8), GitHub hourly cron removed |
 | (to do) | E-sign Drive drill (`scripts/esign-restore-drill.ts`) in the same session as a backup drill; compare its audit anchor with the backup drill's (22 Nov: `cc504b579ee6…`) | Owner | |
 | 20 Nov 2026 | E-sign Drive folder: service account found to be Content manager; permanent delete refused (404), exports never pruned | Agent | Fixed: job moves files to trash instead (Content manager is enough); §8 |
 | (to do) | `overlay-critical.sh --dry-run` against a scratch Supabase project (is `session_replication_role` allowed?) | Owner | |

@@ -10,6 +10,12 @@
 #   nightly  09:23 UTC        roles + full schema and data + storage metadata      RPO 24 h
 #   storage  09:53 UTC        every file in every Supabase Storage bucket          RPO 24 h
 #
+# The hourly run is NOT on GitHub's cron. GitHub skipped six of seven hourly
+# slots on 22-23 Nov 2026, so an AWS EventBridge rule (stellr-backups-hourly,
+# us-east-2) starts it through workflow_dispatch with kind=hourly at :07 UTC.
+# See docs/RUNBOOK-backups.md section 2.8. Nightly and storage stay on GitHub's
+# cron: their heartbeats allow 3 hours of grace.
+#
 # Each job encrypts with age to the owner-held public key, uploads to R2 (bucket
 # lock rules make objects undeletable until they age out), then pings its own
 # Better Stack heartbeat. A failure pings the heartbeat's /fail URL; a job that
@@ -31,7 +37,6 @@ name: Backups
 
 on:
   schedule:
-    - cron: '7 * * * *'
     - cron: '23 9 * * *'
     - cron: '53 9 * * *'
   workflow_dispatch:
@@ -58,9 +63,8 @@ env:
 # the heartbeat; keep the three in step when editing.
 jobs:
   hourly:
-    if: >-
-      (github.event_name == 'schedule' && github.event.schedule == '7 * * * *') ||
-      (github.event_name == 'workflow_dispatch' && inputs.kind == 'hourly')
+    # Started by the EventBridge rule (or by hand); never by GitHub's cron.
+    if: github.event_name == 'workflow_dispatch' && inputs.kind == 'hourly'
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     concurrency: { group: backup-hourly, cancel-in-progress: false }
