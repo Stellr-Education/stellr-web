@@ -6,7 +6,7 @@
 // are stored per event, and a template must never name another event's files.
 
 import type { SupabaseClient } from '@supabase/supabase-js'
-import type { AudienceKey, EventEmailRow } from './types'
+import type { AudienceKey, EventEmailPurpose, EventEmailRow } from './types'
 
 export interface EventEmailTemplateRow {
   id: string
@@ -17,6 +17,7 @@ export interface EventEmailTemplateRow {
   body_json: unknown
   resend_docusign: boolean
   schedule_days_before: number | null
+  purpose?: EventEmailPurpose
   source_event_slug: string | null
   created_by: string | null
   updated_by: string | null
@@ -32,6 +33,7 @@ export function templateFieldsFromEmail(email: EventEmailRow) {
     body_json: email.body_json,
     resend_docusign: email.resend_docusign,
     schedule_days_before: email.schedule_days_before,
+    purpose: email.purpose ?? 'logistics',
     source_event_slug: email.event_slug,
   }
 }
@@ -84,6 +86,7 @@ export async function createFromSavedTemplate(
       attachments: [],
       resend_docusign: template.resend_docusign,
       schedule_days_before: template.schedule_days_before,
+      purpose: template.purpose ?? 'logistics',
       status: 'draft',
       created_by: createdBy,
     })

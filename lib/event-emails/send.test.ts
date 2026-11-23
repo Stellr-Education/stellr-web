@@ -42,11 +42,17 @@ const R = (email: string, firstName: string) => ({
 
 // Supabase stand-in with a real claim: the conditional UPDATE only matches
 // while the row's status is draft/scheduled.
+// Members read by the promotional consent check (lib/event-emails/promotional.ts).
+let membersRows: Record<string, unknown>[] = []
+
 function fakeDb(row: typeof EMAIL) {
   const state = { row: { ...row }, sends: [] as Record<string, unknown>[], statusWrites: [] as string[], heartbeats: 0 as number | undefined }
   const db = {
     state,
     from(table: string) {
+      if (table === 'members') {
+        return { select: () => ({ in: async (_c: string, ids: string[]) => ({ data: membersRows.filter((m) => ids.includes(m.id as string)), error: null }) }) }
+      }
       if (table === 'event_emails') {
         return {
           select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: { ...state.row } }) }) }),
@@ -106,6 +112,7 @@ function fakeDb(row: typeof EMAIL) {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  membersRows = []
   calls.order.length = 0
   resolveAudience.mockResolvedValue({ recipients: [R('a@example.com', 'Al'), R('b@example.com', 'Bo')], docusignParticipantIds: ['p1'] })
 })
@@ -510,5 +517,43 @@ describe('recipients sendEmail did not deliver', () => {
     await sendEventEmail(db as never, 'e1', { trigger: 'manual', spacingMs: 0 })
     const rec = db.state.sends[0].recipients as { resendId?: string }[]
     expect(rec[0].resendId).toBe('re_1')
+  })
+})
+
+describe('email purpose (email plan Workstream B)', () => {
+  const RM = (email: string, firstName: string, memberId: string) => ({ ...R(email, firstName), memberId })
+
+  it('sends event information as transactional mail with no unsubscribe header', async () => {
+    const db = fakeDb(EMAIL)
+    await sendEventEmail(db as never, 'e1', { trigger: 'schedule', spacingMs: 0 })
+    const sent = sendEmail.mock.calls[0][0] as Record<string, unknown>
+    expect(sent.kind).toBe('transactional')
+    expect(sent.headers).toBeUndefined()
+  })
+
+  it('sends a promotion only to consenting adult members, as marketing, on the community domain, with one-click unsubscribe', async () => {
+    vi.stubEnv('COMMUNITY_FROM', 'Stellr Education <hello@community.example.org>')
+    resolveAudience.mockResolvedValue({
+      recipients: [RM('a@example.com', 'Al', 'm1'), RM('b@example.com', 'Bo', 'm2'), RM('c@example.com', 'Cy', 'm3'), R('d@example.com', 'Di')],
+      docusignParticipantIds: [],
+    })
+    membersRows = [
+      { id: 'm1', marketing_consent: true, age_bracket: 'adult', marketing_unsubscribe_token: 'tok1' },
+      { id: 'm2', marketing_consent: false, age_bracket: 'adult', marketing_unsubscribe_token: 'tok2' },
+      { id: 'm3', marketing_consent: true, age_bracket: 'high_school', marketing_unsubscribe_token: 'tok3' },
+    ]
+    const db = fakeDb({ ...EMAIL, resend_docusign: false, purpose: 'promotional' } as typeof EMAIL)
+    const out = await sendEventEmail(db as never, 'e1', { trigger: 'schedule', spacingMs: 0 })
+    expect(out).toMatchObject({ ok: true, sent: 1 })
+    expect(sendEmail).toHaveBeenCalledTimes(1)
+    const sent = sendEmail.mock.calls[0][0] as unknown as Record<string, unknown> & { headers: Record<string, string>; text: string; html: string }
+    expect(sent.to).toBe('a@example.com')
+    expect(sent.kind).toBe('marketing')
+    expect(sent.from).toBe('David Shaw, Stellr Education <hello@community.example.org>')
+    expect(sent.headers['List-Unsubscribe']).toContain('token=tok1')
+    expect(sent.headers['List-Unsubscribe-Post']).toBe('List-Unsubscribe=One-Click')
+    expect(sent.text).toContain('Unsubscribe: ')
+    expect(sent.html).toContain('token=tok1')
+    vi.unstubAllEnvs()
   })
 })

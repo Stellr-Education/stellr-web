@@ -12,13 +12,8 @@ import { memberMergeVars, type CampaignMember } from '@/lib/email-vars'
 
 const MINOR_AGE_BRACKET = 'high_school' // school students are minors — never marketed to
 
-export function appUrl(): string {
-  return process.env.NEXT_PUBLIC_APP_URL ?? 'https://app.stellreducation.org'
-}
-
-export function unsubscribeUrl(token: string): string {
-  return `${appUrl()}/api/email/unsubscribe?token=${token}`
-}
+import { appUrl, unsubscribeUrl } from '@/lib/email/unsubscribe-url'
+export { appUrl, unsubscribeUrl }
 
 // ─── Audience ───────────────────────────────────────────────────────────────
 

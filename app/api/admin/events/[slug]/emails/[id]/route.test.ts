@@ -89,4 +89,17 @@ describe('PATCH /api/admin/events/[slug]/emails/[id]', () => {
   it('rejects an unknown group', async () => {
     expect((await patch({ audiences: ['everyone'] })).status).toBe(400)
   })
+
+  it('saves the email type, and rejects an unknown one', async () => {
+    expect((await patch({ purpose: 'promotional' })).status).toBe(200)
+    expect(updates[0]).toMatchObject({ purpose: 'promotional' })
+    expect((await patch({ purpose: 'newsletter' })).status).toBe(400)
+  })
+
+  it("refuses a promotion on another tenant's event (community mail is Stellr's)", async () => {
+    requireEventRoute.mockImplementation(async (slug: string) => eventRouteFor(slug, '11111111-2222-4333-8444-555555555555'))
+    const res = await patch({ purpose: 'promotional' })
+    expect(res.status).toBeGreaterThanOrEqual(400)
+    expect(updates).toEqual([])
+  })
 })

@@ -5,13 +5,13 @@ import { auditSubject, noteAuditSubject } from '@/lib/audit/route-subject'
 import { withAudit } from '@/lib/audit/route'
 import { EDITABLE } from '@/lib/event-emails/store'
 import { unknownTokens } from '@/lib/event-emails/render'
-import { isAudienceKey, type EventEmailAttachment, type EventEmailRow } from '@/lib/event-emails/types'
+import { isAudienceKey, isEventEmailPurpose, type EventEmailAttachment, type EventEmailRow } from '@/lib/event-emails/types'
 import { RESOURCES_BUCKET } from '@/lib/community'
 import { loadEventRecord, refuseOutsideStellr, scopedRowWrite } from '@/lib/tenancy/load-scoped'
 import { deletableObjectPaths } from '@/lib/tenancy/storage'
 
 // PATCH  /api/admin/events/[slug]/emails/[id] — edit, schedule, unschedule.
-//   body: any of { name, subject, body_json, audiences, resend_docusign,
+//   body: any of { name, subject, body_json, audiences, resend_docusign, purpose,
 //                  schedule_days_before, attachments, status: 'draft'|'scheduled'|'cancelled' }
 // DELETE — remove an unsent email (its attachments go with it). Sent emails stay,
 //          because the history refers to them.
@@ -51,6 +51,15 @@ async function updateEmail(req: Request, { params }: Ctx) {
   if (Array.isArray(b.audiences)) {
     if (!b.audiences.every(isAudienceKey)) return NextResponse.json({ error: 'Unknown group' }, { status: 400 })
     update.audiences = [...new Set(b.audiences as string[])]
+  }
+  if (b.purpose !== undefined) {
+    if (!isEventEmailPurpose(b.purpose)) return NextResponse.json({ error: 'Unknown email type' }, { status: 400 })
+    // Promotional mail is Stellr's community mail: tenants send logistics only (PLAN-multi-tenant: no community features).
+    if (b.purpose === 'promotional') {
+      const refused = refuseOutsideStellr(crew.scope)
+      if (refused) return refused
+    }
+    update.purpose = b.purpose
   }
   if (b.schedule_days_before !== undefined) {
     const n = b.schedule_days_before

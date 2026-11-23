@@ -9,6 +9,7 @@ import { EmailSendError, resendTransport, sendRespectingRateLimit, type Outgoing
 import { deferReason, enqueueEmail, type OutboxReason } from '@/lib/email/outbox'
 import { lookupSuppressions, normaliseEmail, suppressionBlocks } from '@/lib/email/suppressions'
 import { recordUsage } from '@/lib/usage/record'
+import { streamFrom } from '@/lib/email/senders'
 import { STELLR_TENANT_ID } from '@/lib/tenancy/constants'
 
 // deep review PUB-2 / HTML-injection cluster: every user-supplied value that is
@@ -25,8 +26,8 @@ const RESEND_API_KEY = process.env.RESEND_API_KEY
 // personal mailbox: Gmail applies the SENT label to inbound mail whose From is
 // the recipient's own address, so mail clients render phantom "duplicate"
 // copies (Inbox + Sent + All Mail) of every email.
-const FROM =
-  process.env.TRANSACTIONAL_FROM ?? 'Stellr Education <no-reply@mail.stellreducation.org>'
+// The address itself comes from the sender registry (lib/email/senders.ts).
+const FROM = streamFrom('transactional')
 
 // Templates invite members to "reply to this email" — route those replies to a
 // monitored mailbox, since no-reply@ can't receive. Reply-To needs no domain
@@ -45,13 +46,10 @@ export function teamInboxEmail(): string {
   return process.env.REGISTRATION_ALERT_EMAIL ?? process.env.CONTACT_EMAIL ?? 'hello@stellreducation.org'
 }
 
-// Marketing/campaign sender. Shares the mail. subdomain with the transactional
-// default above, and must keep sharing it: the Resend Free plan allows exactly
-// ONE verified domain, so there is no second domain to split bulk reputation
-// onto. Both senders must stay on mail.stellreducation.org unless the account
-// is upgraded again — see docs/PLAN-single-email-domain.md.
-export const MARKETING_FROM =
-  process.env.MARKETING_FROM ?? 'Stellr Education <hello@mail.stellreducation.org>'
+// Marketing/campaign sender: the community stream (lib/email/senders.ts). It
+// stays on mail.stellreducation.org until COMMUNITY_FROM moves it to the
+// tracked community.stellreducation.org domain (email plan, 23 Nov 2026).
+export const MARKETING_FROM = streamFrom('community')
 
 interface EmailAttachment {
   filename: string

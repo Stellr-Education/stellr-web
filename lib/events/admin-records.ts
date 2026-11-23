@@ -34,6 +34,7 @@ export async function insertEventEmailCopy(db: SupabaseClient, slug: string, src
       attachments: [],
       resend_docusign: src.resend_docusign,
       schedule_days_before: src.schedule_days_before,
+      purpose: src.purpose ?? 'logistics',
       status: 'draft',
       created_by: createdBy,
     })
