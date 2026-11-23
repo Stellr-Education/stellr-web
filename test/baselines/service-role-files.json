@@ -797,6 +797,10 @@
       "class": "convert",
       "reason": "auto: reaches tables it does not name (dynamic .from, rpc, or a client passed to a helper); review before converting"
     },
+    "app/api/admin/platform/tenants/[id]/flags/route.ts": {
+      "class": "platform",
+      "reason": "S6-CON-b: sets a per-tenant switch (tenant_feature_flags) for a platform admin; tenant_feature_flags is service_role only by design (a tenant must not turn its own switches); tables: tenants, tenant_feature_flags"
+    },
     "app/api/admin/platform/tenants/[id]/status/route.ts": {
       "class": "platform",
       "reason": "S6-CON: suspends or resumes a tenant (tenants.status) for a platform admin; a platform change no tenant role may make; tables: tenants"

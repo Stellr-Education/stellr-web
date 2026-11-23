@@ -15,8 +15,9 @@ export const onRequestError: Instrumentation.onRequestError = async (err, reques
   // edge bundle never pulls in node:crypto or the service-role client.
   if (process.env.NEXT_RUNTIME === 'nodejs') {
     try {
-      const { captureRequestError } = await import('./lib/app-errors')
-      await captureRequestError(err, request, context)
+      const [{ captureRequestError }, { errorTenantId }] = await Promise.all([import('./lib/app-errors'), import('./lib/app-errors-tenant')])
+      // S6-CON-b: which tenant host the request served, for the console's per-tenant errors.
+      await captureRequestError(err, request, context, { tenantId: errorTenantId(request?.headers) })
     } catch (e) {
       console.error('[instrumentation] error capture failed:', e instanceof Error ? e.message : e)
     }

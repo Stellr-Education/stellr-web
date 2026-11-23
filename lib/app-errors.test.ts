@@ -124,6 +124,40 @@ describe('captureRequestError', () => {
     await expect(captureRequestError('plain string', {}, {})).resolves.toBeUndefined()
     await expect(captureRequestError(null, {}, {})).resolves.toBeUndefined()
   })
+
+  // S6-CON-b: the tenant a request served, from the proxy's header on tenant hosts only.
+  const TENANT = '5E550000-0000-4000-8000-0000000000B2'
+
+  it('a tenant host: records the tenant, and keeps its digest apart from Stellr\'s', async () => {
+    const { fake, calls } = db()
+    await captureRequestError(new Error('tenant boom one'), { method: 'GET' }, { routePath: '/t' }, { db: fake.client, now: 500, tenantId: TENANT })
+    await captureRequestError(new Error('tenant boom one'), { method: 'GET' }, { routePath: '/t' }, { db: fake.client, now: 500 })
+    expect(calls).toHaveLength(2)
+    expect(calls[0]).toMatchObject({ p_tenant_id: TENANT.toLowerCase() })
+    expect(calls[1]).not.toHaveProperty('p_tenant_id')
+    expect(calls[0].p_digest).not.toBe(calls[1].p_digest)
+    expect(calls[1].p_digest).toBe(errorDigest('GET /t', 'Error: tenant boom one'))
+  })
+
+  it('ignores a tenant id that is not a uuid', async () => {
+    const { fake, calls } = db()
+    await captureRequestError(new Error('tenant boom three'), { method: 'GET' }, { routePath: '/h' }, { db: fake.client, now: 600, tenantId: 'not-a-tenant' })
+    expect(calls[0]).not.toHaveProperty('p_tenant_id')
+  })
+
+  it('errorTenantId reads the proxy header from either shape, and nothing else', async () => {
+    const { errorTenantId } = await import('./app-errors-tenant')
+    expect(errorTenantId({ 'x-stellr-tenant-id': TENANT })).toBe(TENANT.toLowerCase())
+    expect(errorTenantId(new Headers({ 'x-stellr-tenant-id': TENANT }))).toBe(TENANT.toLowerCase())
+    expect(errorTenantId({ 'x-stellr-tenant-id': ['x', TENANT] })).toBeNull()
+    expect(errorTenantId({ host: 'tenant.example' })).toBeNull()
+    expect(errorTenantId(undefined)).toBeNull()
+  })
+
+  it('errorDigest without a tenant is unchanged; with one it differs', () => {
+    expect(errorDigest('GET /x', 'm', null)).toBe(errorDigest('GET /x', 'm'))
+    expect(errorDigest('GET /x', 'm', 'a')).not.toBe(errorDigest('GET /x', 'm'))
+  })
 })
 
 describe('reportError (errors a route or cron caught itself)', () => {

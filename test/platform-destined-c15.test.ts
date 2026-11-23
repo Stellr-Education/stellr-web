@@ -227,7 +227,7 @@ describe('the class', () => {
 
   it('platform_admin holds exactly the seven BF-15 moved, S6-SUP\'s support session route, S6-BG\'s two, S6-CON\'s status route and S6-SUP-UI\'s company-name', () => {
     expect(Object.entries(ROUTE_MANIFEST).filter(([, c]) => c === 'platform_admin').map(([f]) => f).sort()).toEqual(
-      [...MOVED, 'app/api/admin/support/session/route.ts', 'app/api/admin/support/consent/route.ts', 'app/api/admin/support/break-glass/route.ts', 'app/api/admin/platform/tenants/[id]/status/route.ts', 'app/api/admin/platform/support/company-name/route.ts'].sort(),
+      [...MOVED, 'app/api/admin/support/session/route.ts', 'app/api/admin/support/consent/route.ts', 'app/api/admin/support/break-glass/route.ts', 'app/api/admin/platform/tenants/[id]/status/route.ts', 'app/api/admin/platform/tenants/[id]/flags/route.ts', 'app/api/admin/platform/support/company-name/route.ts'].sort(),
     )
   })
 })

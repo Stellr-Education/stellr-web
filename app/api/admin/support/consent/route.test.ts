@@ -21,6 +21,8 @@ const h = vi.hoisted(() => ({
   tenantRow: { id: '5e550000-0000-4000-8000-0000000000b2', is_platform_owner: false } as Record<string, unknown> | null,
   inserted: [] as Record<string, unknown>[],
   updates: [] as { values: Record<string, unknown>; filters: [string, unknown][] }[],
+  flagRow: null as { enabled: boolean } | null,
+  flagError: false,
 }))
 const auditMutation = vi.hoisted(() => vi.fn(async (..._a: unknown[]) => (h.auditOk ? { ok: true, id: 'evt' } : { ok: false, error: 'down' })))
 
@@ -37,6 +39,7 @@ function query(table: string) {
   const result = () => {
     if (table === 'platform_admins') return { data: h.adminRow ? { clerk_user_id: ADMIN } : null, error: null }
     if (table === 'tenants') return { data: h.tenantRow, error: null }
+    if (table === 'tenant_feature_flags') return h.flagError ? { data: null, error: { message: 'down' } } : { data: h.flagRow, error: null }
     if (state.op === 'insert') return (h.inserted.push(state.values), { data: { id: CONSENT }, error: null })
     return (h.updates.push({ values: state.values, filters: state.filters }), { data: null, error: null })
   }
@@ -64,9 +67,31 @@ beforeEach(() => {
   h.tenantRow = { id: TENANT, is_platform_owner: false }
   h.inserted = []
   h.updates = []
+  h.flagRow = null
+  h.flagError = false
   auditMutation.mockClear()
 })
 afterEach(() => vi.unstubAllEnvs())
+
+it('S6-CON-b: a tenant closed to break-glass (break_glass_allowed off): 403 break_glass_not_allowed, nothing written', async () => {
+  h.flagRow = { enabled: false }
+  const res = await ask()
+  expect(res.status).toBe(403)
+  expect(await res.json()).toMatchObject({ code: 'break_glass_not_allowed' })
+  expect(h.inserted).toEqual([])
+  expect(auditMutation).not.toHaveBeenCalled()
+})
+
+it('S6-CON-b: the flag cannot be read: 503, fail closed', async () => {
+  h.flagError = true
+  expect((await ask()).status).toBe(503)
+  expect(h.inserted).toEqual([])
+})
+
+it('S6-CON-b: the flag explicitly on behaves as the default', async () => {
+  h.flagRow = { enabled: true }
+  expect((await ask()).status).toBe(201)
+})
 
 it('off, or a tenant host: 404', async () => {
   vi.stubEnv('SUPPORT_MODE_ENABLED', '')

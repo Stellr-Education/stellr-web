@@ -30,6 +30,8 @@ export const AUDIT_ACTIONS = [
   // (app/api/admin/platform/tenants/[id]/status), on the TENANT's chain
   'platform.tenant.suspend',
   'platform.tenant.resume',
+  // S6-CON-b: a per-tenant switch set from the console (app/api/admin/platform/tenants/[id]/flags)
+  'platform.tenant_flag.set',
 
   // Crons (B12) and webhooks (A13)
   'cron.run.finish',

@@ -211,3 +211,47 @@ export async function loadTenantDetail(db: SupabaseClient, tenantId: string, now
     support: summariseSupport(sessions, consents, now, from),
   }
 }
+
+// ── S6-CON-b: per-tenant errors ──────────────────────────────────────────────
+
+export const ERROR_WINDOW_DAYS = 7
+export const TOP_ERROR_ROUTES = 5
+
+export interface TenantErrors {
+  /** Distinct errors (digests) seen in the window. */
+  distinct: number
+  /** Their occurrences, all time: app_errors keeps one running count per digest. */
+  total: number
+  /** The routes with the most occurrences, most first. Route patterns only, never a message. */
+  topRoutes: { route: string; count: number }[]
+}
+
+/** Pure: the console's error summary from app_errors rows. Reads route and count only. */
+export function summariseErrors(rows: { route: string; count: number | string }[], top: number = TOP_ERROR_ROUTES): TenantErrors {
+  const byRoute = new Map<string, number>()
+  let total = 0
+  for (const r of rows) {
+    const n = Number(r.count) || 0
+    total += n
+    byRoute.set(r.route, (byRoute.get(r.route) ?? 0) + n)
+  }
+  const topRoutes = [...byRoute.entries()]
+    .map(([route, count]) => ({ route, count }))
+    .sort((a, b) => b.count - a.count || a.route.localeCompare(b.route))
+    .slice(0, top)
+  return { distinct: rows.length, total, topRoutes }
+}
+
+/**
+ * Errors a tenant's hosts raised in the last ERROR_WINDOW_DAYS (app_errors.tenant_id,
+ * captured from the proxy's tenant header). The message is never read: route and count
+ * are enough for the console, and a person's data stays out of it.
+ */
+export async function loadTenantErrors(db: SupabaseClient, tenantId: string, now: number = Date.now()): Promise<TenantErrors> {
+  const since = new Date(now - ERROR_WINDOW_DAYS * 86_400_000).toISOString()
+  const data = await rows<{ route: string; count: number }>(
+    'errors',
+    db.from('app_errors').select('route, count').eq('tenant_id', tenantId).gte('last_seen', since),
+  )
+  return summariseErrors(data)
+}
