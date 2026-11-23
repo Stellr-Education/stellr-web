@@ -38,6 +38,15 @@ export interface EventEmailAttachment {
   contentType: string
 }
 
+/**
+ * Email plan Workstream B: logistics mail (about an event the recipient
+ * registered for) is transactional; promotional mail goes on the community
+ * stream to consenting adult members only, with one-click unsubscribe.
+ */
+export type EventEmailPurpose = 'logistics' | 'promotional'
+
+export const isEventEmailPurpose = (v: unknown): v is EventEmailPurpose => v === 'logistics' || v === 'promotional'
+
 export interface EventEmailRow {
   id: string
   event_slug: string
@@ -58,6 +67,8 @@ export interface EventEmailRow {
   updated_at: string
   /** Derived from event_slug (S4). NULL or absent means Stellr. */
   tenant_id?: string | null
+  /** Absent on rows read before the column existed: logistics. */
+  purpose?: EventEmailPurpose
 }
 
 /**

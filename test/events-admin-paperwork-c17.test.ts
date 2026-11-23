@@ -1072,6 +1072,7 @@ describe('what moved stayed as it was', () => {
       attachments: [],
       resend_docusign: true,
       schedule_days_before: 3,
+      purpose: 'logistics',
       status: 'draft',
       created_by: 'Admin',
     })

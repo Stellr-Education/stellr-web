@@ -3461,6 +3461,7 @@ export type Database = {
           created_by: string | null
           id: string
           name: string
+          purpose: string
           resend_docusign: boolean
           schedule_days_before: number | null
           source_event_slug: string | null
@@ -3476,6 +3477,7 @@ export type Database = {
           created_by?: string | null
           id?: string
           name: string
+          purpose?: string
           resend_docusign?: boolean
           schedule_days_before?: number | null
           source_event_slug?: string | null
@@ -3491,6 +3493,7 @@ export type Database = {
           created_by?: string | null
           id?: string
           name?: string
+          purpose?: string
           resend_docusign?: boolean
           schedule_days_before?: number | null
           source_event_slug?: string | null
@@ -3520,6 +3523,7 @@ export type Database = {
           event_slug: string
           id: string
           name: string
+          purpose: string
           resend_docusign: boolean
           schedule_days_before: number | null
           sent_at: string | null
@@ -3539,6 +3543,7 @@ export type Database = {
           event_slug: string
           id?: string
           name: string
+          purpose?: string
           resend_docusign?: boolean
           schedule_days_before?: number | null
           sent_at?: string | null
@@ -3558,6 +3563,7 @@ export type Database = {
           event_slug?: string
           id?: string
           name?: string
+          purpose?: string
           resend_docusign?: boolean
           schedule_days_before?: number | null
           sent_at?: string | null

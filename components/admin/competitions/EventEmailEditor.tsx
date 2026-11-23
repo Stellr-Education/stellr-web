@@ -16,6 +16,8 @@ import {
 import { scheduledSendDate } from '@/lib/event-emails/schedule'
 import type { EventEmailTemplateRow } from '@/lib/event-emails/templates'
 import { EventEmailCatchUp } from './EventEmailCatchUp'
+import { STELLR_TENANT_ID } from '@/lib/tenancy/constants'
+import type { EventEmailPurpose } from '@/lib/event-emails/types'
 
 interface Preview {
   recipients: { email: string; name: string; roles: (keyof typeof ROLE_LABEL)[]; reasons: AudienceKey[] }[]
@@ -63,6 +65,9 @@ export function EventEmailEditor({
   const [body, setBody] = useState<JSONContent | null>((email.body_json as JSONContent) ?? null)
   const [audiences, setAudiences] = useState<AudienceKey[]>(email.audiences)
   const [resendDocusign, setResendDocusign] = useState(email.resend_docusign)
+  const [purpose, setPurpose] = useState<EventEmailPurpose>(email.purpose ?? 'logistics')
+  // Promotional mail is Stellr's community mail; a tenant's event emails are logistics only.
+  const stellrEvent = !email.tenant_id || email.tenant_id === STELLR_TENANT_ID
   const [daysBefore, setDaysBefore] = useState<string>(email.schedule_days_before == null ? '' : String(email.schedule_days_before))
   const [dirty, setDirty] = useState(false)
   const [busy, setBusy] = useState<string | null>(null)
@@ -136,6 +141,7 @@ export function EventEmailEditor({
     body_json: body,
     audiences,
     resend_docusign: resendDocusign,
+    ...(stellrEvent ? { purpose } : {}),
     schedule_days_before: daysBefore === '' ? null : Number(daysBefore),
   })
 
@@ -309,6 +315,28 @@ export function EventEmailEditor({
           <input className={input} value={subject} disabled={!editable} maxLength={300} onChange={(e) => { setSubject(e.target.value); touch() }} />
         </label>
       </div>
+
+      {stellrEvent && (
+        <fieldset>
+          <legend className="mb-1.5 text-sm font-medium text-content-body">What kind of email is this?</legend>
+          <div className="grid gap-2 sm:grid-cols-2">
+            <label className="flex items-start gap-2 text-sm">
+              <input type="radio" name={`purpose-${email.id}`} className="mt-0.5" checked={purpose === 'logistics'} disabled={!editable} onChange={() => { setPurpose('logistics'); touch() }} />
+              <span>
+                <span className="text-ink">Event information</span>
+                <span className="block text-xs text-content-muted">Dates, rooms, forms and payments for people already registered. Goes to everyone in the groups below.</span>
+              </span>
+            </label>
+            <label className="flex items-start gap-2 text-sm">
+              <input type="radio" name={`purpose-${email.id}`} className="mt-0.5" checked={purpose === 'promotional'} disabled={!editable} onChange={() => { setPurpose('promotional'); touch() }} />
+              <span>
+                <span className="text-ink">Promotion</span>
+                <span className="block text-xs text-content-muted">News or offers. Goes only to adult members who said yes to updates, with an unsubscribe link.</span>
+              </span>
+            </label>
+          </div>
+        </fieldset>
+      )}
 
       <fieldset>
         <legend className="mb-1.5 text-sm font-medium text-brand-muted">Send to</legend>

@@ -174,7 +174,7 @@ describe('saved templates', () => {
     })
     expect(fields).toEqual({
       audiences: ['participants'], subject: 'Thanks', body_json: { type: 'doc' }, resend_docusign: false,
-      schedule_days_before: null, source_event_slug: 'nevada-space-design-challenge',
+      schedule_days_before: null, purpose: 'logistics', source_event_slug: 'nevada-space-design-challenge',
     })
     expect(fields).not.toHaveProperty('attachments')
   })

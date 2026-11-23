@@ -28,6 +28,8 @@ import { isTenantRow, TENANT_SENDER_REQUIRED, type EventSender } from './tenant-
 import { STELLR_TENANT_ID } from '@/lib/tenancy/constants'
 import { surveySendsHeld } from '@/lib/survey/hold'
 import { isValidEmail } from '@/lib/member-enums'
+import { onCommunityDomain } from '@/lib/email/senders'
+import { promotionalAudience, unsubscribeHeaders, withUnsubscribeFooter } from './promotional'
 
 // S5 B14: defined in tenant-mail.ts since the signing engine refuses with it too.
 export { TENANT_SENDER_REQUIRED }
@@ -450,6 +452,23 @@ export async function deliver(
   stoppedForDeadline: boolean
 }> {
   const isTest = opts.trigger === 'test'
+  // Email plan Workstream B: logistics mail is transactional; promotional mail is
+  // the community stream, for consenting adult members only. Tenants send
+  // logistics only (the PATCH route refuses the flag outside Stellr); a tenant
+  // row marked promotional here is refused rather than sent to everyone.
+  const promotional = email.purpose === 'promotional'
+  if (promotional && isTenantRow(email.tenant_id)) {
+    throw new Error('Promotional event email is Stellr-only')
+  }
+  let unsubscribe = new Map<string, string>()
+  if (promotional && !isTest) {
+    const audience = await promotionalAudience(db, recipients)
+    if (audience.excluded) {
+      console.warn(`[event-emails] email ${email.id}: promotional — left out ${audience.excluded} recipient(s) without marketing consent, under 18, or with no member record`)
+    }
+    recipients = audience.eligible
+    unsubscribe = audience.unsubscribe
+  }
   const eventVars = await eventVarsFor(db, email, event)
   // History shows the subject as it went out (first recipient's rendering),
   // not the template with its {{fields}}.
@@ -489,10 +508,11 @@ export async function deliver(
       console.error(`[event-emails] progress write failed for send ${sendRow.id}:`, err)
     }
   }
-  // An event-email blast is marketing/bulk against the shared daily budget: it
-  // must not be able to drain the sends reserved for transactional mail. A test
-  // goes to the sender only and is always allowed through.
-  const kind = isTest ? 'transactional' : 'marketing'
+  // Logistics mail to registered families is transactional (owner, 23 Nov 2026):
+  // an unsubscribe from news does not stop it. Promotional mail is marketing,
+  // held by the budget so it can never drain transactional mail. A test goes to
+  // the sender only and is always allowed through.
+  const kind = !isTest && promotional ? 'marketing' : 'transactional'
   let stoppedForQuota = false
   let stoppedForTime = false
   let stoppedForDeadline = false
@@ -521,10 +541,14 @@ export async function deliver(
     results.push({ ...base, status: 'sending' })
     await persistProgress()
     try {
-      const content = renderEventEmail(email, { ...eventVars, ...recipientMergeVars(r) })
+      const rendered = renderEventEmail(email, { ...eventVars, ...recipientMergeVars(r) })
+      const unsubUrl = promotional && r.memberId ? unsubscribe.get(r.memberId) : undefined
+      const content = unsubUrl ? { ...rendered, ...withUnsubscribeFooter(rendered, unsubUrl) } : rendered
+      const baseFrom = opts.sender?.from ?? EVENT_EMAIL_FROM
       const out = await sendEmail({
         to: r.email,
-        from: opts.sender?.from ?? EVENT_EMAIL_FROM,
+        from: promotional ? onCommunityDomain(baseFrom) : baseFrom,
+        ...(unsubUrl ? { headers: unsubscribeHeaders(unsubUrl) } : {}),
         replyTo: opts.sender?.replyTo ?? EVENT_EMAIL_REPLY_TO,
         subject: isTest ? `[TEST] ${content.subject}` : content.subject,
         html: content.html,
