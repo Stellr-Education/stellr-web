@@ -318,20 +318,20 @@ export function EventEmailEditor({
 
       {stellrEvent && (
         <fieldset>
-          <legend className="mb-1.5 text-sm font-medium text-brand-muted">What kind of email is this?</legend>
+          <legend className="mb-1.5 text-sm font-medium text-content-body">What kind of email is this?</legend>
           <div className="grid gap-2 sm:grid-cols-2">
             <label className="flex items-start gap-2 text-sm">
               <input type="radio" name={`purpose-${email.id}`} className="mt-0.5" checked={purpose === 'logistics'} disabled={!editable} onChange={() => { setPurpose('logistics'); touch() }} />
               <span>
                 <span className="text-ink">Event information</span>
-                <span className="block text-xs text-brand-muted-soft">Dates, rooms, forms and payments for people already registered. Goes to everyone in the groups below.</span>
+                <span className="block text-xs text-content-muted">Dates, rooms, forms and payments for people already registered. Goes to everyone in the groups below.</span>
               </span>
             </label>
             <label className="flex items-start gap-2 text-sm">
               <input type="radio" name={`purpose-${email.id}`} className="mt-0.5" checked={purpose === 'promotional'} disabled={!editable} onChange={() => { setPurpose('promotional'); touch() }} />
               <span>
                 <span className="text-ink">Promotion</span>
-                <span className="block text-xs text-brand-muted-soft">News or offers. Goes only to adult members who said yes to updates, with an unsubscribe link.</span>
+                <span className="block text-xs text-content-muted">News or offers. Goes only to adult members who said yes to updates, with an unsubscribe link.</span>
               </span>
             </label>
           </div>
