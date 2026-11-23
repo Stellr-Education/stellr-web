@@ -110,7 +110,7 @@ export function getAuthzSource(): AuthzSource {
  * always passes, with no read.
  */
 export { assertWritable }
-export { ReadOnlySupportSessionError, writeRefusal } from '@/lib/authz/writable'
+export { ReadOnlySupportSessionError, SupportWriteRefusedError, writeRefusal } from '@/lib/authz/writable'
 
 // ── Principals (cached per request) ────────────────────────────────────────
 

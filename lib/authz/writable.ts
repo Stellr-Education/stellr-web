@@ -12,6 +12,15 @@
  * reads nothing. With it on, a request carrying a validly signed read-mode support
  * cookie is refused (lib/authz/support-session.ts).
  *
+ * S6-BG adds two more refusals, both 403 before the handler runs:
+ *   - support_session_ended: the cookie is validly signed but past its end time. The
+ *     time limit is checked on every admin request, not only when the browser drops
+ *     the cookie (docs/S6-DESIGN.md section 3, "Past the time limit").
+ *   - break_glass_unsupported: a break-glass session on a route that has not opted in
+ *     (withAudit's `breakGlass: true`). A route opts in only once its writes run under
+ *     tenantBreakGlassDb (lib/tenancy/support-db.ts), pinned to the session's tenant;
+ *     every other route would write with the service role, which break-glass never may.
+ *
  * Kept free of 'server-only', Clerk and the database, because lib/audit/route.ts
  * imports it and must stay light (it imports Clerk only on demand).
  */
@@ -19,28 +28,61 @@ import type { Principal } from '@/lib/authz/decide'
 import { supportSessionOf } from '@/lib/authz/support-session'
 
 export const SUPPORT_READ_ONLY_CODE = 'support_read_only'
+export const SUPPORT_SESSION_ENDED_CODE = 'support_session_ended'
+export const BREAK_GLASS_UNSUPPORTED_CODE = 'break_glass_unsupported'
 
-/** Thrown by assertWritable while a support-read session is active. Answers 403. */
-export class ReadOnlySupportSessionError extends Error {
+export type SupportWriteRefusalCode =
+  | typeof SUPPORT_READ_ONLY_CODE
+  | typeof SUPPORT_SESSION_ENDED_CODE
+  | typeof BREAK_GLASS_UNSUPPORTED_CODE
+
+/** Any refusal assertWritable throws. Answers 403 with its code. */
+export class SupportWriteRefusedError extends Error {
   readonly status = 403 as const
-  readonly code = SUPPORT_READ_ONLY_CODE
+  constructor(
+    readonly code: SupportWriteRefusalCode,
+    message: string,
+  ) {
+    super(message)
+    this.name = 'SupportWriteRefusedError'
+  }
+}
+
+/** Thrown by assertWritable while a support-read session is active. */
+export class ReadOnlySupportSessionError extends SupportWriteRefusedError {
   constructor() {
-    super('Support sessions are read-only')
+    super(SUPPORT_READ_ONLY_CODE, 'Support sessions are read-only')
     this.name = 'ReadOnlySupportSessionError'
   }
 }
 
+export interface WritableOptions {
+  /** The route's writes run under tenantBreakGlassDb, so a break-glass session may use it. */
+  breakGlass?: boolean
+}
+
 /**
- * Throws ReadOnlySupportSessionError while a support-read session is active; otherwise does
- * nothing. Pass the request where there is one: its support cookie is the session (S6-SUP).
+ * Throws a SupportWriteRefusedError when the request's support session may not write here:
+ * a read session, a session past its end time, or a break-glass session on a route that
+ * has not opted in. Otherwise does nothing. Pass the request where there is one: its
+ * support cookie is the session (S6-SUP).
  */
-export function assertWritable(principal?: Pick<Principal, 'mode'> | null, req?: unknown): void {
-  if (supportSessionOf(principal, req)?.mode === 'read') throw new ReadOnlySupportSessionError()
+export function assertWritable(principal?: Pick<Principal, 'mode'> | null, req?: unknown, opts: WritableOptions = {}): void {
+  const session = supportSessionOf(principal, req)
+  if (!session) return
+  if (session.ended) throw new SupportWriteRefusedError(SUPPORT_SESSION_ENDED_CODE, 'This support session has ended')
+  if (session.mode === 'read') throw new ReadOnlySupportSessionError()
+  if (!opts.breakGlass) throw new SupportWriteRefusedError(BREAK_GLASS_UNSUPPORTED_CODE, 'This change is not available in a break-glass session')
 }
 
 /** The refusal, shaped like lib/authz's other API refusals ({ error: 'Forbidden' }) plus a code. */
+export function supportRefusalResponse(code: SupportWriteRefusalCode): Response {
+  return Response.json({ error: 'Forbidden', code }, { status: 403 })
+}
+
+/** The read-only refusal. */
 export function readOnlyResponse(): Response {
-  return Response.json({ error: 'Forbidden', code: SUPPORT_READ_ONLY_CODE }, { status: 403 })
+  return supportRefusalResponse(SUPPORT_READ_ONLY_CODE)
 }
 
 /**
@@ -63,12 +105,12 @@ export function isAdminApiRequest(req: unknown): boolean {
  * The 403 to answer with instead of running an admin mutation, or null to go ahead.
  * The session is checked first, so the normal case never parses the URL.
  */
-export function writeRefusal(req: unknown, principal?: Pick<Principal, 'mode'> | null): Response | null {
+export function writeRefusal(req: unknown, principal?: Pick<Principal, 'mode'> | null, opts: WritableOptions = {}): Response | null {
   try {
-    assertWritable(principal, req)
+    assertWritable(principal, req, opts)
     return null
   } catch (err) {
-    if (err instanceof ReadOnlySupportSessionError) return isAdminApiRequest(req) ? readOnlyResponse() : null
+    if (err instanceof SupportWriteRefusedError) return isAdminApiRequest(req) ? supportRefusalResponse(err.code) : null
     throw err
   }
 }

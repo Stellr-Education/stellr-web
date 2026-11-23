@@ -59,3 +59,26 @@ export async function requireStepUp(): Promise<Response | null> {
   res.headers.set('Cache-Control', 'no-store')
   return res
 }
+
+/** S6-BG: break-glass needs a factor confirmed this recently (docs/S6-DESIGN.md section 3). */
+export const BREAK_GLASS_STEP_UP_MINUTES = 5
+
+/** Clerk's ReverificationConfig for break-glass: a first factor in the last 5 minutes. */
+export const BREAK_GLASS_REVERIFICATION = { level: 'first_factor', afterMinutes: BREAK_GLASS_STEP_UP_MINUTES } as const
+
+/**
+ * S6-BG: the step-up for opening and renewing break-glass. Required whatever
+ * ADMIN_STEP_UP_ENFORCE says, with a shorter window than requireStepUp's. Null to carry
+ * on, or Clerk's reverification response. Call it after the route's own authorisation.
+ */
+export async function requireBreakGlassStepUp(): Promise<Response | null> {
+  const decision = await decideStepUp(true, async () => {
+    const { has } = await auth()
+    return has({ reverification: BREAK_GLASS_REVERIFICATION })
+  })
+  if (decision !== 'reverify') return null
+  const res = reverificationErrorResponse(BREAK_GLASS_REVERIFICATION)
+  res.headers.set('Content-Type', 'application/json')
+  res.headers.set('Cache-Control', 'no-store')
+  return res
+}

@@ -32,6 +32,7 @@
 // tests mock it. If it cannot read the session there, the row says actor_unresolved,
 // so the first route to use it checks a real row on dev, or passes { userId }.
 import { runAfterResponse } from '@/lib/after-response'
+import { supportSessionOf } from '@/lib/authz/support-session'
 import { writeRefusal } from '@/lib/authz/writable'
 import { STELLR_TENANT_ID } from '@/lib/tenancy/constants'
 import type { AuditAction } from './actions'
@@ -78,6 +79,13 @@ export interface AuditMutation {
 export interface AuditMutationOptions extends Pick<AuditOptions, 'db' | 'enabled' | 'timeoutMs'> {
   /** Write once the response has gone (live paths). The call then resolves at once. */
   afterResponse?: boolean
+  /**
+   * withAudit only (S6-BG): this route's writes run under tenantBreakGlassDb, so a
+   * break-glass support session may use it. Without it, a break-glass session is refused
+   * (break_glass_unsupported). With it, the event goes on the session's tenant's chain
+   * and names the session.
+   */
+  breakGlass?: boolean
 }
 
 export type AuditMutationResult = AuditResult | { ok: false; skipped: 'deferred' }
@@ -273,7 +281,8 @@ function thrownStatus(err: unknown): number {
  * write is not recorded: a handler that can do that should report it as a 5xx.
  *
  * S6-AW: on the admin API, a support-read session is answered 403
- * (support_read_only) before the handler runs (lib/authz/writable.ts).
+ * (support_read_only) before the handler runs (lib/authz/writable.ts). S6-BG: so is a
+ * session past its end time, and a break-glass session unless `breakGlass: true`.
  *
  * A cron's guardCron stays the first statement of the handler given here: that is
  * where test/route-manifest.test.ts reads it.
@@ -283,12 +292,23 @@ export function withAudit<Args extends unknown[], R extends Response>(
   handler: (...args: Args) => Promise<R> | R,
   callerOpts: AuditMutationOptions = {},
 ): (...args: Args) => Promise<R> {
-  const opts: AuditMutationOptions = { afterResponse: true, ...callerOpts }
+  const { breakGlass, ...auditOpts } = callerOpts
+  const opts: AuditMutationOptions = { afterResponse: true, ...auditOpts }
   const record = async (args: Args, response: R | null, status: number) => {
     try {
       if (!(opts.enabled ?? auditEnabled())) return
       const m = typeof spec === 'function' ? spec({ args, response }) : spec
       if (m === AUDIT_SKIP) return
+      // S6-BG: a break-glass write lands on the session's tenant's chain, naming the
+      // session (its free-text reason stays in support_sessions, never on the chain).
+      const session = breakGlass ? supportSessionOf(null, args[0]) : null
+      if (session?.mode === 'break_glass' && session.tenantId && session.sessionId) {
+        await auditMutation(
+          { ...m, tenant: { tenantId: session.tenantId }, reason: 'break_glass', metadata: { ...m.metadata, status, support_session: session.sessionId } },
+          opts,
+        )
+        return
+      }
       await auditMutation({ ...m, metadata: { ...m.metadata, status } }, opts)
     } catch (err) {
       await recordAuditFailure(err, typeof spec === 'function' ? 'with_audit' : spec.action, opts.db)
@@ -299,7 +319,7 @@ export function withAudit<Args extends unknown[], R extends Response>(
     // support-read session is active (lib/authz/writable.ts). None can exist
     // until S6-SUP, so today this is one null check. Next passes the Request
     // first. A 403 is a refusal, so nothing is recorded.
-    const readOnly = writeRefusal(args[0])
+    const readOnly = writeRefusal(args[0], null, { breakGlass })
     if (readOnly) return readOnly as R
     let response: R
     try {

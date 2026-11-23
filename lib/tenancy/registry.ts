@@ -226,6 +226,9 @@ export const TABLE_REGISTRY: Record<string, TableEntry> = {
   'public.support_sessions': platform(
     'S6-SUP support sessions: a platform admin reading one non-owner tenant, read-only, for 60 minutes or less. Platform-level although it carries tenant_id NOT NULL: written only by service_role through app/api/admin/support/session, never by tenant_app or tenant_support_ro (lib/tenancy/tenant-role.ts TENANT_APP_NO_ACCESS_TABLES)',
   ),
+  'public.support_consents': platform(
+    "S6-BG break-glass requests and the tenant admin's answer. Platform-level although it carries tenant_id NOT NULL: written only by service_role through app/api/admin/support/consent and the support_consent_* functions, never by tenant_app or tenant_support_ro (lib/tenancy/tenant-role.ts TENANT_APP_NO_ACCESS_TABLES)",
+  ),
 
   // ── Stellr-only products ─────────────────────────────────────────────────
   'public.chat_channels': stellr('community'),

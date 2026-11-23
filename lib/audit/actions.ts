@@ -16,6 +16,13 @@ export const AUDIT_ACTIONS = [
   // Support: S6 support sessions (app/api/admin/support/session), on the TENANT's chain
   'support.session.open',
   'support.session.close',
+  // S6-BG break-glass: the request, the tenant admin's answer, opening and renewing
+  // (app/api/admin/support/consent, app/api/support-consents/[id], app/api/admin/support/break-glass)
+  'support.consent.request',
+  'support.consent.approve',
+  'support.consent.decline',
+  'support.break_glass.open',
+  'support.break_glass.renew',
 
   // Crons (B12) and webhooks (A13)
   'cron.run.finish',

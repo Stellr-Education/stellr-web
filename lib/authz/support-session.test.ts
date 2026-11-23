@@ -82,9 +82,12 @@ describe('supportSessionOf: flag on', () => {
     expect(supportSessionOf(undefined, { url: '/api/admin/x' })).toBeNull()
   })
 
-  it('an expired ticket is no session', () => {
+  it('an expired ticket is an ended session (S6-BG): it grants nothing, and refuses every admin write', () => {
     const raw = encodeSupportTicket(ticket({ exp: NOW - 1 }))
-    expect(supportSessionOf(undefined, req('/', `${SUPPORT_SESSION_COOKIE}=${raw}`).r)).toBeNull()
+    expect(supportSessionOf(undefined, req('/', `${SUPPORT_SESSION_COOKIE}=${raw}`).r)).toMatchObject({ ended: true })
+    // decodeSupportTicket, which reads use, still answers no ticket at all.
+    expect(decodeSupportTicket(raw)).toBeNull()
+    expect(decodeSupportTicket(raw, process.env, NOW, { allowExpired: true })).not.toBeNull()
   })
 
   it('a forged or tampered ticket is no session', () => {
@@ -154,12 +157,40 @@ describe('end to end through withAudit: a read session refuses every admin mutat
     expect(handler).toHaveBeenCalledOnce()
   })
 
-  it('flag on, break-glass cookie: runs (S6-BG decides its own terms)', async () => {
+  it('flag on, break-glass cookie, a route that has not opted in: 403 break_glass_unsupported (S6-BG)', async () => {
     vi.stubEnv('SUPPORT_MODE_ENABLED', 'true')
     const { handler, POST } = route()
     const raw = encodeSupportTicket(ticket({ mode: 'break_glass' }))
+    const res = await POST(req('/api/admin/members', `${SUPPORT_SESSION_COOKIE}=${raw}`).r)
+    expect(res.status).toBe(403)
+    expect(await res.json()).toEqual({ error: 'Forbidden', code: 'break_glass_unsupported' })
+    expect(handler).not.toHaveBeenCalled()
+  })
+
+  it('flag on, break-glass cookie, a route that opted in: runs, and the event goes on the session tenant naming the session', async () => {
+    vi.stubEnv('SUPPORT_MODE_ENABLED', 'true')
+    const rpc = vi.fn(async () => ({ data: { id: 1, chain_seq: 1 }, error: null }))
+    const db = { rpc, from: vi.fn() } as never
+    const handler = vi.fn(async (_req?: Request) => new Response('done', { status: 200 }))
+    const POST = withAudit(SPEC, handler, { enabled: true, afterResponse: false, db, breakGlass: true })
+    const raw = encodeSupportTicket(ticket({ mode: 'break_glass' }))
     expect((await POST(req('/api/admin/members', `${SUPPORT_SESSION_COOKIE}=${raw}`).r)).status).toBe(200)
     expect(handler).toHaveBeenCalledOnce()
+    expect(rpc).toHaveBeenCalledWith(
+      'platform_audit_append',
+      expect.objectContaining({ p_tenant: ticket().tid, p_reason: 'break_glass', p_metadata: expect.objectContaining({ status: 200, support_session: ticket().sid }) }),
+    )
+  })
+
+  it.each(['read', 'break_glass'] as const)('flag on, a %s cookie past its end time: 403 support_session_ended, even where break-glass is allowed', async (mode) => {
+    vi.stubEnv('SUPPORT_MODE_ENABLED', 'true')
+    const handler = vi.fn(async (_req?: Request) => new Response('done', { status: 200 }))
+    const POST = withAudit(SPEC, handler, { enabled: false, breakGlass: true })
+    const raw = encodeSupportTicket(ticket({ mode, exp: NOW - 1 }))
+    const res = await POST(req('/api/admin/members', `${SUPPORT_SESSION_COOKIE}=${raw}`).r)
+    expect(res.status).toBe(403)
+    expect(await res.json()).toEqual({ error: 'Forbidden', code: 'support_session_ended' })
+    expect(handler).not.toHaveBeenCalled()
   })
 
   it('flag off, the same cookie: runs, and the cookie is never read', async () => {

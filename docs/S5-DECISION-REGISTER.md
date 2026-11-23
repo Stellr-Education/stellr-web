@@ -356,6 +356,7 @@ Added 22 Nov 2026 with S6-D (`docs/S6-DESIGN.md`, section 1). **Open, default in
 | S6-Q9 | Is the authority flip (C25) S6's first production step, or the end of S5? | (a) S6's first step, after the production shadow week (to 29 Nov 2026 01:26Z) | Open: default in force | |
 | S6-Q10 | The `proxy.ts` admin prefilter under `postgres` (B20): (a) sync a Clerk claim from Postgres; (b) signed-in only | (a): the proxy stays database-free | Open: default in force | |
 | S6-Q11 | Where the audit chain's recorded heads are kept: (a) a scheduled job; (b) by hand at each promotion | (b) until a cron's Active CPU is measured | Open: default in force | |
+| S6-Q12 | Where a tenant admin answers a break-glass request (S6-BG, 23 Nov 2026): `app/api/support-consents/[id]` works only on the tenant's own host. (a) keep it `pending` on the tenant-host list (denied) until the first tenant-admin account and its request list exist; (b) allow it now | (a): no tenant admin exists, so nothing is lost, and the allow list stays the owner's to widen (`lib/tenancy/tenant-surface.ts`) | Open: default in force | |
 
 ## Settled elsewhere
 

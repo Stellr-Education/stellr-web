@@ -59,7 +59,7 @@ export const ROUTE_CLASSES = [
 export type RouteClass = (typeof ROUTE_CLASSES)[number]
 
 export const ROUTE_MANIFEST: Record<string, RouteClass> = {
-  // ── API routes (307) ──────────────────────────────────────────────────
+  // ── API routes (310) ──────────────────────────────────────────────────
   'app/api/admin/access/conflicts/route.ts': 'stellr_only',
   'app/api/admin/access/objects/[id]/contents/route.ts': 'stellr_only',
   'app/api/admin/access/objects/[id]/gates/route.ts': 'stellr_only',
@@ -215,6 +215,9 @@ export const ROUTE_MANIFEST: Record<string, RouteClass> = {
   'app/api/admin/duties/route.ts': 'platform_admin',
   // S6-SUP: open and close a support session (platform host only, behind SUPPORT_MODE_ENABLED).
   'app/api/admin/support/session/route.ts': 'platform_admin',
+  // S6-BG: ask a tenant for break-glass, and open or renew it (platform host only, behind SUPPORT_MODE_ENABLED).
+  'app/api/admin/support/break-glass/route.ts': 'platform_admin',
+  'app/api/admin/support/consent/route.ts': 'platform_admin',
   'app/api/admin/store/discounts/route.ts': 'stellr_only',
   'app/api/admin/store/printful/route.ts': 'stellr_only',
   'app/api/admin/store/products/[id]/route.ts': 'stellr_only',
@@ -380,6 +383,8 @@ export const ROUTE_MANIFEST: Record<string, RouteClass> = {
   'app/api/stripe/membership-invoice/route.ts': 'participant',
   'app/api/stripe/webhook/route.ts': 'webhook',
   'app/api/subscribe/route.ts': 'public',
+  // S6-BG: a tenant's admin answers a break-glass request, on the tenant's own host.
+  'app/api/support-consents/[id]/route.ts': 'tenant_crew',
   'app/api/survey/[token]/route.ts': 'public',
   'app/api/survey/[token]/stop-reminders/route.ts': 'public',
   'app/api/survey/[token]/submit/route.ts': 'public',

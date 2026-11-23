@@ -43,7 +43,8 @@ const MANIFEST_CLASS_COUNTS: Record<RouteClass, number> = {
   // -7 platform_destined, +7 platform_admin: BF-15 (a), 21 Nov 2026 (deletion, deletion/preflight,
   //   deletion-requests/[id], duties, impersonation, members/merge, privacy-requests/[id])
   // +1 platform_admin: S6-SUP's admin support/session (22 Nov 2026), denied on tenant hosts (S6-Q7)
-  platform_admin: 8,
+  // +2 platform_admin: S6-BG's admin support/consent and support/break-glass (23 Nov 2026), denied on tenant hosts (S6-Q7)
+  platform_admin: 10,
   platform_destined: 2,
   // +1 tenant_crew, -1 stellr_only: admin registrations/[id]/payment-method (C16 follow-up)
   // +3 tenant_crew, -3 stellr_only: admin events/[slug]/{companies,offerings,merch/commit} (C18)
@@ -56,7 +57,8 @@ const MANIFEST_CLASS_COUNTS: Record<RouteClass, number> = {
   // +2 tenant_crew, -2 stellr_only: admin events/[slug]/awards and awards/issue (C19b, S5 wave 8)
   // +1 tenant_crew, -1 stellr_only: admin events/[slug]/check-in, the desk (C19c, S5 wave 8)
   // +8 tenant_crew, -8 stellr_only: admin scholarships/[id] and its six actions (C20) and event-managers (C21), S5 wave 9
-  tenant_crew: 63,
+  // +1 tenant_crew: support-consents/[id], a tenant admin's answer to a break-glass request (S6-BG, 23 Nov 2026)
+  tenant_crew: 64,
   // +2 on 17 Nov 2026: members/addons/[registrationId] and account/extras/[registrationId] (event add-ons)
   // +1 on 21 Nov 2026: account/two-step, the admin two-step prompt (F4 part B)
   participant: 135,
@@ -91,7 +93,8 @@ const MANIFEST_CLASS_COUNTS: Record<RouteClass, number> = {
 // +1 on 21 Nov 2026: account/two-step, the admin two-step prompt (F4 part B; participant, denied on tenant hosts like the admin portal).
 // +1 on 22 Nov 2026: the usage-rollup cron (S6-USE; cron, denied on tenant hosts like every cron).
 // +1 on 22 Nov 2026: admin support/session (S6-SUP; platform_admin, denied on tenant hosts like every admin route, S6-Q7).
-const MANIFEST_TOTAL = 532
+// +3 on 23 Nov 2026: S6-BG's admin support/consent and support/break-glass (platform_admin, denied on tenant hosts, S6-Q7) and support-consents/[id] (tenant_crew, pending until the first tenant admin).
+const MANIFEST_TOTAL = 535
 
 // The decisions. Moving a route between them is a deliberate diff here.
 const DECISION_COUNTS: Record<TenantSurfaceDecision, number> = {
@@ -99,13 +102,15 @@ const DECISION_COUNTS: Record<TenantSurfaceDecision, number> = {
   allow: 52,
   // members 39, schools 2, privacy request pages 2 and APIs 2, and the 4 held
   // files pinned under 'routes held back' below
-  pending: 49,
+  // +1: support-consents/[id] (S6-BG), until the first tenant admin
+  pending: 50,
   bypass: 4,
   // +1: the tenant tree's /sign/email page, a tree file like its siblings (BOUNCE)
   // +1: account/two-step, the admin portal's two-step prompt (F4 part B)
   // +1: the usage-rollup cron (S6-USE)
   // +1: admin support/session (S6-SUP): support mode runs on the platform host only (S6-Q7)
-  deny: 427,
+  // +2: admin support/consent and support/break-glass (S6-BG), platform host only (S6-Q7)
+  deny: 429,
 }
 
 /** A concrete URL a manifest file serves, with sample values for its params. */

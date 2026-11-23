@@ -11,7 +11,7 @@
 // tenant is the session's, never the caller's choice.
 
 import { isVerifiedSupportSession, type ActiveSupportSession } from '@/lib/authz/support-session-server'
-import { SUPPORT_ROLE, tenantDb, TenantContextError, type TenantDb, type TenantDbOptions } from './db'
+import { SUPPORT_ROLE, TENANT_ROLE, tenantDb, TenantContextError, type TenantDb, type TenantDbOptions } from './db'
 
 /** tenantDb as tenant_support_ro, pinned to the session's tenant. Throws without a live, verified session. */
 export function tenantSupportDb(session: ActiveSupportSession, opts: Pick<TenantDbOptions, 'driver' | 'env'> = {}): TenantDb {
@@ -19,4 +19,16 @@ export function tenantSupportDb(session: ActiveSupportSession, opts: Pick<Tenant
     throw new TenantContextError('tenantSupportDb needs an open support session from loadSupportSession()')
   }
   return tenantDb(session.tenantId, { driver: opts.driver, env: opts.env, role: SUPPORT_ROLE, readOnly: true })
+}
+
+/**
+ * S6-BG: tenantDb as tenant_app, pinned to a verified break-glass session's tenant. The
+ * only way a break-glass write reaches tenant data: never the service role. Throws for a
+ * read session, an ended one, or anything loadSupportSession() did not verify.
+ */
+export function tenantBreakGlassDb(session: ActiveSupportSession, opts: Pick<TenantDbOptions, 'driver' | 'env'> = {}): TenantDb {
+  if (!isVerifiedSupportSession(session) || session.mode !== 'break_glass') {
+    throw new TenantContextError('tenantBreakGlassDb needs an open break-glass session from loadSupportSession()')
+  }
+  return tenantDb(session.tenantId, { driver: opts.driver, env: opts.env, role: TENANT_ROLE })
 }

@@ -40,7 +40,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
         <AdminSidebar role={role} />
 
         <div className="flex min-h-screen min-w-0 flex-1 flex-col">
-          {support && <SupportSessionBanner tenantName={support.tenantName} endsAt={support.endsAt} />}
+          {support && <SupportSessionBanner tenantName={support.tenantName} endsAt={support.endsAt} mode={support.mode} />}
           {/* Slim top strip: role badge + account button */}
           <header className="sticky top-0 z-30 flex items-center justify-between gap-3 border-b border-brand-border bg-white/85 px-4 py-3 backdrop-blur lg:px-8">
             <span className="rounded-full bg-brand-blue/10 px-2.5 py-0.5 font-subheading text-xs font-semibold text-brand-blue">
