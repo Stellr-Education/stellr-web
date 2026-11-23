@@ -1,6 +1,21 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest'
-import { summariseSupport, summariseTenants, usageSeries, windowDays, windowStart, type TenantRow } from './tenants'
+import { summariseErrors, summariseSupport, summariseTenants, usageSeries, windowDays, windowStart, type TenantRow } from './tenants'
+
+describe('summariseErrors (S6-CON-b)', () => {
+  it('counts distinct errors and occurrences, and ranks routes, from route and count only', () => {
+    const s = summariseErrors([
+      { route: 'POST /api/register/individual', count: 3 },
+      { route: 'POST /api/register/individual', count: '2' },
+      { route: 'GET /events/[slug]', count: 1 },
+      { route: 'GET /a', count: 1 },
+    ], 2)
+    expect(s).toEqual({ distinct: 4, total: 7, topRoutes: [{ route: 'POST /api/register/individual', count: 5 }, { route: 'GET /a', count: 1 }] })
+  })
+  it('nothing: zeroes', () => {
+    expect(summariseErrors([])).toEqual({ distinct: 0, total: 0, topRoutes: [] })
+  })
+})
 
 // S6-CON: the console's aggregation. Counts only; a person is never part of a summary.
 

@@ -69,6 +69,8 @@ export const TENANT_APP_UNWRITABLE_COLUMNS: Readonly<Record<string, readonly str
  * asserts tenant_app holds no privilege at all on each. Key: table. Value: why.
  */
 export const TENANT_APP_NO_ACCESS_TABLES: Readonly<Record<string, string>> = {
+  'public.app_errors':
+    'captured server errors (S1 monitoring): written by service_role through record_app_error; tenant_id (S6-CON-b) only labels which tenant host the request served, for the super-admin console, and is NULL for Stellr hosts',
   'public.cron_runs':
     'the cron ledger (S5 B3): written by service_role through lib/cron-runs.ts; tenant_id only labels a per-tenant child row, and is NULL on every top-level run',
   'public.email_outbox':
@@ -81,6 +83,8 @@ export const TENANT_APP_NO_ACCESS_TABLES: Readonly<Record<string, string>> = {
     'support sessions (S6-SUP): written by service_role through app/api/admin/support/session; a tenant session must not see which platform admin is looking, or close or extend a session',
   'public.tenant_data_keys':
     'wrapped field-encryption data keys (S4 field-crypto lane): read only by service_role through lib/field-crypto-store.ts; a tenant session never needs key material, and deleting a row crypto-shreds the tenant',
+  'public.tenant_feature_flags':
+    'per-tenant switches (S6-CON-b): set by a platform admin from the super-admin console; a tenant session must not turn its own switches, break_glass_allowed among them',
   'public.tenant_guardian_consents':
     'guardian consent state (S5 wave 6): written by service_role through lib/registration/tenant-guardian-consent.ts; a tenant session writing it could mark its own participants consented',
   'public.usage_daily':

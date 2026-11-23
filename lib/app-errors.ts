@@ -78,11 +78,27 @@ export function routeLabel(method: string | undefined, routePath: string | undef
  * with ids and numbers flattened, so "row 41 not found" and "row 42 not found"
  * are one error.
  */
-export function errorDigest(route: string, message: string): string {
+export function errorDigest(route: string, message: string, tenantId?: string | null): string {
   const normalised = message
     .replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi, '<id>')
     .replace(/\d+/g, '#')
-  return createHash('sha256').update(`${route}\n${normalised}`).digest('hex').slice(0, 32)
+  // S6-CON-b: a tenant host's error is its own row, so the console can count it per
+  // tenant. Folded in only when present, so a Stellr digest is the one it always was.
+  const key = tenantId ? `${route}\n${normalised}\n${tenantId}` : `${route}\n${normalised}`
+  return createHash('sha256').update(key).digest('hex').slice(0, 32)
+}
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+/**
+ * A tenant id worth recording: a uuid, lower-cased, or null. The id itself comes from
+ * the caller: instrumentation.ts reads the proxy's tenant header
+ * (lib/app-errors-tenant.ts), because the tenant page tree reaches this file and must
+ * never read a tenant header (test/tenant-tree-pages.test.ts).
+ */
+export function cleanTenantId(value: unknown): string | null {
+  const v = Array.isArray(value) ? value[0] : value
+  return typeof v === 'string' && UUID.test(v) ? v.toLowerCase() : null
 }
 
 /** The text of whatever was thrown. */
@@ -164,11 +180,12 @@ export async function captureRequestError(
   err: unknown,
   request: CapturedRequest,
   context: CapturedContext,
-  opts: { db?: SupabaseClient; now?: number } = {},
+  /** tenantId: the tenant host the request served (S6-CON-b), from instrumentation.ts. */
+  opts: { db?: SupabaseClient; now?: number; tenantId?: string | null } = {},
 ): Promise<void> {
   try {
     if (isControlFlow(err)) return
-    await record(routeLabel(request?.method, context?.routePath, request?.path), err, opts)
+    await record(routeLabel(request?.method, context?.routePath, request?.path), err, { ...opts, tenantId: cleanTenantId(opts.tenantId) })
   } catch (e) {
     console.error('[app-errors] capture failed:', e instanceof Error ? e.message : e)
   }
@@ -187,11 +204,11 @@ export async function captureRequestError(
  */
 export async function reportError(
   err: unknown,
-  { route, db, now }: { route: string; db?: SupabaseClient; now?: number },
+  { route, db, now, tenantId }: { route: string; db?: SupabaseClient; now?: number; tenantId?: string | null },
 ): Promise<void> {
   try {
     if (isControlFlow(err)) return
-    await record(scrubMessage(String(route ?? '').split('?')[0]).slice(0, 300) || 'unknown', err, { db, now })
+    await record(scrubMessage(String(route ?? '').split('?')[0]).slice(0, 300) || 'unknown', err, { db, now, tenantId: cleanTenantId(tenantId) })
   } catch (e) {
     console.error('[app-errors] report failed:', e instanceof Error ? e.message : e)
   }
@@ -215,9 +232,10 @@ export async function responseError(res: Response): Promise<Error> {
 }
 
 /** Scrub, digest, rate-limit and write one error. Throws; callers catch. */
-async function record(route: string, err: unknown, opts: { db?: SupabaseClient; now?: number }): Promise<void> {
+async function record(route: string, err: unknown, opts: { db?: SupabaseClient; now?: number; tenantId?: string | null }): Promise<void> {
   const message = scrubMessage(errorText(err)) || 'Unknown error'
-  const digest = errorDigest(route, message)
+  const tenantId = opts.tenantId ?? null
+  const digest = errorDigest(route, message, tenantId)
   const count = takeWrite(digest, opts.now ?? Date.now())
   if (count === 0) return
   const db = opts.db ?? supabaseServer()
@@ -226,6 +244,8 @@ async function record(route: string, err: unknown, opts: { db?: SupabaseClient; 
     p_route: route,
     p_message: message,
     p_count: count,
+    // S6-CON-b: only sent for a tenant host, so a Stellr error's call is unchanged.
+    ...(tenantId ? { p_tenant_id: tenantId } : {}),
   })
   if (error) console.error('[app-errors] record failed:', error.message)
 }

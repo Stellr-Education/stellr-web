@@ -6,6 +6,7 @@ import { auditEnabled } from '@/lib/audit/platform'
 import { auditMutation } from '@/lib/audit/route'
 import { cleanBreakGlassReason, CONSENT_LAPSE_HOURS, REASON_MAX, REASON_MIN } from '@/lib/support/break-glass'
 import { supabaseServer } from '@/lib/supabase'
+import { tenantFlag } from '@/lib/tenancy/tenant-flags'
 import { requestTenant } from '@/lib/tenancy/request-tenant'
 
 // S6-BG: a platform admin asks a tenant for break-glass access (docs/S6-DESIGN.md
@@ -67,6 +68,15 @@ export async function POST(req: Request) {
   if ((tenant as { is_platform_owner: boolean }).is_platform_owner) {
     return refuse(403, 'Support mode is for other tenants. Use the ordinary admin screens for this one.', 'support_owner_tenant')
   }
+  // S6-CON-b: a tenant the console has closed to break-glass is refused before any
+  // request reaches its admins. A failed read refuses too: fail closed.
+  let allowed: boolean
+  try {
+    allowed = await tenantFlag(db, tenantId, 'break_glass_allowed')
+  } catch {
+    return refuse(503, 'Could not check whether this organization accepts break-glass requests.')
+  }
+  if (!allowed) return refuse(403, 'This organization does not accept break-glass requests.', 'break_glass_not_allowed')
 
   const now = Date.now()
   const expiresAt = new Date(now + CONSENT_LAPSE_HOURS * 3_600_000).toISOString()

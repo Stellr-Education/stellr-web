@@ -59,7 +59,7 @@ export const ROUTE_CLASSES = [
 export type RouteClass = (typeof ROUTE_CLASSES)[number]
 
 export const ROUTE_MANIFEST: Record<string, RouteClass> = {
-  // ── API routes (311) ──────────────────────────────────────────────────
+  // ── API routes (312) ──────────────────────────────────────────────────
   'app/api/admin/access/conflicts/route.ts': 'stellr_only',
   'app/api/admin/access/objects/[id]/contents/route.ts': 'stellr_only',
   'app/api/admin/access/objects/[id]/gates/route.ts': 'stellr_only',
@@ -219,6 +219,8 @@ export const ROUTE_MANIFEST: Record<string, RouteClass> = {
   'app/api/admin/support/break-glass/route.ts': 'platform_admin',
   // S6-CON: suspend or resume a tenant from the super-admin console (platform host only).
   'app/api/admin/platform/tenants/[id]/status/route.ts': 'platform_admin',
+  // S6-CON-b: set a per-tenant switch from the super-admin console (platform host only).
+  'app/api/admin/platform/tenants/[id]/flags/route.ts': 'platform_admin',
   'app/api/admin/support/consent/route.ts': 'platform_admin',
   'app/api/admin/store/discounts/route.ts': 'stellr_only',
   'app/api/admin/store/printful/route.ts': 'stellr_only',

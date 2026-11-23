@@ -45,7 +45,8 @@ const MANIFEST_CLASS_COUNTS: Record<RouteClass, number> = {
   // +1 platform_admin: S6-SUP's admin support/session (22 Nov 2026), denied on tenant hosts (S6-Q7)
   // +2 platform_admin: S6-BG's admin support/consent and support/break-glass (23 Nov 2026), denied on tenant hosts (S6-Q7)
   // +1 platform_admin: S6-CON's admin platform/tenants/[id]/status (23 Nov 2026), denied on tenant hosts (S6-Q7)
-  platform_admin: 11,
+  // +1 platform_admin: S6-CON-b's admin platform/tenants/[id]/flags (23 Nov 2026), denied on tenant hosts (S6-Q7)
+  platform_admin: 12,
   platform_destined: 2,
   // +1 tenant_crew, -1 stellr_only: admin registrations/[id]/payment-method (C16 follow-up)
   // +3 tenant_crew, -3 stellr_only: admin events/[slug]/{companies,offerings,merch/commit} (C18)
@@ -97,7 +98,8 @@ const MANIFEST_CLASS_COUNTS: Record<RouteClass, number> = {
 // +1 on 22 Nov 2026: admin support/session (S6-SUP; platform_admin, denied on tenant hosts like every admin route, S6-Q7).
 // +3 on 23 Nov 2026: S6-BG's admin support/consent and support/break-glass (platform_admin, denied on tenant hosts, S6-Q7) and support-consents/[id] (tenant_crew, pending until the first tenant admin).
 // +3 on 23 Nov 2026: S6-CON's console, two admin pages (stellr_only) and the status API (platform_admin), all denied on tenant hosts (S6-Q7).
-const MANIFEST_TOTAL = 538
+// +1 on 23 Nov 2026: S6-CON-b's flags API (platform_admin, denied on tenant hosts, S6-Q7).
+const MANIFEST_TOTAL = 539
 
 // The decisions. Moving a route between them is a deliberate diff here.
 const DECISION_COUNTS: Record<TenantSurfaceDecision, number> = {
@@ -114,7 +116,8 @@ const DECISION_COUNTS: Record<TenantSurfaceDecision, number> = {
   // +1: admin support/session (S6-SUP): support mode runs on the platform host only (S6-Q7)
   // +2: admin support/consent and support/break-glass (S6-BG), platform host only (S6-Q7)
   // +3: S6-CON's console pages and status API, platform host only (S6-Q7)
-  deny: 432,
+  // +1: S6-CON-b's flags API, platform host only (S6-Q7)
+  deny: 433,
 }
 
 /** A concrete URL a manifest file serves, with sample values for its params. */
