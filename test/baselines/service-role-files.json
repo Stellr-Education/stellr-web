@@ -1449,6 +1449,10 @@
       "class": "convert",
       "reason": "auto: reaches tables it does not name (dynamic .from, rpc, or a client passed to a helper); review before converting"
     },
+    "app/api/webhooks/ses/route.ts": {
+      "class": "platform",
+      "reason": "Email plan F: Amazon SNS webhook for the SES standby; writes email_events for any tenant's mail and the platform-wide email_suppressions, both service_role only by design; tables: email_events, email_suppressions"
+    },
     "components/survey/DashboardSurveys.tsx": {
       "class": "convert",
       "reason": "auto: reaches tables it does not name (dynamic .from, rpc, or a client passed to a helper); review before converting"
