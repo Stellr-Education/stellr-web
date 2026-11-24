@@ -300,6 +300,7 @@ export const ROUTE_MANIFEST: Record<string, RouteClass> = {
   'app/api/cron/docusign-form-data/route.ts': 'cron',
   'app/api/cron/docusign-reminders/route.ts': 'cron',
   'app/api/cron/email-events-retention/route.ts': 'cron',
+  'app/api/cron/email-reputation/route.ts': 'cron',
   'app/api/cron/email-outbox/route.ts': 'cron',
   'app/api/cron/entitlements/route.ts': 'cron',
   'app/api/cron/event-emails/route.ts': 'cron',

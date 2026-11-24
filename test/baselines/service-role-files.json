@@ -1097,6 +1097,10 @@
       "class": "system",
       "reason": "Drains the email outbox (lib/email/outbox.ts): reads and updates email_outbox and email_outbox_blobs, reads email_suppressions and email_send_quota, calls bump_email_quota and prune_email_outbox_blobs, and writes its cron_runs row. Every queued message was already addressed by the sender that queued it; reads no tenant data."
     },
+    "app/api/cron/email-reputation/route.ts": {
+      "class": "platform",
+      "reason": "Email plan E: daily cron reading every tenant's 7-day bounce and complaint counts (tenant_email_reputation over email_events) and stamping tenant_email_settings.reputation_alerted_at; platform-wide by design, service_role only; tables: email_events, tenant_email_settings, tenants"
+    },
     "app/api/cron/entitlements/route.ts": {
       "class": "convert",
       "reason": "auto: reaches tables it does not name (dynamic .from, rpc, or a client passed to a helper); review before converting"

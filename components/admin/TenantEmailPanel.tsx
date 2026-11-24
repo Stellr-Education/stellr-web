@@ -3,6 +3,7 @@ import { getDomain, type ResendDnsRecord } from '@/lib/email/resend-domains'
 import { loadTenantEmailSettings, type TenantEmailSettings } from '@/lib/email/tenant-settings'
 import { tenantEventSender } from '@/lib/event-emails/tenant-mail'
 import { TenantEmailForm } from '@/components/admin/TenantEmailForm'
+import { pct, REPUTATION_WINDOW_DAYS, tenantReputations, type TenantReputation } from '@/lib/email/reputation'
 
 const STATUS_LABEL: Record<string, string> = {
   none: 'No own domain',
@@ -52,6 +53,12 @@ export async function TenantEmailPanel({
       recordsFailed = true
     }
   }
+  let reputation: TenantReputation | null = null
+  try {
+    reputation = (await tenantReputations(db)).find((r) => r.tenantId === tenantId) ?? null
+  } catch {
+    /* the rates are informative only; the rest of the panel still shows */
+  }
   const sender = tenantEventSender({ display_name: displayName, branding, tenant_email_settings: settings })
   const status = settings?.domain_status ?? 'none'
 
@@ -75,6 +82,29 @@ export async function TenantEmailPanel({
               <span className={status === 'verified' ? 'text-enviro-green-text' : status === 'failed' ? 'text-danger' : ''}>
                 {STATUS_LABEL[status] ?? status}
               </span>
+            </dd>
+            <dt className="text-content-muted">Last {REPUTATION_WINDOW_DAYS} days</dt>
+            <dd className="sm:col-span-2 text-ink">
+              {reputation && reputation.reached > 0 ? (
+                <span className={reputation.concerns.length ? 'text-danger' : ''}>
+                  {reputation.reached} reached · {reputation.complaints} complaint{reputation.complaints === 1 ? '' : 's'} ({pct(reputation.complaintRate)}) ·{' '}
+                  {reputation.hardBounces} hard bounce{reputation.hardBounces === 1 ? '' : 's'} ({pct(reputation.hardBounceRate)})
+                  {reputation.concerns.length ? ' · above the alert line' : ''}
+                </span>
+              ) : (
+                'No mail delivered yet'
+              )}
+            </dd>
+            <dt className="text-content-muted">Event blasts</dt>
+            <dd className="sm:col-span-2 text-ink">
+              {settings?.bulk_paused_at ? (
+                <span className="text-danger">Paused{settings.paused_reason ? `: ${settings.paused_reason}` : ''}</span>
+              ) : (
+                <>
+                  {settings?.bulk_daily_cap != null ? `${settings.bulk_daily_cap} a day` : 'No daily cap'} ·{' '}
+                  {settings?.bulk_monthly_cap != null ? `${settings.bulk_monthly_cap} a month` : 'no monthly cap'}
+                </>
+              )}
             </dd>
           </dl>
 
@@ -118,6 +148,9 @@ export async function TenantEmailPanel({
             fromName={settings?.from_name ?? ''}
             fromLocalPart={settings?.from_local_part ?? 'events'}
             replyTo={settings?.reply_to ?? ''}
+            bulkDailyCap={settings?.bulk_daily_cap ?? null}
+            bulkMonthlyCap={settings?.bulk_monthly_cap ?? null}
+            bulkPaused={Boolean(settings?.bulk_paused_at)}
           />
         </>
       )}

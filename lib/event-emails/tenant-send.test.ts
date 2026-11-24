@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { afterEach, describe, it, expect, vi, beforeEach } from 'vitest'
 import { STELLR_TENANT_ID } from '@/lib/tenancy/constants'
 
 // S5 B14: a tenant's event email goes out only with that tenant's sender, never
@@ -36,6 +36,10 @@ const R = (email: string, firstName: string) => ({
 })
 
 /** event_emails with a real claim; event_email_sends recorded in memory. */
+// Email plan E: the tenant's bulk settings row (null = none, so no cap).
+let bulkSettings: Record<string, unknown> | null = null
+const bulkBumps: unknown[] = []
+
 function fakeDb(row: typeof EMAIL) {
   const state = { row: { ...row }, writes: [] as Record<string, unknown>[] }
   const chainable = (result: unknown) => {
@@ -48,7 +52,15 @@ function fakeDb(row: typeof EMAIL) {
   }
   const db = {
     state,
+    // Email plan E: no bulk settings row means no cap; the count write is a no-op.
+    rpc: async (name: string, args: unknown) => (name === 'bump_tenant_bulk_sends' && bulkBumps.push(args), { data: 1, error: null }),
     from(table: string) {
+      if (table === 'tenant_email_settings') return { select: () => chainable({ data: bulkSettings, error: null }) }
+      if (table === 'email_tenant_bulk_sends') {
+        const q = chainable({ data: null, error: null }) as Record<string, unknown>
+        q.gte = async () => ({ data: [], error: null })
+        return { select: () => q }
+      }
       if (table === 'event_emails') {
         return {
           select: () => chainable({ data: { ...state.row } }),
@@ -108,6 +120,26 @@ describe('sendEventEmail and a tenant row', () => {
     expect(resolveAudience.mock.calls.at(-1)?.[3]).toMatchObject({ tenantId: TENANT })
     await sendEventEmail(fakeDb({ ...EMAIL, tenant_id: null }) as never, 'e1', { trigger: 'schedule', spacingMs: 0 })
     expect(resolveAudience.mock.calls.at(-1)?.[3]).not.toHaveProperty('tenantId')
+  })
+})
+
+describe('a tenant blast and its bulk cap (email plan E)', () => {
+  beforeEach(() => { bulkSettings = null; bulkBumps.length = 0 })
+  afterEach(() => { bulkSettings = null })
+
+  it('stops at the tenant’s daily cap, leaves the rest for the next run, and counts what went', async () => {
+    resolveAudience.mockResolvedValue({ recipients: [R('a@example.com', 'Al'), R('b@example.com', 'Bo'), R('c@example.com', 'Cy')], docusignParticipantIds: [] })
+    bulkSettings = { bulk_daily_cap: 2, bulk_monthly_cap: null, bulk_paused_at: null }
+    const db = fakeDb({ ...EMAIL, tenant_id: TENANT })
+    await sendEventEmail(db as never, 'e1', { trigger: 'schedule', spacingMs: 0, sender: SENDER })
+    expect(sendEmail).toHaveBeenCalledTimes(2)
+    expect(bulkBumps).toEqual([expect.objectContaining({ p_tenant_id: TENANT, p_n: 2 })])
+  })
+
+  it('sends nothing while the tenant’s blasts are paused', async () => {
+    bulkSettings = { bulk_daily_cap: null, bulk_monthly_cap: null, bulk_paused_at: '2026-11-23T00:00:00Z' }
+    await sendEventEmail(fakeDb({ ...EMAIL, tenant_id: TENANT }) as never, 'e1', { trigger: 'schedule', spacingMs: 0, sender: SENDER })
+    expect(sendEmail).not.toHaveBeenCalled()
   })
 })
 

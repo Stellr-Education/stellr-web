@@ -2824,6 +2824,32 @@ export type Database = {
         }
         Relationships: []
       }
+      email_tenant_bulk_sends: {
+        Row: {
+          day: string
+          sent: number
+          tenant_id: string
+        }
+        Insert: {
+          day: string
+          sent?: number
+          tenant_id: string
+        }
+        Update: {
+          day?: string
+          sent?: number
+          tenant_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "email_tenant_bulk_sends_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       esign_access_log: {
         Row: {
           action: string
@@ -8420,17 +8446,18 @@ export type Database = {
       }
       tenant_email_settings: {
         Row: {
+          bulk_daily_cap: number | null
+          bulk_monthly_cap: number | null
+          bulk_paused_at: string | null
           domain_checked_at: string | null
           domain_status: string
           forge_status: string
           from_local_part: string
           from_name: string | null
           logo_url: string | null
-          marketing_daily_cap: number | null
-          marketing_monthly_cap: number | null
-          marketing_paused_at: string | null
           paused_reason: string | null
           reply_to: string | null
+          reputation_alerted_at: string | null
           resend_domain_id: string | null
           sending_domain: string | null
           signature_html: string | null
@@ -8440,17 +8467,18 @@ export type Database = {
           updated_by: string | null
         }
         Insert: {
+          bulk_daily_cap?: number | null
+          bulk_monthly_cap?: number | null
+          bulk_paused_at?: string | null
           domain_checked_at?: string | null
           domain_status?: string
           forge_status?: string
           from_local_part?: string
           from_name?: string | null
           logo_url?: string | null
-          marketing_daily_cap?: number | null
-          marketing_monthly_cap?: number | null
-          marketing_paused_at?: string | null
           paused_reason?: string | null
           reply_to?: string | null
+          reputation_alerted_at?: string | null
           resend_domain_id?: string | null
           sending_domain?: string | null
           signature_html?: string | null
@@ -8460,17 +8488,18 @@ export type Database = {
           updated_by?: string | null
         }
         Update: {
+          bulk_daily_cap?: number | null
+          bulk_monthly_cap?: number | null
+          bulk_paused_at?: string | null
           domain_checked_at?: string | null
           domain_status?: string
           forge_status?: string
           from_local_part?: string
           from_name?: string | null
           logo_url?: string | null
-          marketing_daily_cap?: number | null
-          marketing_monthly_cap?: number | null
-          marketing_paused_at?: string | null
           paused_reason?: string | null
           reply_to?: string | null
+          reputation_alerted_at?: string | null
           resend_domain_id?: string | null
           sending_domain?: string | null
           signature_html?: string | null
@@ -9783,6 +9812,10 @@ export type Database = {
         }
       }
       bump_email_quota: { Args: { p_day: string }; Returns: number }
+      bump_tenant_bulk_sends: {
+        Args: { p_day: string; p_n: number; p_tenant_id: string }
+        Returns: number
+      }
       can_read_chat_channel: {
         Args: { _channel_id: string; _clerk_sub: string }
         Returns: boolean
@@ -10111,6 +10144,15 @@ export type Database = {
           p_table: string
         }
         Returns: undefined
+      }
+      tenant_email_reputation: {
+        Args: { p_since: string }
+        Returns: {
+          complaints: number
+          hard_bounces: number
+          reached: number
+          tenant_id: string
+        }[]
       }
       tenant_host_map: {
         Args: never

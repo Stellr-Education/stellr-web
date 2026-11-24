@@ -179,3 +179,29 @@ describe('check and remove', () => {
     expect(resend.removeDomain).not.toHaveBeenCalled()
   })
 })
+
+describe('event-blast caps and pause (email plan E)', () => {
+  it('saves caps, and clears one with null', async () => {
+    expect((await post({ action: 'save', bulk_daily_cap: 500, bulk_monthly_cap: null })).status).toBe(200)
+    expect(h.writes[0].values).toMatchObject({ bulk_daily_cap: 500, bulk_monthly_cap: null })
+  })
+  it('refuses a cap that is not a whole number', async () => {
+    expect((await post({ action: 'save', bulk_daily_cap: -1 })).status).toBe(400)
+    expect((await post({ action: 'save', bulk_daily_cap: 2.5 })).status).toBe(400)
+  })
+  it('pauses with a reason, and refuses to pause twice', async () => {
+    expect((await post({ action: 'pause_bulk', reason: '  complaints  spiking ' })).status).toBe(200)
+    expect(h.writes[0].values).toMatchObject({ paused_reason: 'complaints spiking' })
+    expect((h.writes[0].values as Record<string, unknown>).bulk_paused_at).toEqual(expect.any(String))
+    expect(auditMutation.mock.calls[0][0]).toMatchObject({ action: 'platform.tenant_email.pause_bulk' })
+    h.writes = []
+    h.settings = { tenant_id: TENANT, bulk_paused_at: '2026-11-23T00:00:00Z' }
+    expect((await post({ action: 'pause_bulk' })).status).toBe(409)
+  })
+  it('resumes only when paused', async () => {
+    expect((await post({ action: 'resume_bulk' })).status).toBe(409)
+    h.settings = { tenant_id: TENANT, bulk_paused_at: '2026-11-23T00:00:00Z', paused_reason: 'x' }
+    expect((await post({ action: 'resume_bulk' })).status).toBe(200)
+    expect(h.writes[0].values).toMatchObject({ bulk_paused_at: null, paused_reason: null })
+  })
+})

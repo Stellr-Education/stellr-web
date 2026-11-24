@@ -80,6 +80,8 @@ export const TENANT_APP_NO_ACCESS_TABLES: Readonly<Record<string, string>> = {
     'hash-chained audit (S4 audit lane): written by service_role through lib/audit/platform.ts; a tenant must not read or rewrite the chain, and tenant_id is nullable (NULL = the platform chain)',
   'public.support_consents':
     "break-glass requests (S6-BG): written by service_role through app/api/admin/support/consent and the support_consent_* functions; a tenant session must not forge, approve or reuse a request outside the tenant admin's own answer",
+  'public.email_tenant_bulk_sends':
+    'email plan E: blast sends per tenant per day, bumped by service_role through lib/email/tenant-bulk.ts; a tenant session must not lower its own count to get round its cap',
   'public.tenant_email_settings':
     'email plan D: a tenant\u2019s sender, own sending domain and marketing caps, written by service_role through the super-admin console and read by lib/email/tenant-settings.ts; a tenant session must not change its sending domain, lift its own caps or unpause itself',
   'public.support_sessions':

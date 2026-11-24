@@ -77,6 +77,7 @@ SELECT set_eq(
     'public.email_send_quota',
     'public.email_suppressions',
     'public.email_templates',
+    'public.email_tenant_bulk_sends',
     'public.esign_access_log',
     'public.esign_audit_events',
     'public.esign_email_budget',

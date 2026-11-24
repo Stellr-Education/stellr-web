@@ -230,6 +230,9 @@ export const TABLE_REGISTRY: Record<string, TableEntry> = {
   'public.tenant_feature_flags': platform(
     'S6-CON-b per-tenant switches set from the super-admin console. Platform-level although it carries tenant_id NOT NULL: written and read only by service_role (app/api/admin/platform/tenants/[id]/flags, lib/tenancy/tenant-flags.ts), never by tenant_app or tenant_support_ro (lib/tenancy/tenant-role.ts TENANT_APP_NO_ACCESS_TABLES)',
   ),
+  'public.email_tenant_bulk_sends': platform(
+    'Email plan E: event-email blast sends per tenant per day, for the per-tenant bulk caps. Platform-level although it carries tenant_id: written and read only by service_role (lib/email/tenant-bulk.ts), never by tenant_app or tenant_support_ro (lib/tenancy/tenant-role.ts TENANT_APP_NO_ACCESS_TABLES)',
+  ),
   'public.tenant_email_settings': platform(
     'Email plan D: per-tenant sender, own sending domain (Resend), signature and marketing caps. Platform-level although it carries tenant_id: written and read only by service_role (lib/email/tenant-settings.ts, the super-admin console), never by tenant_app or tenant_support_ro (lib/tenancy/tenant-role.ts TENANT_APP_NO_ACCESS_TABLES)',
   ),
