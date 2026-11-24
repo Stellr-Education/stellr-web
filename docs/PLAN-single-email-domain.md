@@ -1,5 +1,7 @@
 # Plan — Consolidate all email onto one domain (Resend downgrade)
 
+> **Superseded 23 Nov 2026** by [ADR-email-platform.md](ADR-email-platform.md): Resend Pro, two Stellr domains (`mail.` transactional, `community.` marketing), tenants on their own domains, SES as a warm standby. Kept for history.
+
 **Date:** 12 Aug 2026
 **Driver:** Cancelling the paid Resend subscription. The paid plan was bought for multi-domain sending; the Free plan allows **1 domain, 3,000 emails/month, 100 emails/day**.
 **Status (12 Aug 2026): SHIPPED.** Downgrade to Resend **Free** done; `insimeducation.com` and the unused `Onboarding` API key removed from the Resend account; `hello@stellreducation.org` confirmed functioning. Code cleanup merged as `19e3c14` and **deployed to production** (typecheck clean, 151/151 tests, `lint:tokens` clean, `check:deploy-ready` clean).

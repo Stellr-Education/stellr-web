@@ -12,7 +12,7 @@ import { checkSenderFields, checkSendingDomain, domainLimit, loadTenantEmailSett
 // Email plan D2: a tenant's sender and own sending domain, from the super-admin console.
 //
 // POST { action } on the platform host:
-//   save          { from_name?, from_local_part?, reply_to?, bulk_daily_cap?, bulk_monthly_cap? }
+//   save          { from_name?, from_local_part?, reply_to?, signature_text?, logo_url?, bulk_daily_cap?, bulk_monthly_cap? }
 //                 who the mail is from, where replies go, and caps on its event blasts (plan E)
 //   pause_bulk    { reason? }  stops the tenant's event blasts (plan E); one-to-one mail still goes
 //   resume_bulk   —            lets them go again

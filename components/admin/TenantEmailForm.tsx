@@ -18,6 +18,8 @@ export function TenantEmailForm({
   fromName,
   fromLocalPart,
   replyTo,
+  signatureText,
+  logoUrl,
   bulkDailyCap,
   bulkMonthlyCap,
   bulkPaused,
@@ -27,6 +29,8 @@ export function TenantEmailForm({
   fromName: string
   fromLocalPart: string
   replyTo: string
+  signatureText: string
+  logoUrl: string
   bulkDailyCap: number | null
   bulkMonthlyCap: number | null
   bulkPaused: boolean
@@ -38,6 +42,8 @@ export function TenantEmailForm({
   const [name, setName] = useState(fromName)
   const [local, setLocal] = useState(fromLocalPart)
   const [reply, setReply] = useState(replyTo)
+  const [signature, setSignature] = useState(signatureText)
+  const [logo, setLogo] = useState(logoUrl)
   const [domain, setDomain] = useState('')
   const [daily, setDaily] = useState(bulkDailyCap == null ? '' : String(bulkDailyCap))
   const [monthly, setMonthly] = useState(bulkMonthlyCap == null ? '' : String(bulkMonthlyCap))
@@ -89,6 +95,32 @@ export function TenantEmailForm({
       >
         {busy === 'save' ? 'Saving…' : 'Save sender'}
       </Button>
+
+      <div className="border-t border-line-light pt-4">
+        <p className="text-sm font-medium text-content-body">Event email signature</p>
+        <p className="mt-0.5 text-xs text-content-muted">
+          Shown under “All the best,” at the foot of their event emails. Plain text; https links become clickable. Empty uses the sender name.
+        </p>
+        <div className="mt-2 grid gap-3 sm:grid-cols-2">
+          <label className="block text-sm">
+            <span className="mb-1 block text-content-body">Signature</span>
+            <textarea className={input} rows={5} maxLength={1000} value={signature} onChange={(e) => setSignature(e.target.value)} />
+          </label>
+          <label className="block text-sm">
+            <span className="mb-1 block text-content-body">Logo address (optional)</span>
+            <input className={input} type="url" maxLength={500} value={logo} onChange={(e) => setLogo(e.target.value)} placeholder="https://" />
+          </label>
+        </div>
+        <div className="mt-3">
+          <Button
+            variant="secondaryStrong"
+            disabled={busy !== null}
+            onClick={() => act('save', { signature_text: signature || null, logo_url: logo.trim() || null }, 'Signature saved.')}
+          >
+            {busy === 'save' ? 'Saving…' : 'Save signature'}
+          </Button>
+        </div>
+      </div>
 
       <div className="border-t border-line-light pt-4">
         <p className="text-sm font-medium text-content-body">Event blasts</p>

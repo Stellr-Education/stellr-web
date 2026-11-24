@@ -148,6 +148,8 @@ export async function TenantEmailPanel({
             fromName={settings?.from_name ?? ''}
             fromLocalPart={settings?.from_local_part ?? 'events'}
             replyTo={settings?.reply_to ?? ''}
+            signatureText={settings?.signature_text ?? ''}
+            logoUrl={settings?.logo_url ?? ''}
             bulkDailyCap={settings?.bulk_daily_cap ?? null}
             bulkMonthlyCap={settings?.bulk_monthly_cap ?? null}
             bulkPaused={Boolean(settings?.bulk_paused_at)}

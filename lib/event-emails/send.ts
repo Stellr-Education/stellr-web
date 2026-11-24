@@ -475,7 +475,7 @@ export async function deliver(
   // not the template with its {{fields}}.
   let sentSubject = email.subject
   try {
-    if (recipients[0]) sentSubject = renderEventEmail(email, { ...eventVars, ...recipientMergeVars(recipients[0]) }).subject
+    if (recipients[0]) sentSubject = renderEventEmail(email, { ...eventVars, ...recipientMergeVars(recipients[0]) }, opts.sender?.signature).subject
   } catch { /* keep the template subject */ }
 
   const { data: sendRow } = await db
@@ -554,7 +554,7 @@ export async function deliver(
     results.push({ ...base, status: 'sending' })
     await persistProgress()
     try {
-      const rendered = renderEventEmail(email, { ...eventVars, ...recipientMergeVars(r) })
+      const rendered = renderEventEmail(email, { ...eventVars, ...recipientMergeVars(r) }, opts.sender?.signature)
       const unsubUrl = promotional && r.memberId ? unsubscribe.get(r.memberId) : undefined
       const content = unsubUrl ? { ...rendered, ...withUnsubscribeFooter(rendered, unsubUrl) } : rendered
       const baseFrom = opts.sender?.from ?? EVENT_EMAIL_FROM
