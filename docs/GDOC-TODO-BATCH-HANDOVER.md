@@ -40,7 +40,7 @@ key env vars and the embed config.
 ### 2. W7.2 — DocuSign for existing-account joins (verify + minor edge)
 `dispatchAgreement` is called for every group-join (signed-in and new), and issues a
 fresh envelope when none is on file — so W7.2 is handled in code. **Not runtime-verified**
-against the named test account (`david.michael.shaw+student@gmail.com`). Edge case now
+against the named test account (`owner-personal+student@example.com`). Edge case now
 handled defensively: a **minor with no guardian on file** gets no envelope (dispatch
 early-returns) but now alerts community admins (follow-up #2). **Next:** confirm the
 existing-account join actually triggers DocuSign in prod; decide whether to collect a

@@ -18,7 +18,7 @@ function render(opts: { returning: boolean; viaGuardian: boolean }) {
       ...eventMergeVars(event, '2027-02-01'),
       ...recipientMergeVars({
         email: 'x@example.com',
-        firstName: opts.viaGuardian ? 'Tamara' : 'Lily',
+        firstName: opts.viaGuardian ? 'Pat' : 'Lily',
         roles: ['participant'],
         participantNames: ['Lily'],
         isParticipant: !opts.viaGuardian,
@@ -47,7 +47,7 @@ describe('team profile email', () => {
 
   it('asks a parent to pass the link on', () => {
     const r = render({ returning: false, viaGuardian: true })
-    expect(r.text).toContain('Hi Tamara,')
+    expect(r.text).toContain('Hi Pat,')
     expect(r.text).toContain('Please pass the link to Lily')
     expect(r.text).toContain('Lily’s team profile: https://app.example/team-profile/abc')
   })

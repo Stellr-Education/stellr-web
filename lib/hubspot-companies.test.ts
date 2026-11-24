@@ -29,7 +29,7 @@ describe('normaliseDomain', () => {
 
 describe('domainFromEmail', () => {
   it('takes the domain from an work address', () => {
-    expect(domainFromEmail('rchambers@carson.k12.nv.us')).toBe('carson.k12.nv.us')
+    expect(domainFromEmail('teacher@district.k12.example.us')).toBe('district.k12.example.us')
     expect(domainFromEmail('  Head@Example.COM ')).toBe('example.com')
   })
 

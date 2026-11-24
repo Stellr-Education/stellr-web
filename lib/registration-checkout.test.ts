@@ -156,7 +156,7 @@ describe('createRegistrationCheckout — individual', () => {
   it('builds the fee line with the webhook-compatible metadata and the participant email', async () => {
     const { db } = makeDb({
       registration: { type: 'individual', status: 'pending' },
-      participant: { first_name: 'Daniel', last_name: 'Ahaiwe', email: 'dan@example.com' },
+      participant: { first_name: 'Alex', last_name: 'Example', email: 'alex@example.com' },
     })
     const { stripe, create } = makeStripe(7500)
 
@@ -169,10 +169,10 @@ describe('createRegistrationCheckout — individual', () => {
       mode: 'payment',
       allow_promotion_codes: true,
       client_reference_id: 'reg-1',
-      customer_email: 'dan@example.com',
+      customer_email: 'alex@example.com',
       customer_creation: 'always',
       line_items: [{ price: 'price_fee', quantity: 1 }],
-      metadata: { registrationId: 'reg-1', eventSlug: 'nevada-2027', participantName: 'Daniel Ahaiwe' },
+      metadata: { registrationId: 'reg-1', eventSlug: 'nevada-2027', participantName: 'Alex Example' },
       success_url: URLS.successUrl,
       cancel_url: URLS.cancelUrl,
     })
@@ -182,7 +182,7 @@ describe('createRegistrationCheckout — individual', () => {
   it('adds pending merch add-ons as price_data lines', async () => {
     const { db } = makeDb({
       registration: { type: 'individual', status: 'pending' },
-      participant: { first_name: 'D', last_name: 'A', email: 'dan@example.com' },
+      participant: { first_name: 'D', last_name: 'A', email: 'alex@example.com' },
       addons: [{ name: 'Event shirt — L', qty: 2, unit_amount_cents: 1500 }],
     })
     const { stripe, create } = makeStripe(7500)
@@ -200,7 +200,7 @@ describe('createRegistrationCheckout — individual', () => {
   it('omits customer_email when the caller passes null (parent paying for a child)', async () => {
     const { db } = makeDb({
       registration: { type: 'individual', status: 'pending' },
-      participant: { first_name: 'D', last_name: 'A', email: 'dan@example.com' },
+      participant: { first_name: 'D', last_name: 'A', email: 'alex@example.com' },
     })
     const { stripe, create } = makeStripe()
 
@@ -212,7 +212,7 @@ describe('createRegistrationCheckout — individual', () => {
   it('uses the event the caller already holds instead of refetching', async () => {
     const { db } = makeDb({
       registration: { type: 'individual', status: 'pending' },
-      participant: { first_name: 'D', last_name: 'A', email: 'dan@example.com' },
+      participant: { first_name: 'D', last_name: 'A', email: 'alex@example.com' },
     })
     const { stripe, retrieve } = makeStripe()
 
@@ -225,7 +225,7 @@ describe('createRegistrationCheckout — individual', () => {
   it('throws nothing_to_pay for a free event with no add-ons', async () => {
     const { db } = makeDb({
       registration: { type: 'individual', status: 'pending' },
-      participant: { first_name: 'D', last_name: 'A', email: 'dan@example.com' },
+      participant: { first_name: 'D', last_name: 'A', email: 'alex@example.com' },
     })
     const { stripe, create } = makeStripe(0)
 
@@ -306,7 +306,7 @@ describe('createRegistrationCheckout — an event that does not resolve', () => 
   const individual = () =>
     makeDb({
       registration: { type: 'individual', status: 'pending' },
-      participant: { first_name: 'D', last_name: 'A', email: 'dan@example.com' },
+      participant: { first_name: 'D', last_name: 'A', email: 'alex@example.com' },
       addons: [{ name: 'T-shirt', qty: 1, unit_amount_cents: 2500 }],
     }).db
 
@@ -401,7 +401,7 @@ describe('createRegistrationCheckout — single live session (PAY-4 part-1)', ()
   it('expires the prior session before minting a new one, then persists the new id', async () => {
     const { db, updates } = makeDb({
       registration: { type: 'individual', status: 'pending', checkout_session_id: 'cs_old' },
-      participant: { first_name: 'D', last_name: 'A', email: 'dan@example.com' },
+      participant: { first_name: 'D', last_name: 'A', email: 'alex@example.com' },
     })
     const { stripe, create, expire } = makeStripe(7500)
 
@@ -417,7 +417,7 @@ describe('createRegistrationCheckout — single live session (PAY-4 part-1)', ()
   it('mints without expiring when the registration has no prior session', async () => {
     const { db } = makeDb({
       registration: { type: 'individual', status: 'pending', checkout_session_id: null },
-      participant: { first_name: 'D', last_name: 'A', email: 'dan@example.com' },
+      participant: { first_name: 'D', last_name: 'A', email: 'alex@example.com' },
     })
     const { stripe, expire } = makeStripe(7500)
 
@@ -429,7 +429,7 @@ describe('createRegistrationCheckout — single live session (PAY-4 part-1)', ()
   it('still mints if expiring the stale session throws (already completed/expired)', async () => {
     const { db } = makeDb({
       registration: { type: 'individual', status: 'pending', checkout_session_id: 'cs_old' },
-      participant: { first_name: 'D', last_name: 'A', email: 'dan@example.com' },
+      participant: { first_name: 'D', last_name: 'A', email: 'alex@example.com' },
     })
     const { stripe, create, expire } = makeStripe(7500)
     expire.mockRejectedValueOnce(new Error('session already completed'))

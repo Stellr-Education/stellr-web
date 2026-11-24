@@ -5,7 +5,7 @@ Plan: approved in session (Claude plan file `refer-to-latest-email-spicy-hearth.
 
 ## Why
 
-DocuSign support, case 18095860 (Emmanuel Jr, 3 Oct 2026). The account is on a
+DocuSign support, case 18095860 (support staff, 3 Oct 2026). The account is on a
 Basic/Starter **API** plan:
 
 - The web portal allows **one** send, correction or template save per billing

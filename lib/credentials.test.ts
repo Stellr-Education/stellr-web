@@ -454,7 +454,7 @@ describe('issueCredential — educator PD', () => {
     source: 'pd' as const,
     memberId: 'm1',
     eventSlug: 'co-2026',
-    recipient: { firstName: 'Maria', lastName: 'Gordon', dateOfBirth: null },
+    recipient: { firstName: 'Sample', lastName: 'Educator', dateOfBirth: null },
     title: 'Professional Development — Sample (8 hours)',
     pdHours: 8,
     standards: ['NGSS SEP 1'],

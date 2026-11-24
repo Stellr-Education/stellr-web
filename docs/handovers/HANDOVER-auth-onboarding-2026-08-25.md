@@ -9,8 +9,8 @@
 
 | Layer | State |
 |---|---|
-| **Clerk** `user_3ExgRb5mg9NtHXeDcCkcsx9k2U5` | primary = `david.shaw@stellreducation.org`, Google linked, `role: admin` |
-| **Clerk** duplicate `user_3HYQE4RuMMepzoW54dVv35nVWgV` | **deleted** |
+| **Clerk** `user_[owner-primary]` | primary = `david.shaw@stellreducation.org`, Google linked, `role: admin` |
+| **Clerk** duplicate `user_[owner-duplicate]` | **deleted** |
 | **`members`** row `3bfe6a67…` | live, `david.shaw@stellreducation.org`, membership `0000134` |
 | **Onboarding rules** | one shared module, `lib/onboarding-requirements.ts` |
 | **Age resolution** | one exact check for the whole route |
@@ -18,7 +18,7 @@
 ### Key identifiers
 
 ```
-Clerk user (real)     user_3ExgRb5mg9NtHXeDcCkcsx9k2U5
+Clerk user (real)     user_[owner-primary]
 Clerk FAPI domain     clerk.stellreducation.org
 Clerk instance size   33 users (only 1 was ever affected)
 members row (David)   3bfe6a67-8f23-4601-90f2-56b4c5139dfe

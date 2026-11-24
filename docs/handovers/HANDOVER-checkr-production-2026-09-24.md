@@ -6,7 +6,7 @@
 
 ## Where things stand
 
-Checkr approved the production account on 23 Sept at 22:55Z (Melissa Rivera, "Stellr Education/Checkr API Auth Review Checklist"). Live reports come with that approval, so nobody needs to email clients@checkr.com.
+Checkr approved the production account on 23 Sept at 22:55Z (Checkr staff, "Stellr Education/Checkr API Auth Review Checklist"). Live reports come with that approval, so nobody needs to email clients@checkr.com. <!-- pii-ok: vendor role mailbox -->
 
 **No application code changed.** The environment is chosen entirely by env vars (`lib/background-provider/checkr.ts:32`, `lib/env-guards.ts:61`).
 

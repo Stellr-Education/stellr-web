@@ -8,11 +8,11 @@ import { describeEnvelope, describeMissingEnvelope, roleLabel, showsSignerList, 
 // this module, so it is pinned here rather than left to the UI.
 
 const guardianOutstanding = {
-  name: 'Tamara Buk', email: 'tamarabuk7@gmail.com',
+  name: 'Pat Guardian', email: 'guardian@example.com',
   role_name: 'Guardian', status: 'sent', delivered_at: null,
 }
 const studentSigned = {
-  name: 'Leon Buk', email: 'gerybuki1@gmail.com',
+  name: 'Sam Student', email: 'student@example.com',
   role_name: 'Minor', status: 'completed', delivered_at: '2026-08-26T18:36:19Z',
 }
 
@@ -24,8 +24,8 @@ describe('describeEnvelope', () => {
     )
     expect(d.pill).toBe('partial')
     expect(d.label).toBe('Partially Complete · 1 of 2')
-    expect(d.detail).toBe('Awaiting Tamara Buk (parent/guardian) — never opened')
-    expect(d.waitingOn.map(r => r.email)).toEqual(['tamarabuk7@gmail.com'])
+    expect(d.detail).toBe('Awaiting Pat Guardian (parent/guardian) — never opened')
+    expect(d.waitingOn.map(r => r.email)).toEqual(['guardian@example.com'])
     expect(d.neverOpened).toHaveLength(1)
   })
 
@@ -38,7 +38,7 @@ describe('describeEnvelope', () => {
       ],
     )
     expect(d.pill).toBe('partial')
-    expect(d.detail).toBe('Awaiting Leon Buk (student)')
+    expect(d.detail).toBe('Awaiting Sam Student (student)')
     expect(d.waitingOn.map(r => r.role_name)).toEqual(['Minor'])
   })
 
@@ -47,7 +47,7 @@ describe('describeEnvelope', () => {
       { status: 'sent', signers_total: 2, signers_completed: 1 },
       [{ ...guardianOutstanding, delivered_at: '2026-09-01T09:00:00Z' }, studentSigned],
     )
-    expect(d.detail).toBe('Awaiting Tamara Buk (parent/guardian)')
+    expect(d.detail).toBe('Awaiting Pat Guardian (parent/guardian)')
   })
 
   it('lists both signers while nobody has signed', () => {
@@ -56,7 +56,7 @@ describe('describeEnvelope', () => {
       [guardianOutstanding, { ...studentSigned, status: 'sent', delivered_at: null }],
     )
     expect(d.pill).toBe('issued')
-    expect(d.detail).toBe('Awaiting Tamara Buk (parent/guardian) and Leon Buk (student) — never opened')
+    expect(d.detail).toBe('Awaiting Pat Guardian (parent/guardian) and Sam Student (student) — never opened')
   })
 
   it('reports a bounced address ahead of partial progress', () => {
@@ -67,7 +67,7 @@ describe('describeEnvelope', () => {
       [{ ...guardianOutstanding, status: 'autoresponded' }, studentSigned],
     )
     expect(d.pill).toBe('bounced')
-    expect(d.detail).toContain('Email bounced for Tamara Buk (parent/guardian)')
+    expect(d.detail).toContain('Email bounced for Pat Guardian (parent/guardian)')
     expect(d.waitingOn).toHaveLength(0)
     expect(d.bounced).toHaveLength(1)
   })
@@ -78,7 +78,7 @@ describe('describeEnvelope', () => {
       [{ ...guardianOutstanding, status: 'declined' }, studentSigned],
     )
     expect(d.pill).toBe('declined')
-    expect(d.detail).toBe('Declined by Tamara Buk (parent/guardian)')
+    expect(d.detail).toBe('Declined by Pat Guardian (parent/guardian)')
   })
 
   it('treats a coverage row as on-file', () => {

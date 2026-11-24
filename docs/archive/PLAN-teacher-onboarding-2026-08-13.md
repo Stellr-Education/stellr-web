@@ -140,9 +140,9 @@ same:
 | educator `2561d6c5…` (10 Aug) | teacher | **(none)** |
 | a mentor (9 Jul) | mentor | **(none)** |
 | bill.allen@stellreducation.org (8 Jul) | teacher | **(none)** |
-| david.michael.shaw+em@gmail.com (8 Jul) | teacher | **(none)** |
-| david.michael.shaw+rudi@gmail.com (7 Jul) | adult | **(none)** |
-| david.michael.shaw+william@gmail.com (7 Jul) | participant | **(none)** |
+| owner-personal+em@example.com (8 Jul) | teacher | **(none)** |
+| owner-personal+rudi@example.com (7 Jul) | adult | **(none)** |
+| owner-personal+william@example.com (7 Jul) | participant | **(none)** |
 
 (The 3 Jul accounts that *do* have roles were seeded by SQL; `david.shaw@` and `kieran` got theirs
 from the event-registration path, which calls the sync.)

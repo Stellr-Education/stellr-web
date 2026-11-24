@@ -44,7 +44,7 @@ export interface DeskGroup {
 export interface DeskFlags {
   /** e.g. "Not Issued", "Partially Complete · 1 of 2" — null when signed or not needed. */
   agreement: string | null
-  /** Who still has to sign, e.g. "Awaiting Tamara Buk (parent/guardian)". */
+  /** Who still has to sign, e.g. "Awaiting Pat Guardian (parent/guardian)". */
   agreementDetail: string | null
   /** e.g. "Invoice unpaid" — null when paid or free. */
   unpaid: string | null

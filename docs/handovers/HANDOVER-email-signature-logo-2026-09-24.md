@@ -4,7 +4,7 @@ TRACKER: Session 14. PR #179 (`749ccf6`), promoted in #183 (`e2a99e3`).
 
 ## What happened
 
-A recipient at UNLV (Rachel De Vera) replied to David's 24 Sept "UNLV + Stellr //
+A recipient at UNLV (a university contact) replied to David's 24 Sept "UNLV + Stellr //
 In-Curriculum Campaigns" email that his signature "looks broken". The email was
 written in Outlook for Mac and scheduled from Gmail web, because Outlook for Mac
 cannot schedule.

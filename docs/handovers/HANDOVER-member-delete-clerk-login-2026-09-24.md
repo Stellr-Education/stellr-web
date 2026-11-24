@@ -57,8 +57,8 @@ No migration.
 - **16.4** Earlier purges left logins behind. 54 member purges are archived (11 Jun to 24 Sept). 30 of them had a Clerk
   login when purged:
   - 2 are the deleted duplicates (16.1);
-  - 2 are the maintainer's own logins, re-linked to live members: `user_3Exea9xaLjGMtewubsfhr6obccp` →
-    `abaf744b…` (david.michael.shaw@gmail.com) and `user_3ExgRb5mg9NtHXeDcCkcsx9k2U5` → `3bfe6a67…`
+  - 2 are the maintainer's own logins, re-linked to live members: `user_[owner-second]` →
+    `abaf744b…` (owner-personal@example.com) and `user_[owner-primary]` → `3bfe6a67…`
     (david.shaw@stellreducation.org). **Never delete these two.**
   - Up to 26 may still exist in Clerk with no member behind them.
 
