@@ -1,0 +1,27 @@
+name: Dependency scope
+description: >-
+  run=true unless this is a pull request that changes no dependency file
+  (package.json, package-lock.json, osv-scanner.toml, .npmrc) and not the
+  security workflow or this action. Needs a checkout with the PR merge commit
+  and its first parent (fetch-depth 2). Anything unresolved counts as in scope.
+outputs:
+  run:
+    description: "'true' when the dependency checks should run"
+    value: ${{ steps.scope.outputs.run }}
+runs:
+  using: composite
+  steps:
+    - id: scope
+      shell: bash
+      env:
+        EVENT: ${{ github.event_name }}
+      run: |
+        run=true
+        if [ "$EVENT" = pull_request ]; then
+          files=$(git diff --name-only --no-renames HEAD^1 HEAD 2>/dev/null || true)
+          if [ -n "$files" ] && ! echo "$files" | grep -qE '^(package\.json|package-lock\.json|osv-scanner\.toml|\.npmrc)$|^\.github/workflows/security\.yml$|^\.github/actions/deps-scope/'; then
+            run=false
+            echo "No dependency file changed: dependency checks skipped." >> "$GITHUB_STEP_SUMMARY"
+          fi
+        fi
+        echo "run=$run" >> "$GITHUB_OUTPUT"

@@ -113,13 +113,28 @@ Production's migration comes later, in `promote`, before the code merges.
 
 ## Phase 3 — Let CI decide
 
-Push early and read `verify`:
+Open the PR as a **draft**, keep pushing to it while the work changes, and
+mark it ready once, when the session's work is finished:
 
 ```bash
 git push -u origin HEAD
-gh pr create --base dev --title "<title>" --body-file <file>
+gh pr create --draft --base dev --title "<title>" --body-file <file>
+# ... more commits and pushes while the work changes ...
+npm run check:pr              # what verify will run, locally, before marking ready
+gh pr ready <n>               # runs the full CI, once
 gh pr checks <n> --watch      # in a terminal; the desktop app waits differently (below)
 ```
+
+A draft's pushes run only the PII lint and the gates: `changes` skips the
+build and every test, so `verify` and `e2e` pass without testing anything.
+That is safe only because a draft cannot merge. `gh pr ready` fires
+`ready_for_review`, which runs everything. A fix pushed after that runs the
+full CI again, so finish the work before marking ready. Wait on, and read, the
+run after `gh pr ready`, never a draft's.
+
+WHY (24 Nov 2026, private-repo plan): CI runs on self-hosted AWS machines
+paid from a fixed credit, and each PR ran the full CI about twice. Marking
+ready once cuts the paid runs without dropping a gate.
 
 `verify` runs the PII lint, typecheck, design-system lint, migration-name lint,
 the unit suite, and a full build.
