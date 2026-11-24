@@ -270,3 +270,14 @@ describe('sendEmail tags (email events plan, Workstream A)', () => {
     ])
   })
 })
+
+describe('SES standby (email plan F)', () => {
+  it('holds community mail in the outbox while EMAIL_PROVIDER=ses, and sends nothing', async () => {
+    const fake = setup()
+    const { sendEmail } = await load()
+    vi.stubEnv('EMAIL_PROVIDER', 'ses')
+    expect(await sendEmail({ to: 'teacher@example.test', ...msg, kind: 'marketing' })).toEqual({ id: null, queued: true })
+    expect(fetchMock).not.toHaveBeenCalled()
+    expect(fake.tables.email_outbox).toMatchObject([{ kind: 'marketing', reason: 'provider_error' }])
+  })
+})

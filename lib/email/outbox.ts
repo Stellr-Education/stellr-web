@@ -1,10 +1,10 @@
 import { createHash } from 'node:crypto'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { canSend, recordSend, type EmailKind } from '@/lib/email-budget'
+import { activeTransport, heldOnStandby } from '@/lib/email/provider'
 import { lookupSuppressions, normaliseEmail, suppressionBlocks } from '@/lib/email/suppressions'
 import {
   EmailSendError,
-  resendTransport,
   sendRespectingRateLimit,
   type EmailTransport,
   type OutgoingEmail,
@@ -293,7 +293,7 @@ export async function drainEmailOutbox(
   const run = opts.run ?? unrecordedRun
   const result: DrainResult = { sent: 0, failed: 0, suppressed: 0, waiting: 0, oldestWaitingHours: null, stoppedFor: null }
   const apiKey = opts.apiKey ?? process.env.RESEND_API_KEY
-  const transport = opts.transport ?? (apiKey ? resendTransport(apiKey) : null)
+  const transport = opts.transport ?? activeTransport(apiKey)
   if (!transport) {
     console.warn('[email-outbox] No RESEND_API_KEY — not draining')
     return { ...(await finish(db, result, now)), ledger: {} }
@@ -383,6 +383,8 @@ async function drainTenant(
     // Marketing waits behind the transactional reserve, exactly as it does live.
     // Rows are in priority order, so once marketing is refused only marketing is left.
     if (row.kind === 'marketing' && !(await canSend('marketing', db, now()))) { out.stoppedFor = 'budget'; break }
+    // Email plan F: community mail waits for Resend while the SES standby is on.
+    if (heldOnStandby(row.kind)) { out.stoppedFor = 'budget'; break }
 
     const { data: claimed } = await db
       .from('email_outbox')

@@ -5,7 +5,8 @@ import { supabaseServer } from '@/lib/supabase'
 import { canSend, recordSend, type EmailKind } from '@/lib/email-budget'
 import { GUARANTEE_RECEIPT_LINE } from '@/lib/guarantee'
 import { maskEmail } from '@/lib/utils'
-import { EmailSendError, resendTransport, sendRespectingRateLimit, type OutgoingEmail } from '@/lib/email/transport'
+import { EmailSendError, sendRespectingRateLimit, type OutgoingEmail } from '@/lib/email/transport'
+import { activeTransport, heldOnStandby } from '@/lib/email/provider'
 import { deferReason, enqueueEmail, type OutboxReason } from '@/lib/email/outbox'
 import { lookupSuppressions, normaliseEmail, suppressionBlocks } from '@/lib/email/suppressions'
 import { recordUsage } from '@/lib/usage/record'
@@ -262,10 +263,17 @@ export async function sendEmail({ to, from, cc, replyTo, subject, html, text, at
     throw new EmailSendError('Daily email budget reserved for transactional mail is exhausted', 429)
   }
 
+  // Email plan F: while the SES standby is on, community mail waits in the outbox for Resend.
+  if (heldOnStandby(kind)) {
+    const queued = await queue('provider_error', 'held while the SES standby is on')
+    if (queued) return queued
+    throw new EmailSendError('Community mail waits while the SES standby is on', 503, 'held_on_standby')
+  }
+
   let sent
   try {
     // A per-second rate limit is waited out here; the daily quota is not.
-    sent = await sendRespectingRateLimit(resendTransport(RESEND_API_KEY), message)
+    sent = await sendRespectingRateLimit(activeTransport(RESEND_API_KEY)!, message)
   } catch (err) {
     const reason = deferReason(err)
     if (reason) {
