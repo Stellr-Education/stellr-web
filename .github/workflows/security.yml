@@ -100,14 +100,24 @@ jobs:
             package.json
             package-lock.json
             osv-scanner.toml
-            .github/actions/deps-scope/
           sparse-checkout-cone-mode: false
 
       # A PR that changes no dependency file cannot add an advisory, so the job
       # finishes green in seconds (the required check is still satisfied). The
       # nightly and manual runs always scan. Anything unresolved scans.
       - id: scope
-        uses: ./.github/actions/deps-scope
+        env:
+          EVENT: ${{ github.event_name }}
+        run: |
+          run=true
+          if [ "$EVENT" = pull_request ]; then
+            files=$(git diff --name-only --no-renames HEAD^1 HEAD 2>/dev/null || true)
+            if [ -n "$files" ] && ! echo "$files" | grep -qE '^(package\.json|package-lock\.json|osv-scanner\.toml|\.npmrc)$|^\.github/workflows/security\.yml$'; then
+              run=false
+              echo "No dependency file changed: dependency checks skipped." >> "$GITHUB_STEP_SUMMARY"
+            fi
+          fi
+          echo "run=$run" >> "$GITHUB_OUTPUT"
 
       - name: Scan package-lock.json
         if: steps.scope.outputs.run == 'true'
@@ -195,7 +205,18 @@ jobs:
 
       # As in osv-scanner: only a PR that changes a dependency file is checked.
       - id: scope
-        uses: ./.github/actions/deps-scope
+        env:
+          EVENT: ${{ github.event_name }}
+        run: |
+          run=true
+          if [ "$EVENT" = pull_request ]; then
+            files=$(git diff --name-only --no-renames HEAD^1 HEAD 2>/dev/null || true)
+            if [ -n "$files" ] && ! echo "$files" | grep -qE '^(package\.json|package-lock\.json|osv-scanner\.toml|\.npmrc)$|^\.github/workflows/security\.yml$'; then
+              run=false
+              echo "No dependency file changed: dependency checks skipped." >> "$GITHUB_STEP_SUMMARY"
+            fi
+          fi
+          echo "run=$run" >> "$GITHUB_OUTPUT"
 
       - if: steps.scope.outputs.run == 'true'
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
