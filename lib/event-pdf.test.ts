@@ -91,7 +91,7 @@ function textShows(pdf: Uint8Array): number {
 
 describe('generateCertificatesPdf', () => {
   it('draws one page per recipient and no text but the name', async () => {
-    const pdf = await generateCertificatesPdf([{ name: 'Daniel Ahaiwe' }, { name: 'Leon Buk' }], 'us_letter', await artwork())
+    const pdf = await generateCertificatesPdf([{ name: 'Alex Example' }, { name: 'Sam Student' }], 'us_letter', await artwork())
     const doc = await PDFDocument.load(pdf)
     expect(doc.getPageCount()).toBe(2)
     expect(doc.getPage(0).getSize()).toEqual({ width: LETTER[0], height: LETTER[1] })
@@ -102,7 +102,7 @@ describe('generateCertificatesPdf', () => {
   })
 
   it('renders A4 at A4 size', async () => {
-    const doc = await PDFDocument.load(await generateCertificatesPdf([{ name: 'Leon Buk' }], 'a4', await artwork()))
+    const doc = await PDFDocument.load(await generateCertificatesPdf([{ name: 'Sam Student' }], 'a4', await artwork()))
     expect(doc.getPage(0).getSize()).toEqual({ width: A4[0], height: A4[1] })
   })
 })

@@ -32,7 +32,7 @@ import { notifyMember } from '@/lib/notify'
 function seed(extra: Record<string, Record<string, unknown>[]> = {}) {
   current = fakeDb({
     participants: [{
-      id: 'p1', registration_id: 'r1', email: 'daksha@example.com', first_name: 'Daksha', last_name: 'R',
+      id: 'p1', registration_id: 'r1', email: 'riya@example.com', first_name: 'Riya', last_name: 'R',
       member_id: 'm1', individual_payment_status: 'paid', stripe_payment_intent_id: 'pi_1',
     }],
     registrations: [{ id: 'r1', event_slug: 'colorado', event_title: 'Colorado', status: 'confirmed', stripe_payment_intent_id: null }],

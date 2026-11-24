@@ -53,6 +53,7 @@ export const BASE_GUARDS: Record<GuardKind, Record<string, readonly string[]>> =
     verifyConnectHmac: ['lib/docusign'],
     verifyWebhook: ['lib/background-provider'],
     verifyPrintfulWebhook: ['lib/store/printful'],
+    verifySnsMessage: ['lib/email/sns'],
   },
   cron: { guardCron: ['lib/cron'] },
   rate_limit: { checkRateLimit: ['lib/rate-limit'] },

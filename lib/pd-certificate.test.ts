@@ -5,7 +5,7 @@ import { DEFAULT_PD_LAYOUT, formatActivityDate, parsePdLayout, pdArtworkTexts, p
 import { pdStandardCodes } from './pd-standards'
 
 const FIELDS: PdCertificateFields = {
-  recipientName: 'Maria Gordon',
+  recipientName: 'Sample Educator',
   hours: 8,
   eventTitle: 'Sample STEM Competition',
   activityDate: '2026-10-04',
@@ -20,7 +20,7 @@ describe('pdCertificateLines', () => {
   const lines = pdCertificateLines(FIELDS)
 
   it('puts the hours, event, day and place on the certificate', () => {
-    expect(lines.name).toBe('Maria Gordon')
+    expect(lines.name).toBe('Sample Educator')
     expect(lines.statement).toBe('completed 8 hours of professional development supporting')
     expect(lines.event).toBe('Sample STEM Competition')
     expect(lines.when).toBe('October 4, 2026 · Sample High School, Springfield, CO')
@@ -85,7 +85,7 @@ describe('renderPdCertificatePdf', () => {
 describe('pdArtworkTexts', () => {
   it('fills the four gaps in the Cowork front', () => {
     expect(pdArtworkTexts(FIELDS)).toEqual({
-      name: 'Maria Gordon',
+      name: 'Sample Educator',
       location: 'at Sample High School, Springfield, CO',
       date: 'on October 4, 2026',
       hours: '8',

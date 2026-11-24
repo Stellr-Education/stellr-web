@@ -11,9 +11,23 @@ on:
   workflow_dispatch:
   pull_request:
     branches: [main, dev]
+    # ready_for_review: a draft PR skips the build and tests (see `changes`),
+    # so marking it ready runs them.
+    types: [opened, synchronize, reopened, ready_for_review]
   push:
     branches: [main, dev]
 
+# Where jobs run (private-repo plan, 23 Nov 2026). Unset, every job runs on
+# GitHub's ubuntu-latest. Set the repository variable CI_RUNS_ON to
+# ["self-hosted","stellr-ci"] to run them on the AWS spot runners
+# (ops/ci-runners); unset it to roll back. Only once the repository is private:
+# on a public repository a fork's pull request could run code on those
+# machines. The same variable drives security.yml, idor-canary.yml,
+# mutation.yml and e2e-nightly.yml; CI_RUNS_ON_SMALL (["self-hosted",
+# "stellr-ci-small"]: 2 vCPU / 8 GiB) does the same for jobs that do not build
+# the app. The gate and scope jobs (changes, pii, verify, e2e, the dependency
+# scope) stay on GitHub-hosted runners: a whole machine per one-minute job
+# would cost more than the minutes. prod-migrate.yml never uses either.
 concurrency:
   group: ci-${{ github.ref }}
   # Only a PR's own newer push cancels its run. A push to dev or main runs to
@@ -107,6 +121,7 @@ jobs:
       - id: tested
         env:
           EVENT: ${{ github.event_name }}
+          DRAFT: ${{ github.event.pull_request.draft == true }}
           CODE: ${{ steps.diff.outputs.code }}
           TREE: ${{ steps.diff.outputs.tree }}
           REPO: ${{ github.repository }}
@@ -114,6 +129,13 @@ jobs:
         run: |
           e2e=true
           [ "$CODE" = false ] && e2e=false
+          # A draft PR cannot merge, so its pushes skip the build and tests, as a
+          # docs-only change does; they run once it is marked ready for review
+          # (private-repo plan, 24 Nov 2026). The PII lint still runs.
+          if [ "$DRAFT" = true ]; then
+            e2e=false
+            echo "Draft pull request: build and tests run when it is marked ready for review." | tee -a "$GITHUB_STEP_SUMMARY"
+          fi
           if [ "$EVENT" = push ] && [ "$e2e" = true ]; then
             runs=$(gh api "repos/$REPO/actions/artifacts?name=e2e-passed-tree-$TREE&per_page=30" \
               --jq '.artifacts[] | select(.expired == false and .workflow_run.repository_id == .workflow_run.head_repository_id) | .workflow_run.id' \
@@ -133,22 +155,56 @@ jobs:
           fi
           echo "e2e=$e2e" >> "$GITHUB_OUTPUT"
 
+  # The PII lint on its own, so it runs on every change, docs-only ones
+  # included, without the build (private-repo plan, 23 Nov 2026: docs-only PRs
+  # and already-tested pushes no longer run unit or verify-build). The same lint
+  # stays in verify-build, so `npm run check:pr` still mirrors that job.
+  pii:
+    name: pii
+    runs-on: ubuntu-slim
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          filter: blob:none
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24.x
+
+      - name: PII lint (added lines in docs)
+        run: npm run lint:pii
+
   # Required check. Unit tests have a job of their own so they run alongside the
   # build, and this job keeps the single name branch protection asks for. A
-  # required check that is SKIPPED counts as passed, so this must always run, and
-  # it passes only when both jobs did.
+  # required check that is SKIPPED counts as passed, so this must always run.
+  # It passes when pii passed and either both unit and verify-build passed, or
+  # `changes` proved there is nothing new to build (a docs-only change, or a
+  # push whose tree already passed) and both were skipped for that reason.
+  # Fails closed: a failed or missing `changes` output runs both jobs.
   verify:
     name: verify
-    needs: [verify-build, unit]
+    needs: [changes, pii, verify-build, unit]
     if: always()
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-slim
     timeout-minutes: 2
     steps:
       - env:
+          PII: ${{ needs.pii.result }}
           BUILD: ${{ needs.verify-build.result }}
           UNIT: ${{ needs.unit.result }}
+          NEEDED: ${{ needs.changes.outputs.e2e }}
         run: |
-          echo "verify-build: $BUILD; unit: $UNIT"
+          echo "pii: $PII; verify-build: $BUILD; unit: $UNIT; build needed: $NEEDED"
+          if [ "$PII" != success ]; then
+            echo "::error::verify needs the PII lint to pass (pii: $PII)."
+            exit 1
+          fi
+          if [ "$NEEDED" = false ] && [ "$BUILD" = skipped ] && [ "$UNIT" = skipped ]; then
+            echo "Nothing new to build: docs-only, or a tree that already passed (see the changes job)."
+            exit 0
+          fi
           if [ "$BUILD" != success ] || [ "$UNIT" != success ]; then
             echo "::error::verify needs verify-build and unit to pass (verify-build: $BUILD, unit: $UNIT)."
             exit 1
@@ -156,7 +212,9 @@ jobs:
 
   unit:
     name: unit
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(vars.CI_RUNS_ON_SMALL || '"ubuntu-latest"') }}
+    needs: [changes]
+    if: ${{ !cancelled() && needs.changes.outputs.e2e != 'false' }}
     timeout-minutes: 15
     # The same placeholders as verify-build, so no test sees a different environment.
     env: &verify-env
@@ -195,7 +253,9 @@ jobs:
 
   verify-build:
     name: verify-build
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(vars.CI_RUNS_ON || '"ubuntu-latest"') }}
+    needs: [changes]
+    if: ${{ !cancelled() && needs.changes.outputs.e2e != 'false' }}
     timeout-minutes: 15
     env: *verify-env
 
@@ -318,7 +378,7 @@ jobs:
     name: e2e
     needs: [changes, verify, e2e-tests, storybook, tenant-host-routing]
     if: always()
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-slim
     timeout-minutes: 3
     steps:
       - id: gate
@@ -363,7 +423,7 @@ jobs:
 
   e2e-tests:
     name: e2e-tests
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(vars.CI_RUNS_ON || '"ubuntu-latest"') }}
     needs: [verify, changes]
     # Fails closed: only an explicit false skips. If `changes` itself fails or
     # times out, its output is empty and e2e runs — on 5 Oct a timed-out `changes`
@@ -542,7 +602,7 @@ jobs:
   # the dev keys. Still required, through the e2e gate job.
   storybook:
     name: storybook
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(vars.CI_RUNS_ON || '"ubuntu-latest"') }}
     needs: [verify, changes]
     if: ${{ !cancelled() && needs.verify.result == 'success' && needs.changes.outputs.e2e != 'false' }}
     timeout-minutes: 15
@@ -576,9 +636,11 @@ jobs:
   # from npm at run time, does not.
   lighthouse:
     name: lighthouse
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(vars.CI_RUNS_ON || '"ubuntu-latest"') }}
     needs: [verify, changes]
-    if: ${{ !cancelled() && needs.verify.result == 'success' && needs.changes.outputs.code != 'false' }}
+    # Report-only, so nightly only: e2e-nightly.yml dispatches this workflow on
+    # dev each night (private-repo plan, 23 Nov 2026).
+    if: ${{ !cancelled() && github.event_name == 'workflow_dispatch' && needs.verify.result == 'success' && needs.changes.outputs.code != 'false' }}
     timeout-minutes: 15
     env: *e2e-env
     steps:
@@ -641,7 +703,7 @@ jobs:
   # DB_CI_ENFORCE=true, then add `db` to the required checks on dev and main.
   db:
     name: db
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(vars.CI_RUNS_ON_SMALL || '"ubuntu-latest"') }}
     timeout-minutes: 15
     continue-on-error: ${{ vars.DB_CI_ENFORCE != 'true' }}
     env:
@@ -659,17 +721,25 @@ jobs:
           filter: blob:none
           sparse-checkout: supabase
 
-      # A PR that touches neither supabase/ nor this workflow cannot change the
-      # database, so the job finishes green in seconds (a required check is then
-      # still satisfied). Pushes to dev/main and manual runs always build it.
+      # A PR or push that touches neither supabase/ nor this workflow cannot
+      # change the database, so the job finishes green in seconds (a required
+      # check is then still satisfied). Manual runs, including the nightly run on
+      # dev, and any push whose previous commit cannot be resolved always build it.
       # Anything unresolved counts as in scope.
       - id: scope
         env:
           EVENT: ${{ github.event_name }}
+          BEFORE: ${{ github.event.before }}
         run: |
           run=true
+          files=""
           if [ "$EVENT" = pull_request ]; then
             files=$(git diff --name-only --no-renames HEAD^1 HEAD || true)
+          elif [ "$EVENT" = push ] && [ -n "${BEFORE//0/}" ] \
+               && git cat-file -e "$BEFORE^{commit}" 2>/dev/null; then
+            files=$(git diff --name-only --no-renames "$BEFORE" HEAD || true)
+          fi
+          if [ -n "$files" ]; then
             if [ -n "$files" ] && ! echo "$files" | grep -qE '^supabase/|^\.github/workflows/ci\.yml$|^lib/database\.generated\.ts$'; then
               run=false
               echo "No change under supabase/, to ci.yml or to lib/database.generated.ts: database checks skipped." >> "$GITHUB_STEP_SUMMARY"
@@ -914,7 +984,7 @@ jobs:
   # not start.
   tenant-db:
     name: tenant-db
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(vars.CI_RUNS_ON_SMALL || '"ubuntu-latest"') }}
     timeout-minutes: 15
     env:
       SUPABASE_CLI_VERSION: 2.105.0
@@ -927,18 +997,25 @@ jobs:
           fetch-depth: 0
           filter: blob:none
 
-      # A PR that touches none of what this job tests finishes green in seconds.
-      # Pushes to dev/main and manual runs always run it. A converted area's
+      # A PR or push that touches none of what this job tests finishes green in
+      # seconds. Manual runs, including the nightly run on dev, always run it. A converted area's
       # module (lib/tenancy/db-callers.ts names each) is listed here with it,
       # and so is every route that imports that module, since a route chooses
       # the tenantId it passes (test/ci-tenant-db-required.test.ts holds both).
       - id: scope
         env:
           EVENT: ${{ github.event_name }}
+          BEFORE: ${{ github.event.before }}
         run: |
           run=true
+          files=""
           if [ "$EVENT" = pull_request ]; then
             files=$(git diff --name-only --no-renames HEAD^1 HEAD || true)
+          elif [ "$EVENT" = push ] && [ -n "${BEFORE//0/}" ] \
+               && git cat-file -e "$BEFORE^{commit}" 2>/dev/null; then
+            files=$(git diff --name-only --no-renames "$BEFORE" HEAD || true)
+          fi
+          if [ -n "$files" ]; then
             if [ -n "$files" ] && ! echo "$files" | grep -qE '^supabase/|^lib/tenancy/|^lib/events/admin-config\.ts$|^lib/events/tenant-facade\.ts$|^lib/events/admin-volunteers\.ts$|^app/api/admin/events/\[slug\]/volunteers/route\.ts$|^lib/event-emails/send\.ts$|^lib/admin-digest\.ts$|^lib/training-reminders\.ts$|^lib/compliance-notify\.ts$|^app/api/cron/(event-emails|group-invoice-sync)/route\.ts$|^app/api/admin/events/\[slug\]/(companies|offerings|merch/commit|credentials)/route\.ts$|^test/integration/|^scripts/ci-db-build\.sh$|^scripts/tenant-db-canary\.ts$|^vitest\.integration\.config\.mts$|^package(-lock)?\.json$|^\.github/workflows/ci\.yml$|^lib/team-profile/(admin-data|assign|override|store)\.ts$|^app/\(stellr\)/\(admin\)/admin/competitions/\[slug\]/page\.tsx$|^lib/events/admin-credentials\.ts$|^app/api/admin/credentials/\[id\]/revoke/route\.ts$|^lib/survey/admin(-data)?\.ts$|^app/api/admin/events/\[slug\]/survey/route\.ts$|^lib/support/(read-view|break-glass-actions)\.ts$|^app/api/admin/platform/support/company-name/route\.ts$|^app/\(stellr\)/\(admin\)/admin/platform/support/page\.tsx$'; then
               run=false
               echo "No change to the database, lib/tenancy or this job: tenant-db skipped." >> "$GITHUB_STEP_SUMMARY"
@@ -1007,9 +1084,11 @@ jobs:
   # and videos of signed-in sessions are not needed to compare two runs.
   e2e-local:
     name: e2e-local
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(vars.CI_RUNS_ON || '"ubuntu-latest"') }}
     needs: [verify, changes]
-    if: ${{ !cancelled() && needs.verify.result == 'success' && needs.changes.outputs.e2e != 'false' }}
+    # Report-only, so nightly only: e2e-nightly.yml dispatches this workflow on
+    # dev each night (private-repo plan, 23 Nov 2026).
+    if: ${{ !cancelled() && github.event_name == 'workflow_dispatch' && needs.verify.result == 'success' && needs.changes.outputs.e2e != 'false' }}
     continue-on-error: true
     # 5 more than `e2e`, for the stack, so a slow runner reads as a result here.
     timeout-minutes: 25
@@ -1166,7 +1245,7 @@ jobs:
   # No report artifact: the repo's artifacts are public.
   canary-local:
     name: canary-local
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(vars.CI_RUNS_ON || '"ubuntu-latest"') }}
     needs: [verify, changes]
     if: ${{ !cancelled() && needs.verify.result == 'success' && needs.changes.outputs.e2e != 'false' }}
     continue-on-error: ${{ vars.CANARY_LOCAL_ENFORCE != 'true' }}
@@ -1308,7 +1387,7 @@ jobs:
   # the stub's URL is inlined at build.
   tenant-host-routing:
     name: tenant-host-routing
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(vars.CI_RUNS_ON || '"ubuntu-latest"') }}
     needs: [verify, changes]
     if: ${{ !cancelled() && needs.verify.result == 'success' && needs.changes.outputs.e2e != 'false' }}
     # Holds room for a browser install from a slow mirror: see the action.

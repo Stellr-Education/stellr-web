@@ -61,8 +61,8 @@ beforeEach(() => {
   writes.length = 0
   requireEventRoute.mockClear()
   state.students = [
-    { id: 'p1', first_name: 'Daniel', last_name: 'Ahaiwe', company_id: 'co-1' },
-    { id: 'p2', first_name: 'Leon', last_name: 'Buk', company_id: 'co-1' },
+    { id: 'p1', first_name: 'Alex', last_name: 'Example', company_id: 'co-1' },
+    { id: 'p2', first_name: 'Sam', last_name: 'Brook', company_id: 'co-1' },
     { id: 'p3', first_name: 'Ava', last_name: 'Zed', company_id: 'co-2' },
   ]
   state.assignments = []
@@ -181,7 +181,7 @@ describe('/api/admin/events/[slug]/awards — no-shows', () => {
 
   beforeEach(() => {
     state.students = [
-      { id: 'p1', first_name: 'Daniel', last_name: 'Ahaiwe', company_id: 'co-1', checked_in_at: '2026-11-07T15:00:00Z' },
+      { id: 'p1', first_name: 'Alex', last_name: 'Example', company_id: 'co-1', checked_in_at: '2026-11-07T15:00:00Z' },
       { id: 'p3', first_name: 'Ava', last_name: 'Zed', company_id: 'co-2', checked_in_at: '2026-11-07T15:05:00Z' },
       // Registered, never checked in, never placed: the Nevada "No company" row.
       { id: 'p9', first_name: 'Nora', last_name: 'Show', company_id: null, checked_in_at: null },

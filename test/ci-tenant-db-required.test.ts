@@ -24,7 +24,7 @@ const job = jobBlock('tenant-db')
 
 describe('ci.yml tenant-db (required)', () => {
   it('has no continue-on-error, on the job or on any step', () => {
-    expect(job).toMatch(/runs-on: ubuntu-latest/)
+    expect(job).toMatch(/runs-on: \$\{\{ fromJSON\(vars\.CI_RUNS_ON_SMALL \|\| '"ubuntu-latest"'\) \}\}/)
     expect(job).not.toMatch(/continue-on-error/)
   })
 

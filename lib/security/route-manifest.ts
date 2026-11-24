@@ -410,6 +410,7 @@ export const ROUTE_MANIFEST: Record<string, RouteClass> = {
   'app/api/webhooks/motion/route.ts': 'webhook',
   'app/api/webhooks/recording/route.ts': 'webhook',
   'app/api/webhooks/resend/route.ts': 'webhook',
+  'app/api/webhooks/ses/route.ts': 'webhook',
   'app/api/webhooks/sanity/route.ts': 'webhook',
   'app/api/white-paper/route.ts': 'public',
 

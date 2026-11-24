@@ -46,7 +46,7 @@ To resume verification: get an admin session from the owner, then use the **Phas
 ---
 
 ## 4. Test accounts (in PROD)
-10 personas seeded via `scripts/seed-test-accounts.ts`: `david.michael.shaw+<role>@gmail.com` for role ∈ {subscriber, student, student_manager, teacher, parent, donor, mentor, coach, event_manager, admin}. Password = the `SEED_PASSWORD` the owner set (not stored here). All email → one Gmail inbox (plus-addressing). ⚠️ **Delete all 10 (Supabase members + Clerk users) before the August go-live.**
+10 personas seeded via `scripts/seed-test-accounts.ts`: `owner-personal+<role>@example.com` for role ∈ {subscriber, student, student_manager, teacher, parent, donor, mentor, coach, event_manager, admin}. Password = the `SEED_PASSWORD` the owner set (not stored here). All email → one Gmail inbox (plus-addressing). ⚠️ **Delete all 10 (Supabase members + Clerk users) before the August go-live.**
 
 ---
 

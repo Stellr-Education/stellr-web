@@ -352,7 +352,7 @@ function writePreviews(families: Family[]) {
   for (const family of families) {
     const vars = memberMergeVars(
       {
-        id: 'preview', first_name: 'Michelle', last_name: 'Matlock',
+        id: 'preview', first_name: 'Preview', last_name: 'Teacher',
         email: 'preview@example.org', membership_id: '0000127',
         tier_name: tierNamesFor(family.key)[0],
       },

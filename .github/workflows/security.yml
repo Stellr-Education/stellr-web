@@ -20,12 +20,17 @@ name: Security
 # Every action and container is pinned to a commit SHA or image digest; the
 # tag beside it is for humans. Bump by resolving the new tag to its SHA/digest.
 
+# No push trigger (private-repo plan, 23 Nov 2026): required checks gate pull
+# requests, and branch protection stops direct pushes to dev and main, so a push
+# run gated nothing. A nightly run on main instead catches advisories published
+# against a lockfile that has not changed.
 on:
   workflow_dispatch:
   pull_request:
     branches: [main, dev]
-  push:
-    branches: [main, dev]
+  schedule:
+    # 02:47 UTC daily, off the hour and away from the other nightly runs.
+    - cron: '47 2 * * *'
 
 concurrency:
   group: security-${{ github.ref }}
@@ -40,7 +45,7 @@ jobs:
   # container. No registry rules and no login, so no code leaves the runner;
   # --metrics=off stops the anonymous usage ping.
   semgrep:
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(vars.CI_RUNS_ON_SMALL || '"ubuntu-latest"') }}
     timeout-minutes: 15
     continue-on-error: ${{ vars.SEMGREP_ENFORCE != 'true' }}
     container:
@@ -84,19 +89,38 @@ jobs:
 
   # Known vulnerabilities in the locked dependency tree (OSV.dev data).
   osv-scanner:
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(vars.CI_RUNS_ON_SMALL || '"ubuntu-latest"') }}
     timeout-minutes: 10
     continue-on-error: ${{ vars.OSV_ENFORCE != 'true' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          fetch-depth: 2
           sparse-checkout: |
             package.json
             package-lock.json
             osv-scanner.toml
           sparse-checkout-cone-mode: false
 
+      # A PR that changes no dependency file cannot add an advisory, so the job
+      # finishes green in seconds (the required check is still satisfied). The
+      # nightly and manual runs always scan. Anything unresolved scans.
+      - id: scope
+        env:
+          EVENT: ${{ github.event_name }}
+        run: |
+          run=true
+          if [ "$EVENT" = pull_request ]; then
+            files=$(git diff --name-only --no-renames HEAD^1 HEAD 2>/dev/null || true)
+            if [ -n "$files" ] && ! echo "$files" | grep -qE '^(package\.json|package-lock\.json|osv-scanner\.toml|\.npmrc)$|^\.github/workflows/security\.yml$'; then
+              run=false
+              echo "No dependency file changed: dependency checks skipped." >> "$GITHUB_STEP_SUMMARY"
+            fi
+          fi
+          echo "run=$run" >> "$GITHUB_OUTPUT"
+
       - name: Scan package-lock.json
+        if: steps.scope.outputs.run == 'true'
         env:
           IMAGE: ghcr.io/google/osv-scanner@sha256:4f3b7e2c64b9d38a5febc5a7e4a3dfef1d1362f726dea7a2ef4762b46469fcd0 # v2.7.0
         run: |
@@ -112,7 +136,7 @@ jobs:
   # Secrets in the commits this change adds — not the whole history, which
   # holds ~1 GB of old video blobs (see ci.yml `changes`).
   gitleaks:
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(vars.CI_RUNS_ON_SMALL || '"ubuntu-latest"') }}
     timeout-minutes: 10
     continue-on-error: ${{ vars.GITLEAKS_ENFORCE != 'true' }}
     steps:
@@ -172,17 +196,36 @@ jobs:
   # same tree resolves every run. Keep the flags identical to `lint:lockfile`
   # in package.json (test/security-workflows.test.ts checks).
   supply-chain:
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(vars.CI_RUNS_ON_SMALL || '"ubuntu-latest"') }}
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 2
 
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+      # As in osv-scanner: only a PR that changes a dependency file is checked.
+      - id: scope
+        env:
+          EVENT: ${{ github.event_name }}
+        run: |
+          run=true
+          if [ "$EVENT" = pull_request ]; then
+            files=$(git diff --name-only --no-renames HEAD^1 HEAD 2>/dev/null || true)
+            if [ -n "$files" ] && ! echo "$files" | grep -qE '^(package\.json|package-lock\.json|osv-scanner\.toml|\.npmrc)$|^\.github/workflows/security\.yml$'; then
+              run=false
+              echo "No dependency file changed: dependency checks skipped." >> "$GITHUB_STEP_SUMMARY"
+            fi
+          fi
+          echo "run=$run" >> "$GITHUB_OUTPUT"
+
+      - if: steps.scope.outputs.run == 'true'
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24.x
           cache: npm
 
       - name: lockfile-lint (pinned, not from the lockfile under test)
+        if: steps.scope.outputs.run == 'true'
         working-directory: ${{ runner.temp }}
         env:
           NPM_CONFIG_BEFORE: '2026-10-21'
@@ -193,9 +236,11 @@ jobs:
 
       # Only after the lockfile passed: --ignore-scripts, so no install script
       # runs even then.
-      - run: npm ci --ignore-scripts
+      - if: steps.scope.outputs.run == 'true'
+        run: npm ci --ignore-scripts
 
       - name: npm audit signatures
+        if: steps.scope.outputs.run == 'true'
         run: npm audit signatures
 
   # Plain-English report on the migrations a PR adds or changes, with a
@@ -203,7 +248,7 @@ jobs:
   # the job summary; a flag raises a warning annotation, never a failure.
   migration-report:
     if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-slim
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

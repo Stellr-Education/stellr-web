@@ -337,6 +337,17 @@ export async function recordEmailEvent(
 ): Promise<{ recorded: boolean; type: EmailEventType | null }> {
   const mapped = mapResendEvent(event)
   if (!mapped) return { recorded: false, type: null }
+  return recordMappedEmailEvent(db, mapped)
+}
+
+/**
+ * Store one already-mapped event (Resend's, or Amazon SES's from the standby's
+ * SNS webhook, app/api/webhooks/ses). Idempotent on the unique key.
+ */
+export async function recordMappedEmailEvent(
+  db: SupabaseClient,
+  mapped: MappedEmailEvent,
+): Promise<{ recorded: boolean; type: EmailEventType | null }> {
   const ctx = await resolveEmailContext(db, mapped)
   const row = toRow(mapped, ctx)
 

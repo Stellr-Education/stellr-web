@@ -193,7 +193,7 @@ export async function createConsentEnvelope(p: EnvelopeParams): Promise<CreatedE
   // One inbox for both signatures (a parent who entered their own address for
   // the student — common for younger students with no email of their own).
   // Sent concurrently, both DocuSign emails land side by side and the parent
-  // can't finish both roles from one inbox (Robert Blake, 28 Sept 2026, and the
+  // can't finish both roles from one inbox (a guardian, 28 Sept 2026, and the
   // earlier prod case below). Sequenced instead: the guardian signs first, and
   // only then does DocuSign send the student's copy as its own email.
   const sharedInbox = !!p.minorEmail && sameAddress(p.minorEmail, p.guardianEmail)

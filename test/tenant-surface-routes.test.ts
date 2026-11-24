@@ -70,7 +70,8 @@ const MANIFEST_CLASS_COUNTS: Record<RouteClass, number> = {
   // +2 on 17 Nov 2026: register/addons-pay and register/[slug]/addons/pay/[token] (event add-ons, denied on tenant hosts)
   // +1 on 20 Nov 2026: the tenant tree's /sign/email page (BOUNCE)
   public: 142,
-  webhook: 12,
+  // +1 on 24 Nov 2026: webhooks/ses, the SES standby's SNS events (email plan F)
+  webhook: 13,
   // +1 on 22 Nov 2026: cron/usage-rollup (S6-USE).
   // +1 on 23 Nov 2026: cron/email-events-retention (email plan, Workstream C).
   // +1 on 24 Nov 2026: cron/email-reputation (email plan, Workstream E).
@@ -108,7 +109,8 @@ const MANIFEST_CLASS_COUNTS: Record<RouteClass, number> = {
 // +1 on 23 Nov 2026: the email-events-retention cron (email plan, Workstream C; cron, denied on tenant hosts like every cron).
 // +1 on 23 Nov 2026: email plan D2's tenant email API (platform_admin, denied on tenant hosts, S6-Q7).
 // +1 on 24 Nov 2026: the email-reputation cron (email plan, Workstream E; denied on tenant hosts like every cron).
-const MANIFEST_TOTAL = 544
+// +1 on 24 Nov 2026: the SES standby webhook (email plan F; webhook, denied on tenant hosts).
+const MANIFEST_TOTAL = 545
 
 // The decisions. Moving a route between them is a deliberate diff here.
 const DECISION_COUNTS: Record<TenantSurfaceDecision, number> = {
@@ -130,7 +132,8 @@ const DECISION_COUNTS: Record<TenantSurfaceDecision, number> = {
   // +1: the email-events-retention cron (email plan, Workstream C)
   // +1: email plan D2's tenant email API, platform host only (S6-Q7)
   // +1: the email-reputation cron (email plan, Workstream E)
-  deny: 438,
+  // +1: webhooks/ses, the SES standby (email plan F)
+  deny: 439,
 }
 
 /** A concrete URL a manifest file serves, with sample values for its params. */

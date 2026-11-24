@@ -42,7 +42,7 @@ function fakeDb(state: {
 
 const AGREEMENT = {
   id: 'row-1', envelope_id: 'env-1', provider: 'docusign', status: 'sent', event_slug: 'colorado',
-  participant_id: 'p-1', member_id: 'm-1', signer_email: 'chasintgeharvest@gmail.com',
+  participant_id: 'p-1', member_id: 'm-1', signer_email: 'famliy@example.com',
 }
 
 beforeEach(() => {
@@ -57,17 +57,17 @@ describe('correctAgreementRecipient', () => {
   it('corrects a guardian and fixes the guardian email on the participant and the agreement', async () => {
     const db = fakeDb({
       agreement: AGREEMENT,
-      recipient: { role_name: 'Guardian', email: 'chasintgeharvest@gmail.com' },
-      participant: { emergency_contact_email: 'Chasintgeharvest@gmail.com' },
+      recipient: { role_name: 'Guardian', email: 'famliy@example.com' },
+      participant: { emergency_contact_email: 'Famliy@example.com' },
     })
     const r = await correctAgreementRecipient(db as never, {
-      agreementId: 'row-1', recipientId: '1', email: '  ChasingTheHarvest@gmail.com ',
+      agreementId: 'row-1', recipientId: '1', email: '  Family@Example.com ',
     })
     expect(r).toMatchObject({ kind: 'corrected', participantField: 'emergency_contact_email', participantSkipped: null })
-    expect(correctRecipientRow).toHaveBeenCalledWith(db, AGREEMENT, { recipientId: '1', email: 'chasingtheharvest@gmail.com' })
+    expect(correctRecipientRow).toHaveBeenCalledWith(db, AGREEMENT, { recipientId: '1', email: 'family@example.com' })
     expect(syncEnvelopeRecipients).toHaveBeenCalledWith(db, 'row-1', 'env-1', 'docusign')
-    expect(db.updates).toContainEqual({ table: 'participants', values: { emergency_contact_email: 'chasingtheharvest@gmail.com' } })
-    expect(db.updates.find((u) => u.table === 'agreements')?.values.signer_email).toBe('chasingtheharvest@gmail.com')
+    expect(db.updates).toContainEqual({ table: 'participants', values: { emergency_contact_email: 'family@example.com' } })
+    expect(db.updates.find((u) => u.table === 'agreements')?.values.signer_email).toBe('family@example.com')
   })
 
   it("corrects a student's own address in participants.email and never touches members", async () => {

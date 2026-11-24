@@ -156,6 +156,10 @@ const WEBHOOKS: Record<string, { how: string; pattern: RegExp }> = {
   'app/api/webhooks/clerk/route.ts': { how: 'svix signature', pattern: /\.verify\(/ },
   'app/api/webhooks/docusign/route.ts': { how: 'DocuSign Connect HMAC', pattern: /verifyConnectHmac/ },
   'app/api/webhooks/background/route.ts': { how: 'provider signature check', pattern: /verifyWebhook/ },
+  'app/api/webhooks/ses/route.ts': {
+    how: 'Amazon SNS signature (certificate from an SNS host only) and SES_SNS_TOPIC_ARN; refused when the topic is unset or differs',
+    pattern: /verifySnsMessage\(parsed\)[\s\S]*SES_SNS_TOPIC_ARN|SES_SNS_TOPIC_ARN[\s\S]*verifySnsMessage\(parsed\)/,
+  },
   'app/api/webhooks/recording/route.ts': { how: 'JaaS signature or legacy shared secret', pattern: /JAAS_WEBHOOK_SECRET/ },
   'app/api/webhooks/motion/route.ts': { how: 'HMAC, constant-time compare', pattern: /timingSafeEqual/ },
   'app/api/webhooks/apollo/route.ts': { how: 'shared secret, constant-time compare', pattern: /timingSafeEqual/ },

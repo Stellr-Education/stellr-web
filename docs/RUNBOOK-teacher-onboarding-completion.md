@@ -32,7 +32,7 @@ Two problems with the earlier hand-run instructions, both real:
   `COMMIT` in another would not have done what the runbook claimed.
 - **The row count was already stale.** The instructions said "expect 13 rows / 7
   members". By the time it ran, two of those members (a mentor's address
-  and `david.michael.shaw+rudi@gmail.com`) had been hard-deleted, so the correct
+  and `owner-personal+rudi@example.com`) had been hard-deleted, so the correct
   answer was 10 rows / 5 members — and following the runbook would have meant
   rolling back a correct result.
 
@@ -64,8 +64,8 @@ insert-or-ignore, so re-running is safe.
 <teacher 2 email>                      teacher      adult        → member, teacher
 <teacher 1 email>                      teacher      adult        → member, teacher
 bill.allen@stellreducation.org         teacher      adult        → member, teacher
-david.michael.shaw+em@gmail.com        teacher      adult        → member, teacher
-david.michael.shaw+william@gmail.com   participant  high_school  → member, participant
+owner-personal+em@example.com        teacher      adult        → member, teacher
+owner-personal+william@example.com   participant  high_school  → member, participant
 ```
 
 Independently verified: **0 active members now hold no roles**, and all three
@@ -78,8 +78,8 @@ marker, so target the members rather than the source):
 DELETE FROM member_roles WHERE member_id IN (
   SELECT id FROM members WHERE email IN (
     '<teacher 2 email>', '<teacher 1 email>',
-    'bill.allen@stellreducation.org', 'david.michael.shaw+em@gmail.com',
-    'david.michael.shaw+william@gmail.com'
+    'bill.allen@stellreducation.org', 'owner-personal+em@example.com',
+    'owner-personal+william@example.com'
   )
 );
 ```

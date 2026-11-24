@@ -3,7 +3,7 @@ import { csvCell, toCsv } from './csv'
 
 describe('csvCell', () => {
   it('passes plain text through unquoted', () => {
-    expect(csvCell('Tamara Buk')).toBe('Tamara Buk')
+    expect(csvCell('Pat Guardian')).toBe('Pat Guardian')
     expect(csvCell('0412 345 678')).toBe('0412 345 678')
   })
 
@@ -13,7 +13,7 @@ describe('csvCell', () => {
   })
 
   it('quotes commas, quotes and newlines', () => {
-    expect(csvCell('Buk, Tamara')).toBe('"Buk, Tamara"')
+    expect(csvCell('Guardian, Pat')).toBe('"Guardian, Pat"')
     expect(csvCell('say "hi"')).toBe('"say ""hi"""')
     expect(csvCell('line1\nline2')).toBe('"line1\nline2"')
   })
