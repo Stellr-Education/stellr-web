@@ -133,6 +133,10 @@
       "schedule": "30 4 3 * *"
     },
     {
+      "path": "/api/cron/email-reputation",
+      "schedule": "15 7 * * *"
+    },
+    {
       "path": "/api/cron/usage-rollup",
       "schedule": "30 0 * * *"
     },

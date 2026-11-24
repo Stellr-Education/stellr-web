@@ -36,6 +36,7 @@ const CRON_FLOORS: Record<string, number> = {
   'docusign-reminders': 300,
   entitlements: 300,
   'email-events-retention': 60,
+  'email-reputation': 60,
   'email-outbox': 60,
   'event-emails': 60,
   'group-invoice-sync': 300,

@@ -14,10 +14,11 @@ export interface TenantEmailSettings {
   from_local_part: string
   from_name: string | null
   reply_to: string | null
-  marketing_daily_cap: number | null
-  marketing_monthly_cap: number | null
-  marketing_paused_at: string | null
+  bulk_daily_cap: number | null
+  bulk_monthly_cap: number | null
+  bulk_paused_at: string | null
   paused_reason: string | null
+  reputation_alerted_at: string | null
   updated_at: string
   updated_by: string | null
 }
@@ -56,6 +57,8 @@ export interface SenderFields {
   from_name?: string | null
   from_local_part?: string
   reply_to?: string | null
+  bulk_daily_cap?: number | null
+  bulk_monthly_cap?: number | null
 }
 
 /** The sender fields the console may change; any other key is ignored. */
@@ -78,6 +81,13 @@ export function checkSenderFields(b: Record<string, unknown>): Checked<SenderFie
     if (b.reply_to === null || b.reply_to === '') out.reply_to = null
     else if (typeof b.reply_to === 'string' && b.reply_to.trim().length <= 254 && EMAIL_RE.test(b.reply_to.trim())) out.reply_to = b.reply_to.trim()
     else return { ok: false, error: 'Replies need a valid email address.' }
+  }
+  for (const key of ['bulk_daily_cap', 'bulk_monthly_cap'] as const) {
+    if (!(key in b)) continue
+    const v = b[key]
+    if (v === null || v === '') out[key] = null
+    else if (typeof v === 'number' && Number.isInteger(v) && v >= 0 && v <= 1_000_000) out[key] = v
+    else return { ok: false, error: 'A cap must be a whole number of emails, or empty for no cap.' }
   }
   return { ok: true, value: out }
 }

@@ -12,7 +12,10 @@ import { checkSenderFields, checkSendingDomain, domainLimit, loadTenantEmailSett
 // Email plan D2: a tenant's sender and own sending domain, from the super-admin console.
 //
 // POST { action } on the platform host:
-//   save          { from_name?, from_local_part?, reply_to? }  who the mail is from, where replies go
+//   save          { from_name?, from_local_part?, reply_to?, bulk_daily_cap?, bulk_monthly_cap? }
+//                 who the mail is from, where replies go, and caps on its event blasts (plan E)
+//   pause_bulk    { reason? }  stops the tenant's event blasts (plan E); one-to-one mail still goes
+//   resume_bulk   —            lets them go again
 //   add_domain    { domain }   adds it to Resend; the panel shows the DNS records to send the tenant
 //   check         —            asks Resend to check the records, then stores the status
 //   remove_domain —            back to "<Tenant> via Stellr", and the domain leaves Resend
@@ -26,7 +29,7 @@ export const dynamic = 'force-dynamic'
 
 const ROUTE = '/api/admin/platform/tenants/[id]/email'
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
-const ACTIONS = ['save', 'add_domain', 'check', 'remove_domain'] as const
+const ACTIONS = ['save', 'add_domain', 'check', 'remove_domain', 'pause_bulk', 'resume_bulk'] as const
 type Action = (typeof ACTIONS)[number]
 
 function refuse(status: number, error: string, code?: string) {
@@ -103,6 +106,13 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
       const domain = await createDomain(checked.value)
       undoProvider = () => removeDomain(domain.id)
       patch = { sending_domain: checked.value, resend_domain_id: domain.id, domain_status: domain.status, forge_status: 'off', domain_checked_at: now }
+    } else if (action === 'pause_bulk') {
+      if (previous?.bulk_paused_at) return refuse(409, 'This tenant’s event blasts are already paused.')
+      const reason = typeof b.reason === 'string' ? b.reason.replace(/\s+/g, ' ').trim().slice(0, 300) : ''
+      patch = { bulk_paused_at: now, paused_reason: reason || null }
+    } else if (action === 'resume_bulk') {
+      if (!previous?.bulk_paused_at) return refuse(409, 'This tenant’s event blasts aren’t paused.')
+      patch = { bulk_paused_at: null, paused_reason: null }
     } else if (action === 'check') {
       if (!previous?.resend_domain_id) return refuse(409, 'This tenant has no sending domain to check.')
       await verifyDomain(previous.resend_domain_id)
