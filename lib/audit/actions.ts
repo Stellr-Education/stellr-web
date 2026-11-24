@@ -37,6 +37,8 @@ export const AUDIT_ACTIONS = [
   'platform.tenant_email.add_domain',
   'platform.tenant_email.check',
   'platform.tenant_email.remove_domain',
+  'platform.tenant_email.pause_bulk',
+  'platform.tenant_email.resume_bulk',
 
   // Crons (B12) and webhooks (A13)
   'cron.run.finish',

@@ -79,13 +79,13 @@ afterEach(() => {
 })
 
 describe('guardCron with CRON_NON_PROD_JOBS unset', () => {
-  it('declines all 26 crons on dev exactly as before', async () => {
+  it('declines all 27 crons on dev exactly as before', async () => {
     hostedDev(undefined)
-    expect(JOBS).toHaveLength(26)
+    expect(JOBS).toHaveLength(27)
     for (const job of JOBS) expect(await guard(job), job).toEqual({ status: 200, body: DECLINED })
   })
 
-  it('declines all 26 when the variable is blank', async () => {
+  it('declines all 27 when the variable is blank', async () => {
     hostedDev('')
     for (const job of JOBS) expect(await guard(job), job).toEqual({ status: 200, body: DECLINED })
   })

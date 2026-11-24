@@ -30,6 +30,7 @@ import { surveySendsHeld } from '@/lib/survey/hold'
 import { isValidEmail } from '@/lib/member-enums'
 import { onCommunityDomain } from '@/lib/email/senders'
 import { promotionalAudience, unsubscribeHeaders, withUnsubscribeFooter } from './promotional'
+import { recordTenantBulk, tenantBulkAllowance } from '@/lib/email/tenant-bulk'
 
 // S5 B14: defined in tenant-mail.ts since the signing engine refuses with it too.
 export { TENANT_SENDER_REQUIRED }
@@ -516,7 +517,19 @@ export async function deliver(
   let stoppedForQuota = false
   let stoppedForTime = false
   let stoppedForDeadline = false
+  // Email plan E: a tenant's blast is held to its own daily and monthly caps and
+  // its pause (lib/email/tenant-bulk.ts). Reaching the cap stops the run like the
+  // shared budget does: nobody further is recorded, so the next run sends them.
+  const bulkTenant = !isTest && isTenantRow(email.tenant_id) ? email.tenant_id : null
+  const bulk = bulkTenant ? await tenantBulkAllowance(db, bulkTenant) : { remaining: Infinity }
+  if (bulkTenant && bulk.remaining === 0) {
+    console.warn(`[event-emails] email ${email.id}: tenant blast held (${bulk.reason})`)
+  }
   for (const [i, r] of recipients.entries()) {
+    if (i >= bulk.remaining) {
+      stoppedForQuota = true
+      break
+    }
     // Out of time for this run: stop BEFORE the function is killed, so the
     // run is recorded as finished with honest counts and can be continued.
     if (opts.deadline && Date.now() + (i > 0 ? opts.spacingMs ?? SEND_SPACING_MS : 0) > opts.deadline - DEADLINE_MARGIN_MS) {
@@ -585,6 +598,7 @@ export async function deliver(
   // 'queued' mail goes out from the outbox shortly, so it counts as sent here;
   // suppressed and failed recipients do not.
   const sent = results.filter((r) => r.status === 'sent' || r.status === 'queued').length
+  if (bulkTenant) await recordTenantBulk(db, bulkTenant, sent)
   const suppressed = results.filter((r) => r.status === 'suppressed').length
   const failed = results.filter((r) => r.status === 'failed').length
   // A run that stopped early (time, budget or its cron slice) also lists who it

@@ -18,12 +18,18 @@ export function TenantEmailForm({
   fromName,
   fromLocalPart,
   replyTo,
+  bulkDailyCap,
+  bulkMonthlyCap,
+  bulkPaused,
 }: {
   tenantId: string
   hasDomain: boolean
   fromName: string
   fromLocalPart: string
   replyTo: string
+  bulkDailyCap: number | null
+  bulkMonthlyCap: number | null
+  bulkPaused: boolean
 }) {
   const router = useRouter()
   const stepUpFetch = useStepUpFetch()
@@ -33,6 +39,9 @@ export function TenantEmailForm({
   const [local, setLocal] = useState(fromLocalPart)
   const [reply, setReply] = useState(replyTo)
   const [domain, setDomain] = useState('')
+  const [daily, setDaily] = useState(bulkDailyCap == null ? '' : String(bulkDailyCap))
+  const [monthly, setMonthly] = useState(bulkMonthlyCap == null ? '' : String(bulkMonthlyCap))
+  const capOf = (v: string) => (v.trim() === '' ? null : Number(v))
 
   async function act(action: string, body: Record<string, unknown> = {}, done = 'Saved.') {
     setBusy(action)
@@ -80,6 +89,46 @@ export function TenantEmailForm({
       >
         {busy === 'save' ? 'Saving…' : 'Save sender'}
       </Button>
+
+      <div className="border-t border-line-light pt-4">
+        <p className="text-sm font-medium text-content-body">Event blasts</p>
+        <p className="mt-0.5 text-xs text-content-muted">
+          Caps on sends to a whole event. Mail to one person (receipts, consent forms) is never capped or paused.
+        </p>
+        <div className="mt-2 flex flex-wrap items-end gap-3">
+          <label className="block text-sm">
+            <span className="mb-1 block text-content-body">A day</span>
+            <input className={input} inputMode="numeric" value={daily} onChange={(e) => setDaily(e.target.value)} placeholder="No cap" />
+          </label>
+          <label className="block text-sm">
+            <span className="mb-1 block text-content-body">A month</span>
+            <input className={input} inputMode="numeric" value={monthly} onChange={(e) => setMonthly(e.target.value)} placeholder="No cap" />
+          </label>
+          <Button
+            variant="secondaryStrong"
+            disabled={busy !== null}
+            onClick={() => act('save', { bulk_daily_cap: capOf(daily), bulk_monthly_cap: capOf(monthly) }, 'Caps saved.')}
+          >
+            {busy === 'save' ? 'Saving…' : 'Save caps'}
+          </Button>
+          {bulkPaused ? (
+            <Button variant="secondaryStrong" disabled={busy !== null} onClick={() => act('resume_bulk', {}, 'Event blasts can go again.')}>
+              {busy === 'resume_bulk' ? 'Resuming…' : 'Resume blasts'}
+            </Button>
+          ) : (
+            <Button
+              variant="secondaryStrong"
+              disabled={busy !== null}
+              onClick={() => {
+                const reason = window.prompt('Why pause their event blasts? (They’ll see nothing; this is for staff.)')
+                if (reason !== null) void act('pause_bulk', { reason }, 'Event blasts paused.')
+              }}
+            >
+              {busy === 'pause_bulk' ? 'Pausing…' : 'Pause blasts'}
+            </Button>
+          )}
+        </div>
+      </div>
 
       <div className="border-t border-line-light pt-4">
         {hasDomain ? (

@@ -73,6 +73,7 @@ export const CRON_SCOPES: Readonly<Record<string, CronScopeEntry>> = {
   'hubspot-event-options': { scope: 'stellr_only', why: "Stellr's HubSpot; syncs only Stellr events (B11)" },
   'hubspot-lifecycle': { scope: 'stellr_only', why: "Stellr's HubSpot" },
   'email-events-retention': { scope: 'platform', why: "13-month retention of every tenant's mail delivery events (email_events)" },
+  'email-reputation': { scope: 'platform', why: "daily check of every tenant's 7-day bounce and complaint rates, alerting staff (email plan E)" },
   'email-outbox': {
     scope: 'platform',
     why: 'resends mail Resend refused for its quota or an outage; every message was already addressed by the sender that queued it, and each tenant drains on its own runPerTenant turn by email_outbox.tenant_id (B24)',
