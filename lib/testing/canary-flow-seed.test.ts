@@ -84,7 +84,7 @@ describe('the flow plan', () => {
   it('gives the tenant a usable sender that replies to the role inbox', () => {
     const p = plan()
     const sender = tenantEventSender({ display_name: String(p.tenant.display_name), branding: p.tenant.branding })
-    expect(sender).toEqual({ from: '"Dev Canary via Stellr" <no-reply@mail.stellreducation.org>', replyTo: CANARY_ROLE_INBOX })
+    expect(sender).toMatchObject({ from: '"Dev Canary via Stellr" <no-reply@mail.stellreducation.org>', replyTo: CANARY_ROLE_INBOX })
   })
 
   it('maps canary.<zone> as the primary host and leaves nobody.<zone> unmapped', () => {

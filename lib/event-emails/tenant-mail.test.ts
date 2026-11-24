@@ -35,7 +35,7 @@ const load = () => import('./tenant-mail')
 describe('tenantEventSender', () => {
   it('sends as "<Tenant> via Stellr" from the platform domain, with replies to the tenant', async () => {
     const { tenantEventSender, TENANT_EVENT_FROM_ADDRESS } = await load()
-    expect(tenantEventSender(ORGANISER)).toEqual({
+    expect(tenantEventSender(ORGANISER)).toMatchObject({
       from: `"Rocket Club via Stellr" <${TENANT_EVENT_FROM_ADDRESS}>`,
       replyTo: 'events@rocket.example.org',
     })
@@ -158,7 +158,7 @@ describe('own sending domain (email plan D)', () => {
   })
 
   it('sends from the tenant domain once it is verified, with its own name and Reply-To', () => {
-    expect(tenantEventSender({ display_name: 'Example', branding: {}, tenant_email_settings: settings() })).toEqual({
+    expect(tenantEventSender({ display_name: 'Example', branding: {}, tenant_email_settings: settings() })).toMatchObject({
       from: '"Example Events" <events@mail.example.org>',
       replyTo: 'office@example.org',
     })

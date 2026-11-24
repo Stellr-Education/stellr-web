@@ -2,6 +2,7 @@
 // them, and checking what the super-admin console may write. The sender built
 // from them is lib/event-emails/tenant-mail.ts.
 
+import { MAX_SIGNATURE_LINES, MAX_SIGNATURE_TEXT, safeLogoUrl } from '@/lib/event-emails/signature'
 import type { SupabaseClient } from '@supabase/supabase-js'
 
 export interface TenantEmailSettings {
@@ -14,6 +15,8 @@ export interface TenantEmailSettings {
   from_local_part: string
   from_name: string | null
   reply_to: string | null
+  signature_text: string | null
+  logo_url: string | null
   bulk_daily_cap: number | null
   bulk_monthly_cap: number | null
   bulk_paused_at: string | null
@@ -57,6 +60,8 @@ export interface SenderFields {
   from_name?: string | null
   from_local_part?: string
   reply_to?: string | null
+  signature_text?: string | null
+  logo_url?: string | null
   bulk_daily_cap?: number | null
   bulk_monthly_cap?: number | null
 }
@@ -81,6 +86,24 @@ export function checkSenderFields(b: Record<string, unknown>): Checked<SenderFie
     if (b.reply_to === null || b.reply_to === '') out.reply_to = null
     else if (typeof b.reply_to === 'string' && b.reply_to.trim().length <= 254 && EMAIL_RE.test(b.reply_to.trim())) out.reply_to = b.reply_to.trim()
     else return { ok: false, error: 'Replies need a valid email address.' }
+  }
+  if ('signature_text' in b) {
+    if (b.signature_text === null || b.signature_text === '') out.signature_text = null
+    else if (typeof b.signature_text === 'string') {
+      const text = b.signature_text.replace(/\r\n?/g, '\n').trim()
+      if (text.length > MAX_SIGNATURE_TEXT || text.split('\n').length > MAX_SIGNATURE_LINES) {
+        return { ok: false, error: `The signature may have up to ${MAX_SIGNATURE_LINES} lines and ${MAX_SIGNATURE_TEXT} characters.` }
+      }
+      out.signature_text = text || null
+    } else return { ok: false, error: 'The signature must be text.' }
+  }
+  if ('logo_url' in b) {
+    if (b.logo_url === null || b.logo_url === '') out.logo_url = null
+    else {
+      const url = typeof b.logo_url === 'string' ? safeLogoUrl(b.logo_url) : null
+      if (!url) return { ok: false, error: 'The logo needs a full https:// address to an image.' }
+      out.logo_url = url
+    }
   }
   for (const key of ['bulk_daily_cap', 'bulk_monthly_cap'] as const) {
     if (!(key in b)) continue

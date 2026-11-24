@@ -45,7 +45,7 @@ describe('loadTenantSenders paging', () => {
     const expected = Array.from({ length: n }, (_, i) => i).filter((i) => i % 3 !== 2).length
     expect(senders.size).toBe(expected)
     expect(senders.has(STELLR_TENANT_ID)).toBe(false)
-    expect(senders.get(uuid(1))).toEqual({ from: '"Club 1 via Stellr" <no-reply@mail.stellreducation.org>', replyTo: 'club1@example.org' })
+    expect(senders.get(uuid(1))).toMatchObject({ from: '"Club 1 via Stellr" <no-reply@mail.stellreducation.org>', replyTo: 'club1@example.org' })
     expect(senders.has(uuid(n))).toBe(true)
     expect(from).toHaveBeenCalledTimes(Math.ceil(n / TENANT_SENDERS_PAGE_SIZE))
   })

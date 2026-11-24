@@ -95,7 +95,7 @@ The wording that counts is at the link.
 | S4 isolation uses a tenant role and a transaction-local tenant (Option B), not a tenant JWT (4 Nov 2026) | `docs/S4-SPIKE.md`, section 1 |
 | No date hold and no 72-hour rule for S5 merges to `dev` (4 Nov 2026); the 72-hour no-flip windows declined for wave 7 (11 Nov 2026) | `docs/TENANCY-S5.md`, "What may merge when"; register `W7-3` |
 | The tenant tree is `app/%5Ft`, because a folder named `_t` never routes (built in B5, #534) | `docs/TENANCY-S5.md`, "Risks to keep in view" |
-| One shared email pool for all tenants until SES (9 Nov 2026) | `docs/TENANCY-S5.md`, "Owner gates" |
+| ~~One shared email pool for all tenants until SES (9 Nov 2026)~~ Superseded 23 Nov 2026: Resend Pro, tenant own domains, per-tenant bulk caps, SES warm standby | `docs/ADR-email-platform.md` |
 | `postgres` (postgres.js) approved as a runtime dependency for the tenant driver only (9 Nov 2026) | `docs/TENANCY-S5.md`, "Merge rules for shared files" |
 | Under-18s are refused at tenant events until guardian consent; the consent flow uses the native engine and a platform-locked document (10 Nov 2026) | `docs/TENANCY-S5.md`, "Owner decisions wave 5 raised" |
 | A Stellr member's profile is not used at a tenant event until S7's consent grant; tenant forms take typed details only (10 Nov 2026) | same |

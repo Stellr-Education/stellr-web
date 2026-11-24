@@ -1,5 +1,5 @@
 // Renders one event email for one recipient: merge fields → subject, a letter-
-// style HTML body with David's signature, and a plain-text alternative.
+// style HTML body with the sender's signature (signature.ts), and a plain-text alternative.
 //
 // Not emailLayout(): that is the marketing card (header logo, heading, postal
 // footer). These are personal letters about a registration, sent as David with
@@ -10,6 +10,7 @@ import { escapeHtml } from '@/lib/email-layout'
 import { SITE_URL, AUTH_APP_URL } from '@/lib/env'
 import { EVENT_MERGE_FIELDS, type RecipientRole } from './types'
 import { daysUntil } from './schedule'
+import { STELLR_SIGNATURE, type EventSignature } from './signature'
 
 export const EVENT_EMAIL_FROM = 'David Shaw, Stellr Education <hello@mail.stellreducation.org>'
 export const EVENT_EMAIL_REPLY_TO = 'david.shaw@stellreducation.org'
@@ -262,36 +263,6 @@ export function tiptapToEmailText(doc: unknown, depth = 0): string {
   }
 }
 
-const SIGNATURE_HTML = `
-<p style="margin:24px 0 16px">All the best,</p>
-<table role="presentation" cellspacing="0" cellpadding="0" border="0" style="border-collapse:collapse">
-  <tr>
-    <td style="padding-right:16px;vertical-align:top;width:175px">
-      <a href="https://www.stellreducation.org/"><img src="https://www.stellreducation.org/email/signature-logo.png" alt="Stellr Education — The Engineering Education Community" width="175" height="200" style="width:175px;height:200px;max-width:100%;display:block;border:0" /></a>
-    </td>
-    <td style="vertical-align:top;font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.35;color:#222222">
-      <b>David Shaw</b><br/>
-      Chief Inspiration Officer<br/>
-      Stellr Education<br/>
-      P: <a href="tel:+17026820757" style="color:#1155cc">+1 (702) 682-0757</a><br/>
-      E: <a href="mailto:david.shaw@stellreducation.org" style="color:#1155cc">david.shaw@stellreducation.org</a><br/>
-      W: <a href="https://www.stellreducation.org/" style="color:#1155cc">www.stellreducation.org</a><br/>
-      B: <a href="https://app.usemotion.com/meet/david-m-shaw/check-in" style="color:#1155cc">Schedule A Meeting</a>
-    </td>
-  </tr>
-</table>`
-
-const SIGNATURE_TEXT = [
-  'All the best,',
-  '',
-  'David Shaw',
-  'Chief Inspiration Officer',
-  'Stellr Education',
-  'P: +1 (702) 682-0757',
-  'E: david.shaw@stellreducation.org',
-  'W: www.stellreducation.org',
-].join('\n')
-
 export interface RenderedEventEmail { subject: string; html: string; text: string }
 
 // ── Held links ────────────────────────────────────────────────────────────────
@@ -354,6 +325,8 @@ export function omitHeldLinks(bodyJson: unknown, vars: Record<string, string>): 
 export function renderEventEmail(
   email: { subject: string; body_json: unknown },
   vars: Record<string, string>,
+  /** Email plan G: the sender's sign-off. Stellr's mail leaves it out and keeps STELLR_SIGNATURE. */
+  signature: EventSignature = STELLR_SIGNATURE,
 ): RenderedEventEmail {
   const bodyJson = omitHeldLinks(email.body_json, vars)
   const htmlVars: Record<string, string> = {}
@@ -375,9 +348,9 @@ export function renderEventEmail(
 
   const html = `<div style="font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.5;color:#000000;max-width:640px">
 ${bodyHtml}
-${SIGNATURE_HTML}
+${signature.html}
 </div>`
-  return { subject, html, text: `${bodyText.trim()}\n\n${SIGNATURE_TEXT}\n` }
+  return { subject, html, text: `${bodyText.trim()}\n\n${signature.text}\n` }
 }
 
 function linesHtmlFromText(text: string, label: string): string {

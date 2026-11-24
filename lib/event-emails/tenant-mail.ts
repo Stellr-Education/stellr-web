@@ -39,6 +39,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { sendEmail } from '@/lib/email'
 import { STELLR_TENANT_ID } from '@/lib/tenancy/constants'
+import { tenantSignature, type EventSignature } from './signature'
 
 export const TENANT_EVENT_MAIL_FLAG = 'TENANT_EVENT_MAIL_ENABLED'
 
@@ -81,6 +82,8 @@ export function isTenantRow(tenantId: string | null | undefined): tenantId is st
 export interface EventSender {
   from: string
   replyTo: string
+  /** Email plan G: the tenant's sign-off for event mail (signature.ts). Never Stellr's. */
+  signature?: EventSignature
 }
 
 /** The tenant_email_settings columns the sender needs (email plan D). */
@@ -90,6 +93,9 @@ export interface TenantEmailSettingsForSender {
   from_local_part: string | null
   from_name: string | null
   reply_to: string | null
+  /** Email plan G: the sign-off text and logo, set in the console. Absent in rows read before G. */
+  signature_text?: string | null
+  logo_url?: string | null
 }
 
 export interface TenantForSender {
@@ -101,7 +107,7 @@ export interface TenantForSender {
 
 /** The columns read for a sender: the tenant and its email settings, embedded. */
 export const TENANT_SENDER_COLUMNS =
-  'display_name, branding, tenant_email_settings(sending_domain, domain_status, from_local_part, from_name, reply_to)'
+  'display_name, branding, tenant_email_settings(sending_domain, domain_status, from_local_part, from_name, reply_to, signature_text, logo_url)'
 
 function settingsOf(tenant: TenantForSender): TenantEmailSettingsForSender | null {
   const s = tenant.tenant_email_settings
@@ -135,12 +141,16 @@ export function tenantEventSender(tenant: TenantForSender): EventSender | null {
   const domain = (settings?.sending_domain ?? '').trim().toLowerCase()
   const local = (settings?.from_local_part ?? 'events').trim().toLowerCase()
   if (ownName && settings?.domain_status === 'verified' && DOMAIN_RE.test(domain) && LOCAL_RE.test(local)) {
-    return { from: `"${ownName}" <${local}@${domain}>`, replyTo }
+    return { from: `"${ownName}" <${local}@${domain}>`, replyTo, signature: signatureOf(settings, ownName) }
   }
 
   const name = senderName(tenant.display_name ?? '')
   if (!name) return null
-  return { from: `"${name} via Stellr" <${TENANT_EVENT_FROM_ADDRESS}>`, replyTo }
+  return { from: `"${name} via Stellr" <${TENANT_EVENT_FROM_ADDRESS}>`, replyTo, signature: signatureOf(settings, ownName || name) }
+}
+
+function signatureOf(settings: TenantEmailSettingsForSender | null, name: string): EventSignature {
+  return tenantSignature({ name, text: settings?.signature_text, logoUrl: settings?.logo_url })
 }
 
 /**
