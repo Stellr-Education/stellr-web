@@ -797,6 +797,10 @@
       "class": "convert",
       "reason": "auto: reaches tables it does not name (dynamic .from, rpc, or a client passed to a helper); review before converting"
     },
+    "app/api/admin/platform/tenants/[id]/email/route.ts": {
+      "class": "platform",
+      "reason": "Email plan D2: sets a tenant's sender and own sending domain (tenant_email_settings) for a platform admin; tenant_email_settings is service_role only by design (a tenant must not change its sending domain or lift its own caps); tables: tenants, tenant_email_settings"
+    },
     "app/api/admin/platform/tenants/[id]/flags/route.ts": {
       "class": "platform",
       "reason": "S6-CON-b: sets a per-tenant switch (tenant_feature_flags) for a platform admin; tenant_feature_flags is service_role only by design (a tenant must not turn its own switches); tables: tenants, tenant_feature_flags"
