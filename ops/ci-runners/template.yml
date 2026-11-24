@@ -1,0 +1,403 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >-
+  Stellr CI runners: ephemeral GitHub Actions runners on EC2 (on-demand; the
+  project SCPs deny spot), one machine per job (private-repo plan, 23 Nov 2026). Deploy with ops/ci-runners/deploy.sh.
+
+Parameters:
+  RunnerAmiId:
+    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Default: /stellr/ci-runners/ami-id
+    Description: The baked runner image (ops/ci-runners/bake-ami.sh writes this parameter).
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+  SubnetIds:
+    Type: CommaDelimitedList
+    Description: Public subnets, one per Availability Zone, that assign public IPv4 addresses.
+  InstanceTypes:
+    Type: CommaDelimitedList
+    Default: m7i-flex.xlarge,m6a.xlarge,m6i.xlarge,m7i.xlarge,m7a.xlarge,m5.xlarge
+    Description: 4 vCPU / 16 GiB on-demand types, tried in order (cheapest first) in each subnet.
+  SmallInstanceTypes:
+    Type: CommaDelimitedList
+    Default: m7i-flex.large,m6a.large,m6i.large,m7i.large,m7a.large,m5.large
+    Description: 2 vCPU / 8 GiB on-demand types for jobs labelled SmallRunnerLabel (no app build).
+  MaxVcpus:
+    Type: Number
+    Default: 16
+    Description: Most runner vCPUs up at once (large = 4, small = 2). The on-demand standard quota is 16; raise both together.
+  MaxAgeMinutes:
+    Type: Number
+    Default: 400
+    Description: A machine older than this is terminated (the longest job, mutation testing, may take 360).
+  IdleMinutes:
+    Type: Number
+    Default: 20
+  GitHubOrg:
+    Type: String
+    Default: Stellr-Education
+  AllowedRepos:
+    Type: String
+    Default: Stellr-Education/stellr-web
+  RunnerLabel:
+    Type: String
+    Default: stellr-ci
+  SmallRunnerLabel:
+    Type: String
+    Default: stellr-ci-small
+  RunnerGroupId:
+    Type: Number
+    Default: 1
+  BudgetEmail:
+    Type: String
+    Default: ''
+    Description: Who gets the monthly AWS budget alerts. Empty skips the budget.
+  MonthlyBudgetUsd:
+    Type: Number
+    Default: 60
+  CodeBucket:
+    Type: String
+  CodeKey:
+    Type: String
+
+Conditions:
+  HasBudget: !Not [!Equals [!Ref BudgetEmail, '']]
+
+Resources:
+  # --- the machines -----------------------------------------------------------
+
+  RunnerSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Stellr CI runners - no inbound, all outbound
+      VpcId: !Ref VpcId
+      SecurityGroupEgress:
+        - IpProtocol: '-1'
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - { Key: Name, Value: stellr-ci-runners }
+
+  RunnerRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: { Service: ec2.amazonaws.com }
+            Action: sts:AssumeRole
+            Condition:
+              StringEquals: { aws:SourceAccount: !Ref AWS::AccountId }
+      ManagedPolicyArns:
+        # Session Manager, for debugging a machine without an open port or key.
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+      Policies:
+        - PolicyName: read-own-runner-config
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              # Each machine reads, then deletes, the parameter named after its
+              # own instance ID. Runners are one trust zone (same repository,
+              # same secrets), so the path is not narrowed per instance.
+              - Effect: Allow
+                Action: [ssm:GetParameter, ssm:DeleteParameter]
+                Resource: !Sub arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter/stellr/ci-runners/jit/*
+
+  RunnerInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Roles: [!Ref RunnerRole]
+
+  RunnerLaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties:
+      LaunchTemplateData:
+        ImageId: !Ref RunnerAmiId
+        IamInstanceProfile: { Arn: !GetAtt RunnerInstanceProfile.Arn }
+        InstanceInitiatedShutdownBehavior: terminate
+        MetadataOptions:
+          HttpTokens: required
+          # 2, so a job's Docker containers can reach the metadata service.
+          HttpPutResponseHopLimit: 2
+          HttpEndpoint: enabled
+        NetworkInterfaces:
+          - DeviceIndex: 0
+            AssociatePublicIpAddress: true
+            Groups: [!Ref RunnerSecurityGroup]
+            DeleteOnTermination: true
+        BlockDeviceMappings:
+          - DeviceName: /dev/sda1
+            Ebs:
+              VolumeSize: 100
+              VolumeType: gp3
+              Encrypted: true
+              DeleteOnTermination: true
+        UserData:
+          Fn::Base64: !Sub |
+            #!/bin/bash
+            # One job, then the machine terminates itself (shutdown behaviour).
+            exec > >(tee /var/log/stellr-runner.log) 2>&1
+            trap 'shutdown -h now' EXIT
+            export AWS_REGION=${AWS::Region}
+            TOKEN=$(curl -sfX PUT http://169.254.169.254/latest/api/token -H 'X-aws-ec2-metadata-token-ttl-seconds: 300')
+            IID=$(curl -sf -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/latest/meta-data/instance-id)
+            PARAM=/stellr/ci-runners/jit/$IID
+            JIT=""
+            for i in $(seq 1 60); do
+              JIT=$(aws ssm get-parameter --name "$PARAM" --with-decryption --query Parameter.Value --output text 2>/dev/null) && break
+              sleep 5
+            done
+            [ -n "$JIT" ] || { echo "No runner config after 5 minutes"; exit 1; }
+            aws ssm delete-parameter --name "$PARAM" || true
+            cd /opt/actions-runner
+            sudo -u runner -H ./run.sh --jitconfig "$JIT" || true
+      TagSpecifications:
+        - ResourceType: launch-template
+          Tags:
+            - { Key: Name, Value: stellr-ci-runner }
+
+  # --- the scaler -------------------------------------------------------------
+
+  JobQueueDlq:
+    Type: AWS::SQS::Queue
+    Properties:
+      MessageRetentionPeriod: 1209600
+      SqsManagedSseEnabled: true
+
+  JobQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      VisibilityTimeout: 60
+      MessageRetentionPeriod: 86400
+      SqsManagedSseEnabled: true
+      RedrivePolicy:
+        deadLetterTargetArn: !GetAtt JobQueueDlq.Arn
+        # About 6 hours of retries at 60 seconds while every machine is busy.
+        maxReceiveCount: 360
+
+  FunctionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: { Service: lambda.amazonaws.com }
+            Action: sts:AssumeRole
+            Condition:
+              StringEquals: { aws:SourceAccount: !Ref AWS::AccountId }
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: runners
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: [ssm:GetParameter]
+                Resource:
+                  - !Sub arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter/stellr/ci-runners/github-token
+                  - !Sub arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter/stellr/ci-runners/webhook-secret
+              - Effect: Allow
+                Action: [ssm:PutParameter, ssm:DeleteParameter, ssm:GetParametersByPath]
+                Resource:
+                  - !Sub arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter/stellr/ci-runners/jit
+                  - !Sub arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter/stellr/ci-runners/jit/*
+              - Effect: Allow
+                Action: [sqs:SendMessage, sqs:ReceiveMessage, sqs:DeleteMessage, sqs:GetQueueAttributes]
+                Resource: !GetAtt JobQueue.Arn
+              - Effect: Allow
+                Action: [ec2:DescribeInstances]
+                Resource: '*'
+              - Effect: Allow
+                Action: [ec2:RunInstances, ec2:CreateTags]
+                Resource: '*'
+              # Only machines this stack started can be terminated.
+              - Effect: Allow
+                Action: [ec2:TerminateInstances]
+                Resource: !Sub arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:instance/*
+                Condition:
+                  StringEquals: { aws:ResourceTag/stellr-ci-runner: '1' }
+              - Effect: Allow
+                Action: iam:PassRole
+                Resource: !GetAtt RunnerRole.Arn
+
+  WebhookFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Runtime: python3.13
+      Handler: runners.webhook
+      Code: { S3Bucket: !Ref CodeBucket, S3Key: !Ref CodeKey }
+      Role: !GetAtt FunctionRole.Arn
+      Timeout: 10
+      MemorySize: 256
+      ReservedConcurrentExecutions: 10
+      Environment:
+        Variables:
+          GITHUB_ORG: !Ref GitHubOrg
+          ALLOWED_REPOS: !Ref AllowedRepos
+          RUNNER_LABEL: !Ref RunnerLabel
+          RUNNER_GROUP_ID: !Ref RunnerGroupId
+          MAX_VCPUS: !Ref MaxVcpus
+          SMALL_RUNNER_LABEL: !Ref SmallRunnerLabel
+          SMALL_INSTANCE_TYPES: !Join [',', !Ref SmallInstanceTypes]
+          MAX_AGE_MINUTES: !Ref MaxAgeMinutes
+          IDLE_MINUTES: !Ref IdleMinutes
+          QUEUE_URL: !Ref JobQueue
+          LAUNCH_TEMPLATE_ID: !Ref RunnerLaunchTemplate
+          INSTANCE_TYPES: !Join [',', !Ref InstanceTypes]
+          SUBNET_IDS: !Join [',', !Ref SubnetIds]
+          GITHUB_TOKEN_PARAM: /stellr/ci-runners/github-token
+          WEBHOOK_SECRET_PARAM: /stellr/ci-runners/webhook-secret
+          JIT_PARAM_PREFIX: /stellr/ci-runners/jit
+
+  WebhookUrl:
+    Type: AWS::Lambda::Url
+    Properties:
+      TargetFunctionArn: !Ref WebhookFunction
+      # GitHub cannot sign AWS requests; the function checks GitHub's HMAC.
+      AuthType: NONE
+
+  WebhookUrlPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref WebhookFunction
+      Action: lambda:InvokeFunctionUrl
+      Principal: '*'
+      FunctionUrlAuthType: NONE
+
+  WebhookInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref WebhookFunction
+      Action: lambda:InvokeFunction
+      Principal: '*'
+      InvokedViaFunctionUrl: true
+
+  ScaleFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Runtime: python3.13
+      Handler: runners.scale
+      Code: { S3Bucket: !Ref CodeBucket, S3Key: !Ref CodeKey }
+      Role: !GetAtt FunctionRole.Arn
+      Timeout: 50
+      MemorySize: 256
+      # One at a time, so the capacity check cannot race itself.
+      ReservedConcurrentExecutions: 1
+      Environment:
+        Variables:
+          GITHUB_ORG: !Ref GitHubOrg
+          ALLOWED_REPOS: !Ref AllowedRepos
+          RUNNER_LABEL: !Ref RunnerLabel
+          RUNNER_GROUP_ID: !Ref RunnerGroupId
+          MAX_VCPUS: !Ref MaxVcpus
+          SMALL_RUNNER_LABEL: !Ref SmallRunnerLabel
+          SMALL_INSTANCE_TYPES: !Join [',', !Ref SmallInstanceTypes]
+          MAX_AGE_MINUTES: !Ref MaxAgeMinutes
+          IDLE_MINUTES: !Ref IdleMinutes
+          QUEUE_URL: !Ref JobQueue
+          LAUNCH_TEMPLATE_ID: !Ref RunnerLaunchTemplate
+          INSTANCE_TYPES: !Join [',', !Ref InstanceTypes]
+          SUBNET_IDS: !Join [',', !Ref SubnetIds]
+          GITHUB_TOKEN_PARAM: /stellr/ci-runners/github-token
+          WEBHOOK_SECRET_PARAM: /stellr/ci-runners/webhook-secret
+          JIT_PARAM_PREFIX: /stellr/ci-runners/jit
+
+  ScaleFromQueue:
+    Type: AWS::Lambda::EventSourceMapping
+    Properties:
+      EventSourceArn: !GetAtt JobQueue.Arn
+      FunctionName: !Ref ScaleFunction
+      BatchSize: 1
+
+  ScavengeFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Runtime: python3.13
+      Handler: runners.scavenge
+      Code: { S3Bucket: !Ref CodeBucket, S3Key: !Ref CodeKey }
+      Role: !GetAtt FunctionRole.Arn
+      Timeout: 120
+      MemorySize: 256
+      Environment:
+        Variables:
+          GITHUB_ORG: !Ref GitHubOrg
+          ALLOWED_REPOS: !Ref AllowedRepos
+          RUNNER_LABEL: !Ref RunnerLabel
+          RUNNER_GROUP_ID: !Ref RunnerGroupId
+          MAX_VCPUS: !Ref MaxVcpus
+          SMALL_RUNNER_LABEL: !Ref SmallRunnerLabel
+          SMALL_INSTANCE_TYPES: !Join [',', !Ref SmallInstanceTypes]
+          MAX_AGE_MINUTES: !Ref MaxAgeMinutes
+          IDLE_MINUTES: !Ref IdleMinutes
+          QUEUE_URL: !Ref JobQueue
+          LAUNCH_TEMPLATE_ID: !Ref RunnerLaunchTemplate
+          INSTANCE_TYPES: !Join [',', !Ref InstanceTypes]
+          SUBNET_IDS: !Join [',', !Ref SubnetIds]
+          GITHUB_TOKEN_PARAM: /stellr/ci-runners/github-token
+          WEBHOOK_SECRET_PARAM: /stellr/ci-runners/webhook-secret
+          JIT_PARAM_PREFIX: /stellr/ci-runners/jit
+
+  ScavengeSchedule:
+    Type: AWS::Events::Rule
+    Properties:
+      ScheduleExpression: rate(5 minutes)
+      Targets:
+        - Arn: !GetAtt ScavengeFunction.Arn
+          Id: scavenge
+
+  ScavengePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref ScavengeFunction
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt ScavengeSchedule.Arn
+
+  WebhookLogs:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/lambda/${WebhookFunction}
+      RetentionInDays: 14
+  ScaleLogs:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/lambda/${ScaleFunction}
+      RetentionInDays: 14
+  ScavengeLogs:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/lambda/${ScavengeFunction}
+      RetentionInDays: 14
+
+  # --- cost guard -------------------------------------------------------------
+
+  MonthlyBudget:
+    Type: AWS::Budgets::Budget
+    Condition: HasBudget
+    Properties:
+      Budget:
+        BudgetName: stellr-ci-runners-monthly
+        # The whole AWS project, not only this stack: a tag filter reads $0
+        # until the tag is activated for cost allocation, and the runners are
+        # nearly all of the project's spend.
+        BudgetType: COST
+        TimeUnit: MONTHLY
+        BudgetLimit: { Amount: !Ref MonthlyBudgetUsd, Unit: USD }
+        # Before credits: the TechSoup credit would otherwise make every month
+        # read $0, and the alert could never fire before the credit runs out.
+        CostTypes:
+          IncludeCredit: false
+          IncludeRefund: false
+      NotificationsWithSubscribers:
+        - Notification: { NotificationType: ACTUAL, ComparisonOperator: GREATER_THAN, Threshold: 80, ThresholdType: PERCENTAGE }
+          Subscribers: [{ SubscriptionType: EMAIL, Address: !Ref BudgetEmail }]
+        - Notification: { NotificationType: FORECASTED, ComparisonOperator: GREATER_THAN, Threshold: 100, ThresholdType: PERCENTAGE }
+          Subscribers: [{ SubscriptionType: EMAIL, Address: !Ref BudgetEmail }]
+
+Outputs:
+  WebhookUrl:
+    Description: Payload URL for the organisation webhook (Workflow jobs events only).
+    Value: !GetAtt WebhookUrl.FunctionUrl
+  RunnerLabel:
+    Value: !Ref RunnerLabel
