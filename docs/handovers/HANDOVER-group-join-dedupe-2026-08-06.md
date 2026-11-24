@@ -138,7 +138,7 @@ This exercises member resolution only — deliberately *not* a full end-to-end j
 and DocuSign envelopes from a test. The membership_id sequence advanced by one (`0000130`), which is harmless.
 
 ### 3.3 Orphaned Google Sheet — TRASHED
-Identity confirmed before acting (`Uruguay Environmental Design Challenge — brighton high school utah — Group
+Identity confirmed before acting (`Uruguay Environmental Design Challenge — <a Utah high school> — Group
 Registration`, created 2026-08-06T17:23:25Z, six seconds after registration `a24fd7f3`), and zero registrations
 referenced its id. **Trashed, not permanently deleted** — recoverable from Drive trash if ever needed.
 `a24fd7f3.spreadsheet_id` is still null by design: that sheet was never shared, so it was never usable.

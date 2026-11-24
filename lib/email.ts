@@ -658,7 +658,7 @@ export function docusignReminderToMinorEmail({
 }: {
   firstName: string
   eventTitle: string
-  /** Outstanding signers, e.g. [{ name: 'Tamara Buk', role: 'parent/guardian' }]. */
+  /** Outstanding signers, e.g. [{ name: 'Pat Guardian', role: 'parent/guardian' }]. */
   waitingOn: { name: string; role: string; neverOpened?: boolean; queued?: boolean }[]
 }) {
   const guardianPart = waitingOn.find(w => w.role === 'parent/guardian')

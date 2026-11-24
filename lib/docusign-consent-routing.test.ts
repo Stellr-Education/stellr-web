@@ -3,7 +3,7 @@ import { generateKeyPairSync } from 'crypto'
 
 // A parent who enters their own address for the student gets both consent
 // signatures in one inbox. Sent concurrently, they can't finish both roles
-// (Robert Blake, 28 Sept 2026), so a shared inbox is sequenced: guardian first,
+// (a guardian, 28 Sept 2026), so a shared inbox is sequenced: guardian first,
 // student second. Pinned at the HTTP body — DocuSign accepts either shape
 // without complaint, so nothing else would notice a regression.
 

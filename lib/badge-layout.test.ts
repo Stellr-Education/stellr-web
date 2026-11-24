@@ -262,7 +262,7 @@ describe('generateBadgesPdf', () => {
     const pdf = await generateBadgesPdf(
       [
         { person: { firstName: 'Maximiliana-Josephine', lastName: 'Worthington-Fotheringham', subtitle: 'Mentor' }, design },
-        { person: { firstName: 'Leon', lastName: 'Buk', subtitle: 'Student' }, design: null },
+        { person: { firstName: 'Sam', lastName: 'Brook', subtitle: 'Student' }, design: null },
       ],
       'Test Event',
       'avery_8395',

@@ -18,7 +18,7 @@ import { shadowSyncFields } from './field-crypto-shadow'
 //
 // The participant record is corrected too, so reminders and any later re-issue
 // use the right address. A member's own email is never changed here: it is the
-// account's sign-in address (the Blake precedent, 29 Sept 2026).
+// account's sign-in address (a guardian's case, 29 Sept 2026).
 
 export interface CorrectionInput {
   agreementId: string

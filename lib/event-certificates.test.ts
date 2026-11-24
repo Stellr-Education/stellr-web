@@ -16,8 +16,8 @@ const companies: EventCompany[] = [
   { id: 'co-1', number: 1, name: 'Orbital' },
 ]
 const students = [
-  student('s1', 'Leon', 'Buk', 'co-2'),
-  student('s2', 'Daniel', 'Ahaiwe', 'co-1'),
+  student('s1', 'Sam', 'Brook', 'co-2'),
+  student('s2', 'Alex', 'Adams', 'co-1'),
   student('s3', 'Ava', 'Zed', null),
   student('s4', 'Ben', 'Carr', 'co-1'),
 ]
@@ -57,7 +57,7 @@ describe('placementFromParams', () => {
 })
 
 describe('fullName', () => {
-  it('collapses stray spaces (the "Daniel  Ahaiwe" on the old print)', () => {
-    expect(fullName({ first_name: 'Daniel ', last_name: 'Ahaiwe' })).toBe('Daniel Ahaiwe')
+  it('collapses stray spaces (the "Alex  Adams" on the old print)', () => {
+    expect(fullName({ first_name: 'Alex ', last_name: 'Adams' })).toBe('Alex Adams')
   })
 })

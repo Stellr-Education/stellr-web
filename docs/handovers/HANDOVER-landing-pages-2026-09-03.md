@@ -157,7 +157,7 @@ it means the cron cannot be tested on a preview branch.
 
 ## 3. Open questions for David
 
-1. **`david.michael.shaw+mark@gmail.com`** — a `homeschool` contact with
+1. **`owner-personal+mark@example.com`** — a `homeschool` contact with
    `lp_call_booked` empty. If that enquiry never booked, the funnel is working
    and this is the first genuine entry for the follow-up list. If a call *was*
    booked, the calendar event title probably did not match

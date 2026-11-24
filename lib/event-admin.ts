@@ -63,7 +63,7 @@ export interface RosterParticipant {
   docusign_pill: DocusignPill
   /** Pill text, e.g. "Partially Complete · 1 of 2". */
   docusign_label: string
-  /** Who is still outstanding, e.g. "Awaiting Tamara Buk (parent/guardian)". */
+  /** Who is still outstanding, e.g. "Awaiting Pat Guardian (parent/guardian)". */
   docusign_detail: string | null
   /** The participant's latest agreement while it is out for signing (for "Correct email"). */
   correctable_agreement_id: string | null

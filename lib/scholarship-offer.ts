@@ -146,7 +146,7 @@ export async function offerScholarship(db: SupabaseClient, input: OfferInput): P
   const member = await resolveMember(db, app, input.memberId)
   if ('error' in member) return { ok: false, status: member.status, error: member.error }
 
-  // A registration the student already has on this event (Ethan Lawrence had
+  // A registration the student already has on this event (one student had
   // registered, unpaid, two days before applying). Look under both addresses —
   // the application's and the member record's.
   const emails = [...new Set([member.email, app.email].map((e) => e.trim().toLowerCase()))]
