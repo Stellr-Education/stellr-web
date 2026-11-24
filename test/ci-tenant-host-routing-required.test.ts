@@ -62,7 +62,7 @@ function gate(needs: Needs): { passed: boolean; record: boolean; out: string } {
 
 describe('ci.yml tenant-host-routing (required through e2e)', () => {
   it('has no continue-on-error, on the job or on any step', () => {
-    expect(thr).toMatch(/runs-on: ubuntu-latest/)
+    expect(thr).toMatch(/runs-on: \$\{\{ fromJSON\(vars\.CI_RUNS_ON \|\| '"ubuntu-latest"'\) \}\}/)
     expect(thr).not.toMatch(/continue-on-error/)
   })
 

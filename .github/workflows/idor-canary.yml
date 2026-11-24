@@ -13,10 +13,12 @@ name: IDOR canary
 # failure shows as a warning on the run, not a red check.
 
 on:
+  # On a PR only when the canary or the IDOR suites change (private-repo plan,
+  # 24 Nov 2026). It tests that the suites CAN fail, which changes only with the
+  # suites; the suites themselves run in `unit` on every code PR, and the
+  # nightly run below still covers changes to app/api and lib within a day.
   pull_request:
     paths:
-      - 'app/api/**'
-      - 'lib/**'
       - 'test/idor/**'
       - 'scripts/idor-canary.mjs'
       - '.github/workflows/idor-canary.yml'
@@ -34,7 +36,7 @@ permissions:
 
 jobs:
   canary:
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(vars.CI_RUNS_ON_SMALL || '"ubuntu-latest"') }}
     timeout-minutes: 20
     continue-on-error: ${{ vars.CANARY_ENFORCE != 'true' }}
     steps:

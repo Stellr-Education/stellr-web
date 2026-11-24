@@ -19,9 +19,11 @@ name: Mutation testing
 
 on:
   schedule:
-    # 03:17 UTC daily (evening in the US, afternoon in Australia): off the hour,
-    # when GitHub's scheduled-run queue is shortest.
-    - cron: '17 3 * * *'
+    # 03:17 UTC on Sundays (evening in the US, afternoon in Australia): off the
+    # hour, when GitHub's scheduled-run queue is shortest. Weekly, not nightly,
+    # since 23 Nov 2026 (private-repo plan): a run takes 3-4 hours, the score is
+    # a slow-moving trend, and nightly runs alone used ~6,400 minutes a month.
+    - cron: '17 3 * * 0'
   workflow_dispatch:
     inputs:
       mutate:
@@ -38,7 +40,7 @@ permissions:
 
 jobs:
   stryker:
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(vars.CI_RUNS_ON || '"ubuntu-latest"') }}
     # The first full run on the 4-vCPU public runner, with tenancy, field
     # crypto and the platform audit trail added, took 232 minutes of Stryker
     # (14 Nov 2026). Six hours is the GitHub-hosted maximum.
